@@ -4,7 +4,9 @@ const playwrightTrace = ["./node_modules/playwright-core/**/*"];
 
 const productionAppUrl =
   process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined);
+  (process.env.VERCEL_PROJECT_PRODUCTION_URL
+    ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+    : undefined);
 
 const nextConfig: NextConfig = {
   env: {

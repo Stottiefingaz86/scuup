@@ -17,15 +17,19 @@ function isLocalhost(origin: string): boolean {
   }
 }
 
-/** Canonical public app URL for auth email links (never localhost in production). */
+/** Canonical public app URL for auth email links (never localhost in production).
+ * Uses the production alias, never per-deployment VERCEL_URL hosts, which sit
+ * behind Vercel deployment protection and break redirects. */
 export function appOriginFromEnv(): string | undefined {
   const explicit = normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL);
   if (explicit) return explicit;
 
-  const vercel = normalizeOrigin(
-    process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : undefined
+  const productionAlias = normalizeOrigin(
+    process.env.VERCEL_PROJECT_PRODUCTION_URL
+      ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+      : undefined
   );
-  if (vercel) return vercel;
+  if (productionAlias) return productionAlias;
 
   if (process.env.VERCEL === "1" || process.env.NODE_ENV === "production") {
     return PRODUCTION_APP_ORIGIN;
