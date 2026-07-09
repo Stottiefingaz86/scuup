@@ -65,26 +65,6 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function grantAccessThenSignIn(userId?: string): Promise<void> {
-    const grant = await fetch("/api/auth/grant-access", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, userId }),
-    });
-    if (!grant.ok) {
-      const body = await grant.json().catch(() => ({}));
-      throw new Error(
-        typeof body.error === "string" ? body.error : "Could not sign in."
-      );
-    }
-    const supabase = supabaseBrowser();
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (signInError) throw signInError;
-  }
-
   async function sendVerificationEmail(): Promise<void> {
     try {
       await fetch("/api/auth/verification", { method: "POST" });
@@ -112,29 +92,18 @@ function LoginForm() {
           const exists = signUpError.message
             .toLowerCase()
             .includes("already registered");
-          if (!exists) throw signUpError;
-          await grantAccessThenSignIn();
-          await sendVerificationEmail();
-          router.push(next);
-          router.refresh();
-          return;
+          if (exists) {
+            throw new Error(
+              "That email already has an account — log in instead."
+            );
+          }
+          throw signUpError;
         }
-
-        if (data.session) {
-          await sendVerificationEmail();
-          router.push(next);
-          router.refresh();
-          return;
-        }
-
-        if (!data.user?.id) {
+        if (!data.session) {
           throw new Error(
-            "Account could not be created. Check your email or try logging in."
+            "Account created — check your email to confirm, then log in."
           );
         }
-
-        await grantAccessThenSignIn(data.user.id);
-
         await sendVerificationEmail();
         router.push(next);
         router.refresh();
@@ -145,18 +114,7 @@ function LoginForm() {
         email,
         password,
       });
-      if (signInError) {
-        const needsGrant =
-          signInError.message.toLowerCase().includes("not confirmed") ||
-          signInError.message.toLowerCase().includes("email not confirmed");
-        if (needsGrant) {
-          await grantAccessThenSignIn();
-          router.push(next);
-          router.refresh();
-          return;
-        }
-        throw signInError;
-      }
+      if (signInError) throw signInError;
       router.push(next);
       router.refresh();
     } catch (err) {

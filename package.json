@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "fix:supabase-auth": "node scripts/fix-supabase-auth-url.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

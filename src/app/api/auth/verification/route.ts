@@ -1,8 +1,7 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { AuthError, requireUser } from "@/lib/auth-server";
-import { appOriginFromRequest } from "@/lib/app-url";
 import { isEmailVerified } from "@/lib/email-verification";
-import { supabaseBrowserSendVerification } from "@/lib/send-verification-email";
+import { sendVerificationEmail } from "@/lib/send-verification-email";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,18 +22,17 @@ export async function GET() {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const user = await requireUser();
     if (await isEmailVerified(user.id)) {
       return NextResponse.json({ ok: true, alreadyVerified: true });
     }
-    const origin = appOriginFromRequest(request);
     const email = user.email;
     if (!email) {
       return NextResponse.json({ error: "no email on account" }, { status: 400 });
     }
-    await supabaseBrowserSendVerification(email, origin);
+    await sendVerificationEmail(email);
     return NextResponse.json({ ok: true });
   } catch (e) {
     if (e instanceof AuthError) {
