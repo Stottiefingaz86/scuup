@@ -73,7 +73,7 @@ function finishRun(
     router.replace(`/projects/${projectId}/overview`);
   } else {
     markProjectDraft(projectId);
-    router.replace("/dashboard?analysis_failed=1");
+    router.replace(`/projects/${projectId}/overview?analysis_failed=1`);
   }
 }
 
@@ -126,23 +126,22 @@ export default function AnalyzingPage() {
   const finishedRef = useRef(false);
   const abortRef = useRef(false);
 
-  const leave = (dest: "dashboard" | "overview" = "dashboard") => {
+  const leave = (dest: "overview" | "overview_failed" = "overview") => {
     if (!project) return;
     abortRef.current = true;
     finishedRef.current = true;
     const scored = countScored(states, project);
-    if (dest === "overview" && scored > 0) {
+    if (scored > 0) {
       markProjectComplete(project.id);
       router.push(`/projects/${project.id}/overview`);
       return;
     }
-    if (scored > 0) {
-      markProjectComplete(project.id);
-      router.push("/dashboard");
-      return;
-    }
     markProjectDraft(project.id);
-    router.push("/dashboard?analysis_failed=1");
+    router.push(
+      dest === "overview_failed"
+        ? `/projects/${project.id}/overview?analysis_failed=1`
+        : `/projects/${project.id}/overview`
+    );
   };
 
   useEffect(() => {
@@ -152,7 +151,7 @@ export default function AnalyzingPage() {
       return;
     }
     if (project.status !== "analyzing") {
-      router.replace("/dashboard");
+      router.replace(`/projects/${project.id}/overview`);
       return;
     }
 
@@ -162,7 +161,7 @@ export default function AnalyzingPage() {
       const verified = await ensureEmailVerified();
       if (cancelled) return;
       if (!verified) {
-        router.replace("/dashboard?verify=1");
+        router.replace(`/projects/${project.id}/overview?verify=1`);
         return;
       }
       if (startedRef.current) return;
@@ -273,10 +272,10 @@ export default function AnalyzingPage() {
   return (
     <div className="flex min-h-screen flex-col">
       <header className="flex w-full items-center justify-between border-b px-6 py-4">
-        <ScuupLogo href="/dashboard" />
-        <Button variant="ghost" size="sm" onClick={() => leave("dashboard")}>
+        <ScuupLogo href={`/projects/${params.id}/overview`} />
+        <Button variant="ghost" size="sm" onClick={() => leave("overview")}>
           <ArrowLeft data-icon="inline-start" />
-          Dashboard
+          Overview
         </Button>
       </header>
 
@@ -293,7 +292,7 @@ export default function AnalyzingPage() {
           <CardDescription>
             {project
               ? allSettled && !hasResults
-                ? `${project.name} — every journey visit failed. You'll be sent back to your dashboard shortly.`
+                ? `${project.name} — every journey visit failed. You'll be sent back to overview shortly.`
                 : `${project.name} — real browsers are visiting each brand and walking every selected journey. A vision model scores what they see.`
               : "Loading project…"}
           </CardDescription>
@@ -309,9 +308,9 @@ export default function AnalyzingPage() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => leave("dashboard")}
+                    onClick={() => leave("overview_failed")}
                   >
-                    Go to dashboard
+                    Go to overview
                   </Button>
                   {hasResults ? (
                     <Button size="sm" onClick={() => leave("overview")}>
@@ -377,15 +376,15 @@ export default function AnalyzingPage() {
               <p className="text-center text-sm text-muted-foreground">
                 {hasResults
                   ? "Redirecting to your results…"
-                  : "Redirecting to your dashboard…"}
+                  : "Redirecting to overview…"}
               </p>
               <Button
                 className="w-full sm:w-auto"
                 onClick={() =>
-                  leave(hasResults ? "overview" : "dashboard")
+                  leave(hasResults ? "overview" : "overview_failed")
                 }
               >
-                {hasResults ? "View results" : "Go to dashboard"}
+                {hasResults ? "View results" : "Go to overview"}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
@@ -400,9 +399,9 @@ export default function AnalyzingPage() {
                 <Button
                   variant="outline"
                   className="flex-1 sm:flex-none"
-                  onClick={() => leave("dashboard")}
+                  onClick={() => leave("overview")}
                 >
-                  Back to dashboard
+                  Back to overview
                 </Button>
                 {hasResults ? (
                   <Button

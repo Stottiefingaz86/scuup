@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { appHomePathForUser } from "@/lib/app-home";
 
 /** Paths anyone can reach logged out. Everything else needs an account. */
 const PUBLIC_PATHS = [
@@ -52,9 +53,16 @@ export async function proxy(request: NextRequest) {
 
   if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = await appHomePathForUser(user.id);
     url.search = "";
     return NextResponse.redirect(url);
+  }
+
+  if (user && pathname === "/dashboard") {
+    const url = request.nextUrl.clone();
+    const search = url.searchParams.toString();
+    const dest = await appHomePathForUser(user.id, search || undefined);
+    return NextResponse.redirect(new URL(dest, url.origin));
   }
 
   return response;

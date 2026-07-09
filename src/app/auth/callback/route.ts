@@ -1,13 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
+import { appHomePathForUser } from "@/lib/app-home";
 import { markEmailVerified } from "@/lib/email-verification";
 
 /** Completes email-confirmation / OAuth / verification flows. */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const next = url.searchParams.get("next") ?? "/dashboard";
+  const nextParam = url.searchParams.get("next");
   const markVerified = url.searchParams.get("verified") === "1";
 
   if (code) {
@@ -30,6 +31,9 @@ export async function GET(request: NextRequest) {
       await markEmailVerified(data.user.id);
     }
     if (!error) {
+      const next =
+        nextParam ??
+        (data.user ? await appHomePathForUser(data.user.id) : "/dashboard");
       const dest = new URL(next, url.origin);
       if (markVerified) dest.searchParams.set("verified", "1");
       return NextResponse.redirect(dest);

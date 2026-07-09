@@ -9,7 +9,7 @@ export async function supabaseBrowserSendVerification(
     throw new Error("Auth is not configured.");
   }
 
-  const redirectTo = `${origin}/auth/callback?verified=1&next=${encodeURIComponent("/dashboard")}`;
+  const redirectTo = `${origin}/auth/callback?verified=1`;
 
   const res = await fetch(`${url}/auth/v1/otp`, {
     method: "POST",

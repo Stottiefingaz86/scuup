@@ -87,6 +87,9 @@ export async function ensureEmailVerified(): Promise<boolean> {
   return data.emailVerified;
 }
 
-export function redirectToVerifyDashboard(router: { push: (path: string) => void }) {
-  router.push("/dashboard?verify=1");
+export function redirectToVerifyHome(
+  router: { push: (path: string) => void },
+  projectId: string
+) {
+  router.push(`/projects/${projectId}/overview?verify=1`);
 }

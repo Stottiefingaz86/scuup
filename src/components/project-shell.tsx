@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Suspense } from "react";
 import {
   ArrowLeft,
   Camera,
@@ -43,6 +44,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { NavUser } from "@/components/nav-user";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { VerifyEmailBanner } from "@/components/verify-email-banner";
+import { AnalysisFailedBanner } from "@/components/analysis-failed-banner";
 import { useProject } from "@/lib/project-store";
 import type { Project } from "@/lib/types";
 
@@ -116,7 +119,7 @@ export function ProjectShell({
           render={<Link href="/dashboard" />}
         >
           <ArrowLeft data-icon="inline-start" />
-          Back to dashboard
+          Back to overview
         </Button>
       </div>
     );
@@ -176,7 +179,9 @@ export function ProjectShell({
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem className="hidden sm:block">
-                <BreadcrumbLink render={<Link href="/dashboard" />}>
+                <BreadcrumbLink
+                  render={<Link href={`/projects/${projectId}/overview`} />}
+                >
                   Projects
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -210,7 +215,15 @@ export function ProjectShell({
             ) : null}
           </div>
         </header>
-        <div className="flex-1 p-4 md:p-6 print:p-0">{children(project)}</div>
+        <div className="flex-1 p-4 md:p-6 print:p-0">
+          <Suspense fallback={null}>
+            <VerifyEmailBanner />
+          </Suspense>
+          <Suspense fallback={null}>
+            <AnalysisFailedBanner />
+          </Suspense>
+          {children(project)}
+        </div>
       </SidebarInset>
     </SidebarProvider>
   );
