@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# PlayerScope AI
 
-## Getting Started
+AI competitor CX intelligence for iGaming. PlayerScope shows where competitors beat you in the player journey, why they win, and what your brand should do next.
 
-First, run the development server:
+Full product spec: [`PLAYERSCOPE_SPEC.md`](./PLAYERSCOPE_SPEC.md)
+
+## Status: Phase 1 (mocked demo)
+
+This is the Phase 1 build from the spec: a polished UI running on mocked analysis data for Stake, Rainbet, bet365 and "Your Brand". The architecture (types, data layer, analysis pipeline steps) is structured so real Supabase persistence, Sanity heuristics, Browserbase/Playwright capture and LangGraph orchestration can be added in later phases without reshaping the UI.
+
+## Getting started
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What works
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Landing page** (`/`) — product promise, how it works, flagship metrics
+- **Dashboard** (`/dashboard`) — project list, seeded with a demo project
+- **New project** (`/projects/new`) — brand + competitor URLs, market, products, journeys, analysis mode; created projects persist in `localStorage`
+- **Analysis progress** (`/projects/[id]/analyzing`) — simulated pipeline mirroring the real LangGraph workflow steps
+- **Project dashboard** (`/projects/[id]/…`):
+  - `overview` — brand cards, journey radar, Retention Loop and Cashier Trust rankings, strategy read, top opportunities
+  - `journeys` — journey scorecard plus deep dives (findings, step timelines, heuristic scores)
+  - `features` — feature matrix with category filters and priorities
+  - `retention` — Retention Loop Score breakdown and promo-led vs loop-led read
+  - `cashier` — Cashier Trust Index breakdown with gap-to-best
+  - `evidence` — evidence library (placeholder captures in demo mode)
+  - `report` — board-ready executive report with print/PDF export
+  - `action-plan` — recommendations grouped into fix now / improve next / strategic bets
 
-## Learn More
+## Stack
 
-To learn more about Next.js, take a look at the following resources:
+- Next.js (App Router) + TypeScript
+- Tailwind CSS v4 + shadcn/ui (Base UI primitives, dark-mode-first theme)
+- Recharts via the shadcn Chart component
+- Mock data layer in `src/lib/mock-data.ts`, client store in `src/lib/project-store.ts`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Compliance posture
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The product is positioned as compliant competitor research and authorised mystery shopping. Analysis stops at CAPTCHAs, OTP, KYC, age verification, payment confirmation and any access-control barrier. No real deposits, withdrawals or bets are placed.
 
-## Deploy on Vercel
+## Next phases (see spec)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+2. Supabase data model + real saved projects
+3. Sanity heuristics + scoring engine
+4. Browserbase/Playwright evidence capture
+5. LangGraph orchestration + AI scoring and report generation
+6. Assisted/manual/logged-in modes, exports, scheduled reports
