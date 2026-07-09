@@ -60,7 +60,7 @@ export default function UpgradePage() {
           <Button
             variant="ghost"
             nativeButton={false}
-            render={<Link href="/dashboard" />}
+            render={<Link href="/account" />}
           >
             <ArrowLeft data-icon="inline-start" />
             Back to dashboard

@@ -2,11 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import {
-  Bell,
-  CircleUserRound,
+  ChevronDown,
   CreditCard,
-  EllipsisVertical,
+  LayoutDashboard,
   LogOut,
+  Plus,
+  Settings,
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useAppHomeHref } from "@/lib/use-app-home-href";
 import { useAuthUser } from "@/lib/use-auth-user";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -49,6 +51,7 @@ export function NavUser() {
   const router = useRouter();
   const { isMobile } = useSidebar();
   const { user, loading, name, email, initials } = useAuthUser();
+  const dashboardHref = useAppHomeHref();
 
   async function signOut() {
     await supabaseBrowser().auth.signOut();
@@ -91,7 +94,7 @@ export function NavUser() {
                 {email}
               </span>
             </div>
-            <EllipsisVertical className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+            <ChevronDown className="ml-auto size-3.5 text-muted-foreground group-data-[collapsible=icon]:hidden" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             className="min-w-56"
@@ -114,17 +117,21 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem disabled>
-                <CircleUserRound />
-                Account
+              <DropdownMenuItem onClick={() => router.push("/projects/new")}>
+                <Plus />
+                Start new audit
               </DropdownMenuItem>
-              <DropdownMenuItem disabled>
+              <DropdownMenuItem onClick={() => router.push(dashboardHref)}>
+                <LayoutDashboard />
+                Dashboard
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/account")}>
+                <Settings />
+                My account
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push("/account#billing")}>
                 <CreditCard />
-                Billing
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled>
-                <Bell />
-                Notifications
+                Billing & plan
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
