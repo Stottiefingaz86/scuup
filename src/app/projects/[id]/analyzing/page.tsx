@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowRight,
   Check,
   CircleAlert,
@@ -12,7 +12,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScuupMark } from "@/components/scuup-mark";
+import { ScuupLogo } from "@/components/scuup-logo";
 import {
   Card,
   CardContent,
@@ -49,6 +49,33 @@ const MAX_CONCURRENT = 3;
 const MIN_START_GAP_MS = 14000;
 
 const jobKey = (brandId: string, area: string) => `${brandId}:${area}`;
+
+function countScored(
+  states: Record<string, JobState>,
+  project?: { brands: Brand[] } | null
+) {
+  const fromRun = Object.values(states).filter((s) => s.phase === "done").length;
+  if (fromRun > 0) return fromRun;
+  if (!project) return 0;
+  return project.brands.reduce(
+    (n, b) => n + Object.values(b.analyses).filter((a) => !a.blocked).length,
+    0
+  );
+}
+
+function finishRun(
+  projectId: string,
+  scored: number,
+  router: ReturnType<typeof useRouter>
+) {
+  if (scored > 0) {
+    markProjectComplete(projectId);
+    router.replace(`/projects/${projectId}/overview`);
+  } else {
+    markProjectDraft(projectId);
+    router.replace("/dashboard?analysis_failed=1");
+  }
+}
 
 function AreaChip({ area, state }: { area: string; state: JobState }) {
   const label = ANALYSIS_AREA_LABELS[area] ?? area;
@@ -97,6 +124,26 @@ export default function AnalyzingPage() {
   } | null>(null);
   const startedRef = useRef(false);
   const finishedRef = useRef(false);
+  const abortRef = useRef(false);
+
+  const leave = (dest: "dashboard" | "overview" = "dashboard") => {
+    if (!project) return;
+    abortRef.current = true;
+    finishedRef.current = true;
+    const scored = countScored(states, project);
+    if (dest === "overview" && scored > 0) {
+      markProjectComplete(project.id);
+      router.push(`/projects/${project.id}/overview`);
+      return;
+    }
+    if (scored > 0) {
+      markProjectComplete(project.id);
+      router.push("/dashboard");
+      return;
+    }
+    markProjectDraft(project.id);
+    router.push("/dashboard?analysis_failed=1");
+  };
 
   useEffect(() => {
     if (!project || startedRef.current) return;
@@ -145,6 +192,8 @@ export default function AnalyzingPage() {
             if (!job) return;
             const key = jobKey(job.brand.id, job.area);
 
+            if (abortRef.current) return;
+
             if (quotaExhausted) {
               setJob(key, { phase: "failed", reason: quotaMessage });
               continue;
@@ -153,6 +202,7 @@ export default function AnalyzingPage() {
             const wait = Math.max(0, nextStartAt - Date.now());
             nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
             if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+            if (abortRef.current) return;
             setJob(key, { phase: "running" });
             try {
               const analysis = await runAgent(projectId, job.brand, job.area);
@@ -186,16 +236,7 @@ export default function AnalyzingPage() {
         failed: totalRunJobs - successCount,
       });
 
-      if (successCount > 0) {
-        markProjectComplete(projectId);
-        setTimeout(
-          () => router.replace(`/projects/${projectId}/overview`),
-          1500
-        );
-      } else {
-        markProjectDraft(projectId);
-        setTimeout(() => router.replace("/dashboard?analysis_failed=1"), 1500);
-      }
+      setTimeout(() => finishRun(projectId, successCount, router), 1500);
     })();
 
     return () => {
@@ -223,14 +264,24 @@ export default function AnalyzingPage() {
   ).length;
   const progress = totalJobs === 0 ? 0 : Math.round((settled / totalJobs) * 100);
   const allSettled = totalJobs > 0 && settled >= totalJobs;
-  const scoredCount = Object.values(states).filter((s) => s.phase === "done").length;
+  const scoredCount = countScored(states, project);
   const hasResults = scoredCount > 0 || (runFinished?.scored ?? 0) > 0;
+  const isRunning = Object.values(states).some(
+    (s) => s.phase === "running" || s.phase === "pending"
+  );
 
   return (
-    <div className="flex min-h-screen flex-col items-center px-6 py-16">
-      <ScuupMark />
+    <div className="flex min-h-screen flex-col">
+      <header className="flex w-full items-center justify-between border-b px-6 py-4">
+        <ScuupLogo href="/dashboard" />
+        <Button variant="ghost" size="sm" onClick={() => leave("dashboard")}>
+          <ArrowLeft data-icon="inline-start" />
+          Dashboard
+        </Button>
+      </header>
 
-      <Card className="mt-10 w-full max-w-2xl">
+      <div className="flex flex-1 flex-col items-center px-6 py-10">
+      <Card className="w-full max-w-2xl">
         <CardHeader>
           <CardTitle>
             {allSettled
@@ -252,7 +303,24 @@ export default function AnalyzingPage() {
             <Alert variant="destructive">
               <CircleAlert />
               <AlertTitle>Browser sessions unavailable</AlertTitle>
-              <AlertDescription>{quotaError}</AlertDescription>
+              <AlertDescription className="flex flex-col gap-3">
+                <span>{quotaError}</span>
+                <span className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => leave("dashboard")}
+                  >
+                    Go to dashboard
+                  </Button>
+                  {hasResults ? (
+                    <Button size="sm" onClick={() => leave("overview")}>
+                      View partial results
+                      <ArrowRight data-icon="inline-end" />
+                    </Button>
+                  ) : null}
+                </span>
+              </AlertDescription>
             </Alert>
           ) : null}
           <div className="flex flex-col gap-2">
@@ -313,23 +381,44 @@ export default function AnalyzingPage() {
               </p>
               <Button
                 className="w-full sm:w-auto"
-                render={
-                  <Link
-                    href={
-                      hasResults
-                        ? `/projects/${params.id}/overview`
-                        : "/dashboard?analysis_failed=1"
-                    }
-                  />
+                onClick={() =>
+                  leave(hasResults ? "overview" : "dashboard")
                 }
               >
                 {hasResults ? "View results" : "Go to dashboard"}
                 <ArrowRight data-icon="inline-end" />
               </Button>
             </div>
-          ) : null}
+          ) : (
+            <div className="flex flex-col items-center gap-2 border-t pt-4 sm:flex-row sm:justify-center">
+              {isRunning ? (
+                <p className="text-center text-sm text-muted-foreground sm:flex-1 sm:text-left">
+                  Analysis still running — you can leave and come back later.
+                </p>
+              ) : null}
+              <div className="flex w-full flex-wrap justify-center gap-2 sm:w-auto">
+                <Button
+                  variant="outline"
+                  className="flex-1 sm:flex-none"
+                  onClick={() => leave("dashboard")}
+                >
+                  Back to dashboard
+                </Button>
+                {hasResults ? (
+                  <Button
+                    className="flex-1 sm:flex-none"
+                    onClick={() => leave("overview")}
+                  >
+                    View results so far
+                    <ArrowRight data-icon="inline-end" />
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }
