@@ -1,5 +1,10 @@
 import { Stagehand } from "@browserbasehq/stagehand";
-import { createContext, getLiveViewUrl, proxyCountryFor } from "./browserbase";
+import {
+  createContext,
+  getLiveViewUrl,
+  proxyCountryFor,
+  withSessionRetry,
+} from "./browserbase";
 import {
   getCredentialsForLogin,
   markLoggedIn,
@@ -69,35 +74,38 @@ export async function startLogin(
   jobs.set(brandId, job);
 
   const proxyCountry = proxyCountryFor(requestedProxyCountry);
-  const stagehand = new Stagehand({
-    env: "BROWSERBASE",
-    apiKey: process.env.BROWSERBASE_API_KEY,
-    projectId: process.env.BROWSERBASE_PROJECT_ID,
-    model: {
-      modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-    browserbaseSessionCreateParams: {
-      projectId: process.env.BROWSERBASE_PROJECT_ID!,
-      region: (process.env.BROWSERBASE_REGION ?? "eu-central-1") as "eu-central-1",
-      timeout: 600,
-      browserSettings: {
-        viewport: { width: 1440, height: 900 },
-        context: { id: contextId, persist: true },
+  // Retry on Browserbase's 5-creates-per-minute burst limit.
+  const stagehand = await withSessionRetry(async () => {
+    const sh = new Stagehand({
+      env: "BROWSERBASE",
+      apiKey: process.env.BROWSERBASE_API_KEY,
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      model: {
+        modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
+        apiKey: process.env.OPENAI_API_KEY,
       },
-      ...(proxyCountry
-        ? {
-            proxies: [
-              { type: "browserbase" as const, geolocation: { country: proxyCountry } },
-            ],
-          }
-        : {}),
-    },
-    verbose: 0,
-    disablePino: true,
+      browserbaseSessionCreateParams: {
+        projectId: process.env.BROWSERBASE_PROJECT_ID!,
+        region: (process.env.BROWSERBASE_REGION ?? "eu-central-1") as "eu-central-1",
+        timeout: 600,
+        browserSettings: {
+          viewport: { width: 1440, height: 900 },
+          context: { id: contextId, persist: true },
+        },
+        ...(proxyCountry
+          ? {
+              proxies: [
+                { type: "browserbase" as const, geolocation: { country: proxyCountry } },
+              ],
+            }
+          : {}),
+      },
+      verbose: 0,
+      disablePino: true,
+    });
+    await sh.init();
+    return sh;
   });
-
-  await stagehand.init();
   const sessionId = stagehand.browserbaseSessionID;
   if (sessionId) {
     job.liveViewUrl = await getLiveViewUrl(sessionId).catch(() => null);

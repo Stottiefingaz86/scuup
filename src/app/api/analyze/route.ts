@@ -1,4 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  AuthError,
+  EmailNotVerifiedError,
+  requireUser,
+} from "@/lib/auth-server";
+import { requireEmailVerified } from "@/lib/email-verification";
 import { analyzeJourney } from "@/lib/analyst";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { getBrandContextId } from "@/lib/credentials-db";
@@ -8,6 +14,22 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  try {
+    const user = await requireUser();
+    await requireEmailVerified(user);
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: 401 });
+    }
+    if (e instanceof EmailNotVerifiedError) {
+      return NextResponse.json(
+        { error: e.message, code: e.code },
+        { status: 403 }
+      );
+    }
+    throw e;
+  }
+
   let url = "";
   let journey = "landing";
   let brandId = "";

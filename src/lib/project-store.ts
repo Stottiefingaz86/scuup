@@ -146,6 +146,14 @@ function normalizeUrl(url: string): string {
   return url.startsWith("http") ? url : `https://${url}`;
 }
 
+/** Thrown when the account's plan doesn't allow another report. */
+export class LimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "LimitError";
+  }
+}
+
 async function post(path: string, body: unknown): Promise<void> {
   const res = await fetch(path, {
     method: "POST",
@@ -154,7 +162,11 @@ async function post(path: string, body: unknown): Promise<void> {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error ?? `request failed (${res.status})`);
+    const message = data.error ?? `request failed (${res.status})`;
+    if (res.status === 402 || data.code === "limit_reached") {
+      throw new LimitError(message);
+    }
+    throw new Error(message);
   }
 }
 
@@ -263,5 +275,16 @@ export function markProjectComplete(id: string) {
   }));
   post(`/api/projects/${id}/complete`, {}).catch((e) =>
     console.error("[store] complete sync failed:", e.message)
+  );
+}
+
+export function markProjectDraft(id: string) {
+  mutateLocal(id, (p) => ({
+    ...p,
+    status: "draft",
+    analysedAt: undefined,
+  }));
+  post(`/api/projects/${id}/abort`, {}).catch((e) =>
+    console.error("[store] abort sync failed:", e.message)
   );
 }

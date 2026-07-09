@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { setProjectComplete } from "@/lib/project-db";
+import { requireUser } from "@/lib/auth-server";
+import { ownsProject, setProjectComplete } from "@/lib/project-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,11 @@ export async function POST(
   ctx: RouteContext<"/api/projects/[id]/complete">
 ) {
   try {
+    const user = await requireUser();
     const { id } = await ctx.params;
+    if (!(await ownsProject(id, user.id))) {
+      return NextResponse.json({ error: "not your project" }, { status: 403 });
+    }
     await setProjectComplete(id);
     return NextResponse.json({ ok: true });
   } catch (e) {

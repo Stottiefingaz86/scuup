@@ -189,7 +189,7 @@ function CaptureContent() {
   }, [elapsed, mode, liveEvents]);
 
   useEffect(() => {
-    document.title = `Recording ${name} — PlayerScope`;
+    document.title = `Recording ${name} — Scuup`;
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(interval);
   }, [name]);

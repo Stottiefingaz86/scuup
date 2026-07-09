@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { upsertAnalysis } from "@/lib/project-db";
+import { requireUser } from "@/lib/auth-server";
+import { ownsBrand, upsertAnalysis } from "@/lib/project-db";
 import type { JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -7,11 +8,15 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await requireUser();
     const body = await request.json();
     const brandId = typeof body.brandId === "string" ? body.brandId : "";
     const analysis = body.analysis as JourneyAnalysis | undefined;
     if (!brandId || !analysis?.area) {
       return NextResponse.json({ error: "invalid body" }, { status: 400 });
+    }
+    if (!(await ownsBrand(brandId, user.id))) {
+      return NextResponse.json({ error: "not your project" }, { status: 403 });
     }
     await upsertAnalysis(brandId, analysis);
     return NextResponse.json({ ok: true });

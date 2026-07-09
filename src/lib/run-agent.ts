@@ -25,8 +25,17 @@ export function agentKey(brandId: string, area: string): string {
 }
 
 /** Turn raw infrastructure errors into something a user can act on. */
+export function isBrowserbaseQuotaError(message: string): boolean {
+  return /402|payment required|browser minutes limit|browserbase\.com\/plans/i.test(
+    message
+  );
+}
+
 export function friendlyAgentError(err: Error): string {
   const m = err.message;
+  if (isBrowserbaseQuotaError(m)) {
+    return "Browser session quota exhausted — the Browserbase free plan has run out of browser minutes. Upgrade at browserbase.com/plans or wait for the monthly reset, then retry.";
+  }
   if (/429|concurrent|rate.?limit/i.test(m)) {
     return "Too many browser sessions at once — your Browserbase plan limits concurrent sessions. Wait for the running agents to finish and retry.";
   }
@@ -74,6 +83,11 @@ export function runAgent(
     });
     const data = await res.json();
     if (!res.ok) {
+      if (res.status === 403 && data.code === "email_not_verified") {
+        throw new Error(
+          "Verify your email before running analysis — use the link on your dashboard."
+        );
+      }
       throw new Error(data.error ?? `analysis failed (${res.status})`);
     }
     const analysis = data as JourneyAnalysis;

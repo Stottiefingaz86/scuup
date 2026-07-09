@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { AuthError, requireUser } from "@/lib/auth-server";
 import { importProjects } from "@/lib/project-db";
 import type { Project } from "@/lib/types";
 
@@ -10,15 +11,20 @@ export const maxDuration = 60;
  * localStorage up to Supabase. Existing project ids are skipped. */
 export async function POST(request: NextRequest) {
   try {
+    const user = await requireUser();
     const body = await request.json();
     const projects = Array.isArray(body.projects)
       ? (body.projects as Project[])
       : [];
     const imported = await importProjects(
-      projects.filter((p) => p?.id && p?.name)
+      projects.filter((p) => p?.id && p?.name),
+      user.id
     );
     return NextResponse.json({ imported });
   } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: 401 });
+    }
     const message = e instanceof Error ? e.message : "import failed";
     console.error("[projects] import failed:", message);
     return NextResponse.json({ error: message }, { status: 500 });

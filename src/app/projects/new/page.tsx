@@ -15,12 +15,12 @@ import {
   Landmark,
   ShieldCheck,
   Sparkles,
-  Telescope,
   UserCog,
   UserPlus,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScuupLogo } from "@/components/scuup-logo";
 import { cn } from "@/lib/utils";
 import {
   JOURNEY_LABELS,
@@ -29,7 +29,8 @@ import {
   MARKETS,
   PRODUCTS,
 } from "@/lib/constants";
-import { createProject } from "@/lib/project-store";
+import { createProject, LimitError } from "@/lib/project-store";
+import { ensureEmailVerified } from "@/components/verify-email-banner";
 import type { JourneyType } from "@/lib/types";
 
 const JOURNEY_ICONS: Record<JourneyType, typeof UserPlus> = {
@@ -162,6 +163,14 @@ export default function NewProjectPage() {
     () => journeysForProducts(products),
     [products]
   );
+
+  // Drop deposit/withdraw (etc.) when their product was deselected on a prior step.
+  useEffect(() => {
+    setJourneys((prev) => {
+      const next = prev.filter((j) => availableJourneys.includes(j));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [availableJourneys]);
   const [mode, setMode] = useState<string>("Public Audit Mode");
 
   const validCompetitors = useMemo(
@@ -206,6 +215,11 @@ export default function NewProjectPage() {
       }
     }
     try {
+      const verified = await ensureEmailVerified();
+      if (!verified) {
+        setError("Verify your email before running analysis — check the banner on your dashboard.");
+        return;
+      }
       const project = await createProject({
         name: name.trim(),
         ownBrandName: "",
@@ -218,6 +232,10 @@ export default function NewProjectPage() {
       });
       router.push(`/projects/${project.id}/analyzing`);
     } catch (e) {
+      if (e instanceof LimitError) {
+        router.push("/upgrade");
+        return;
+      }
       setError(e instanceof Error ? e.message : "Failed to create project");
     }
   }, [validate, name, ownBrandUrl, validCompetitors, market, products, journeys, availableJourneys, mode, router]);
@@ -278,12 +296,7 @@ export default function NewProjectPage() {
       </div>
 
       <header className="flex items-center px-6 py-5">
-        <Link href="/" className="flex items-center gap-2">
-          <Telescope className="size-5 text-primary" />
-          <span className="font-heading font-semibold tracking-tight">
-            PlayerScope AI
-          </span>
-        </Link>
+        <ScuupLogo href="/dashboard" />
         <span className="ms-auto text-sm text-muted-foreground tabular-nums">
           {step + 1} / {TOTAL_STEPS}
         </span>

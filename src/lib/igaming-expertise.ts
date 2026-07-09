@@ -27,7 +27,24 @@ VERTICAL DESIGN CONVENTIONS — deliberate strengths, NEVER penalize as flaws:
 - Status-transfer / VIP-match CTAs ("transfer your status from another casino"): a sophisticated acquisition weapon aimed at poaching competitors' highest-value players. A prominent one is a strength.
 - Gamification layers (levels, chests, races, raffles, challenges, streaks): depth here is a retention asset, provided each mechanic communicates its trigger.
 
-LOGGED-OUT CAVEAT: personal progress (rakeback balance, level progress bars, reload sizes) only renders after login. When judging a logged-out view, do not fail the site for missing personal progress — note it as requiring an authenticated session instead.`;
+LOGGED-OUT CAVEAT: personal progress (rakeback balance, level progress bars, reload sizes) only renders after login. When judging a logged-out view, do not fail the site for missing personal progress — note it as requiring an authenticated session instead.
+
+RETENTION MODELS — score LOOP DEPTH, not whether loyalty exists. Many regulated US/global books (BetOnline, FanDuel, bet365) ARE loyalty- and rewards-led — VIP tiers, points, reloads, cashback — they just execute weaker than crypto leaders. Do NOT label them "promo-only" because the hero shows a welcome offer.
+
+CRYPTO LOOP-LED (Stake, Rollbit, Winna, Rainbet-class) — the benchmark:
+- Permanent rakeback/rebate on every bet, lifetime VIP ladder, layered cadence (daily/weekly/monthly/level-up).
+- Gamification depth: races, missions, chests, challenges, leaderboards tied to play volume — retention IS the product.
+- Modal bonus centers that keep the player in-session; locked tier previews as aspiration engine.
+
+LOYALTY-LED / REGULATED (BetOnline, FanDuel, bet365-class) — same strategic intent, weaker execution:
+- Real ongoing rewards: VIP/points programs, tiered benefits, reload bonuses, sports boosts, cashback — often under Promotions, VIP, or Rewards nav.
+- Welcome offer may dominate acquisition, but logged-in retention is still rewards-oriented. Score how well the loop works, not whether a loop exists.
+- Typical gaps vs Stake: opaque point conversion, tiers that feel cosmetic, campaign cadence instead of systemic value-back, thin gamification, progress hidden until login, WR/bonus-cash opacity.
+- Advice should be "deepen the loop" (cadence, transparency, progress, gamification) — NOT "add a loyalty program" when one is already present.
+
+HYBRID: welcome promo surface PLUS a visible VIP/points/reload layer — BetOnline and many regulated brands sit here. Score each half; a promo hero does not mean the brand is promo-only.
+
+PROMO PAGE ONLY (no loop): campaign carousel and T&Cs with no tiers, points, recurring value mechanics, or VIP path — reserve this label for sites that truly lack an ongoing rewards system.`;
 
 /** Journey-specific expert lens. Falls back to landing for unknown areas. */
 const JOURNEY_EXPERTISE: Record<string, string> = {
@@ -50,7 +67,7 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
   signup: `SIGNUP EXPERTISE — the leaders make account creation feel like a 15-second unlock:
 - Crypto-native leaders: email + password (or one-click OAuth/Telegram/metamask), NO KYC at signup, deposit address available immediately. Every extra field is measurable drop-off.
 - Regulated books need more (age, address, affordability) — judge proportionality to the licence, not absolute field count.
-- Offer clarity at the form: what do I get, what are the wagering terms, is there a no-deposit path.
+- OFFER TYPE (critical): distinguish a one-time welcome deposit bonus/free bet (traditional) from an ongoing rakeback/VIP promise (crypto loop). Score clarity of terms — wagering, expiry, opt-in — NOT "how big is the promo". A site with no welcome bonus but clear permanent rakeback is leader-class, not a miss.
 - Watch for: KYC ambush before first deposit, email verification walls before showing the product, CAPTCHAs stacked on CAPTCHAs, bonus opt-in buried.`,
   deposit: `CASHIER/DEPOSIT EXPERTISE — deposit-to-play latency is the conversion metric:
 - Leader pattern: modal cashier over the game, crypto address + QR instantly, network fee guidance, fiat on-ramp options, min/max stated inline.
@@ -62,12 +79,15 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - KYC timing: requesting docs AT WITHDRAWAL after accepting deposits is the single biggest trust destroyer in the vertical — flag it hard.
 - Fee transparency, minimums stated upfront, and visible processing-time promises separate leaders.
 - Watch for: wagering locks not explained at deposit, "pending review" black holes, support-gated withdrawals.`,
-  loyalty_rewards: `LOYALTY/REWARDS EXPERTISE — judge the retention LOOP, not the page aesthetics:
+  loyalty_rewards: `LOYALTY/REWARDS EXPERTISE — judge LOOP DEPTH vs the Stake benchmark, not "promo vs loyalty":
+- Regulated loyalty-led brands (BetOnline-class) often HAVE tiers, points, reloads, and VIP — classify them as loyalty-led with weaker execution, not promo-page-only.
+- First classify: Promo-page-only (no ongoing rewards system) vs Loyalty-led (tiers/points/reloads present — score depth) vs Crypto loop-led (benchmark). Many regulated sites copy crypto nav labels ("VIP", "Rewards") — judge whether the mechanics behind the label match the promise.
 - The hub must answer three questions instantly: what can I earn, how do I earn it, when is my next reward moment.
 - Leader stack: visible tier ladder with transparent thresholds, rakeback %s per tier, weekly/monthly cadence explained, level-up bonuses, status transfer offer.
+- Gamification depth (crypto): races, missions, chests, streaks, leaderboards — score whether these are integrated into play or absent.
 - Tabs and modals ARE the hub — explore them all before judging. A "Bonus Center" modal with claim tiles is leader-class execution.
 - Locked previews of higher tiers = aspiration engine (strength). Opaque "VIP by invitation" with no path = weakness.
-- Watch for: promo-page-only "loyalty" (campaign list, no loop), wagering-requirement-heavy bonuses dressed as rewards, no cadence signals anywhere.`,
+- Watch for: "Using Bonus & Promotions" style checklists — wagering-heavy welcome offers dressed as loyalty, no cadence signals, promo carousel with no progress mechanics.`,
   support: `SUPPORT EXPERTISE — money questions need human-speed answers:
 - Live chat reachable in ≤2 clicks from anywhere, 24/7 claim, visible response-time expectation. Help centre with cashier/KYC/bonus articles that actually answer.
 - Leaders surface chat inside the cashier at friction moments (failed deposit, pending withdrawal).
@@ -86,7 +106,7 @@ const CALIBRATION: Record<string, string> = {
   signup: `CALIBRATION: 85+ = ≤3 fields or social/one-click, instant account, deposit reachable in seconds, offer terms visible. 50 = standard form with reasonable fields and clear offer. Below 40 = KYC before deposit, verification walls, opaque bonus terms.`,
   deposit: `CALIBRATION: 85+ = modal cashier, instant crypto address + QR, fee/min-max transparency, on-ramp breadth. 50 = working deposit with a redirect or unclear fees. Below 40 = late fee reveals, broken methods, no confirmation states.`,
   withdraw: `CALIBRATION: 85+ = same-modal withdrawal, minutes-fast crypto, upfront fees/minimums, clear pending states, KYC expectations set early. 50 = working but slow/ambiguous. Below 40 = KYC ambush, black-hole pending, support-gated payouts.`,
-  loyalty_rewards: `CALIBRATION: 85+ = Winna Bonus Center / Stake VIP class — tier ladder with real thresholds, rakeback per tier, claim tiles, cadence explained, status transfer. 50 = a promotions page with some recurring offers. Below 40 = campaign list only, no loop mechanics, opaque terms.`,
+  loyalty_rewards: `CALIBRATION: 85+ = Winna Bonus Center / Stake VIP class — tier ladder with real thresholds, rakeback per tier, claim tiles, cadence explained, status transfer. 50 = BetOnline/FanDuel-class — real VIP/points/reloads but weaker cadence, opaque conversion, thin gamification, progress often login-gated. Below 40 = promo carousel only with no meaningful ongoing rewards mechanics, or terms so opaque the loop fails in practice.`,
   support: `CALIBRATION: 85+ = live chat ≤2 clicks 24/7 + money-topic help articles that answer. 50 = chat exists but buried, or FAQ-first with human path. Below 40 = bot walls, no human path, support requiring login for pre-sales questions.`,
   my_account: `CALIBRATION: 85+ = balance split, bonus wagering progress, VIP progress integrated, RG tools discoverable. 50 = basics present, bonus state unclear. Below 40 = opaque balances, hidden limits, invisible KYC status.`,
 };

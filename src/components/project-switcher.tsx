@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronsUpDown, Plus, Telescope } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -37,8 +37,8 @@ export function ProjectSwitcher({ project }: { project: Project }) {
               />
             }
           >
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 group-data-[collapsible=icon]:size-6">
-              <Telescope className="size-4 text-primary" />
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/15 font-heading text-[10px] font-semibold uppercase text-primary group-data-[collapsible=icon]:size-6">
+              {project.name.slice(0, 2)}
             </div>
             <div className="grid min-w-0 flex-1 gap-0.5 text-left leading-none group-data-[collapsible=icon]:hidden">
               <span className="truncate text-sm font-medium">

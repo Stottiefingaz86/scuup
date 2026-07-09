@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Plus, Telescope } from "lucide-react";
+import { Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { ArrowRight, CircleAlert, Plus } from "lucide-react";
+import { ScuupLogo } from "@/components/scuup-logo";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +16,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UserMenu } from "@/components/user-menu";
+import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { useProjects } from "@/lib/project-store";
 import { JOURNEY_LABELS } from "@/lib/constants";
 import type { Project } from "@/lib/types";
@@ -22,6 +28,22 @@ function statusBadge(status: Project["status"]) {
   return <Badge variant="outline">Draft</Badge>;
 }
 
+function AnalysisFailedBanner() {
+  const params = useSearchParams();
+  if (params.get("analysis_failed") !== "1") return null;
+  return (
+    <Alert variant="destructive" className="mb-6">
+      <CircleAlert />
+      <AlertTitle>Analysis didn&apos;t complete</AlertTitle>
+      <AlertDescription>
+        Every journey visit failed — usually a Browserbase session limit or
+        connectivity issue. Fix the underlying problem, then open the project
+        and run analysis again.
+      </AlertDescription>
+    </Alert>
+  );
+}
+
 export default function DashboardPage() {
   const projects = useProjects();
 
@@ -29,13 +51,9 @@ export default function DashboardPage() {
     <div className="min-h-screen">
       <header className="border-b">
         <div className="mx-auto flex w-full max-w-6xl items-center gap-3 px-6 py-4">
-          <Link href="/" className="flex items-center gap-2">
-            <Telescope className="size-6 text-primary" />
-            <span className="text-lg font-semibold tracking-tight">
-              PlayerScope AI
-            </span>
-          </Link>
-          <div className="ms-auto">
+          <ScuupLogo href="/dashboard" />
+          <div className="ms-auto flex items-center gap-3">
+            <UserMenu />
             <Button nativeButton={false} render={<Link href="/projects/new" />}>
               <Plus data-icon="inline-start" />
               New project
@@ -45,6 +63,12 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl px-6 py-10">
+        <Suspense fallback={null}>
+          <VerifyEmailBanner />
+        </Suspense>
+        <Suspense fallback={null}>
+          <AnalysisFailedBanner />
+        </Suspense>
         <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
         <p className="mt-1 text-muted-foreground">
           Your competitor audits and reports.
@@ -60,7 +84,9 @@ export default function DashboardPage() {
           ) : projects.length === 0 ? (
             <Card className="sm:col-span-2 lg:col-span-3">
               <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
-                <Telescope className="size-8 text-muted-foreground/50" />
+                <p className="font-heading text-2xl font-semibold tracking-tight text-muted-foreground/40">
+                  Scuup
+                </p>
                 <p className="text-sm text-muted-foreground">
                   No audits yet. Create your first project — a real browser
                   will visit each brand and score what it sees.

@@ -89,10 +89,14 @@ function assemble(
   };
 }
 
-export async function listProjects(): Promise<Project[]> {
+export async function listProjects(userId: string): Promise<Project[]> {
   const db = supabase();
   const [projects, brands, analyses, sessions, plans] = await Promise.all([
-    db.from("ps_projects").select("*").order("created_at", { ascending: false }),
+    db
+      .from("ps_projects")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false }),
     db.from("ps_brands").select("*"),
     db.from("ps_analyses").select("brand_id, area, data"),
     db.from("ps_sessions").select("id, project_id, data").order("created_at", { ascending: false }),
@@ -118,7 +122,50 @@ export async function listProjects(): Promise<Project[]> {
   );
 }
 
-export async function insertProject(project: Project): Promise<void> {
+/** How many reports this account has created (any status). */
+export async function countProjects(userId: string): Promise<number> {
+  const { count, error } = await supabase()
+    .from("ps_projects")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+/** True when the project belongs to this account. */
+export async function ownsProject(
+  projectId: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await supabase()
+    .from("ps_projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data !== null;
+}
+
+/** True when the brand belongs to one of this account's projects. */
+export async function ownsBrand(
+  brandId: string,
+  userId: string
+): Promise<boolean> {
+  const { data, error } = await supabase()
+    .from("ps_brands")
+    .select("project_id")
+    .eq("id", brandId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return false;
+  return ownsProject(data.project_id as string, userId);
+}
+
+export async function insertProject(
+  project: Project,
+  userId: string
+): Promise<void> {
   const db = supabase();
   const { error } = await db.from("ps_projects").insert({
     id: project.id,
@@ -130,6 +177,7 @@ export async function insertProject(project: Project): Promise<void> {
     status: project.status,
     created_at: project.createdAt,
     analysed_at: project.analysedAt ?? null,
+    user_id: userId,
   });
   if (error) throw new Error(error.message);
 
@@ -222,9 +270,21 @@ export async function setProjectComplete(id: string): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export async function setProjectDraft(id: string): Promise<void> {
+  const { error } = await supabase()
+    .from("ps_projects")
+    .update({ status: "draft", analysed_at: null })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 /** One-time import of projects that lived in the browser's localStorage.
- * Skips projects that already exist server-side. */
-export async function importProjects(projects: Project[]): Promise<number> {
+ * Skips projects that already exist server-side; imports are claimed by
+ * the signed-in account. */
+export async function importProjects(
+  projects: Project[],
+  userId: string
+): Promise<number> {
   const db = supabase();
   const { data, error } = await db.from("ps_projects").select("id");
   if (error) throw new Error(error.message);
@@ -232,7 +292,7 @@ export async function importProjects(projects: Project[]): Promise<number> {
   let imported = 0;
   for (const project of projects) {
     if (existing.has(project.id)) continue;
-    await insertProject(project);
+    await insertProject(project, userId);
     imported += 1;
   }
   return imported;

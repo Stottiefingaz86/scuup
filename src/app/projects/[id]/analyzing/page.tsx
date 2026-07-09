@@ -1,15 +1,18 @@
 "use client";
 
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowRight,
   Check,
   CircleAlert,
   KeyRound,
   Loader2,
   ShieldAlert,
-  Telescope,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { ScuupMark } from "@/components/scuup-mark";
 import {
   Card,
   CardContent,
@@ -17,6 +20,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
@@ -25,8 +29,9 @@ import {
   ANALYSIS_AREA_LABELS,
   LANDING,
 } from "@/lib/constants";
-import { getProject, markProjectComplete, useProject } from "@/lib/project-store";
-import { runAgent } from "@/lib/run-agent";
+import { getProject, markProjectComplete, markProjectDraft, useProject } from "@/lib/project-store";
+import { friendlyAgentError, isBrowserbaseQuotaError, runAgent } from "@/lib/run-agent";
+import { ensureEmailVerified } from "@/components/verify-email-banner";
 import type { Brand } from "@/lib/types";
 
 type JobState =
@@ -38,6 +43,10 @@ type JobState =
 
 /** Browserbase free plan allows 3 concurrent sessions. */
 const MAX_CONCURRENT = 3;
+
+/** Browserbase also burst-limits session creation to 5 per minute — space
+ * out job starts so a batch launch (or fast-failing jobs) can't trip it. */
+const MIN_START_GAP_MS = 14000;
 
 const jobKey = (brandId: string, area: string) => `${brandId}:${area}`;
 
@@ -81,7 +90,13 @@ export default function AnalyzingPage() {
   const router = useRouter();
   const project = useProject(params.id);
   const [states, setStates] = useState<Record<string, JobState>>({});
+  const [quotaError, setQuotaError] = useState<string | null>(null);
+  const [runFinished, setRunFinished] = useState<{
+    scored: number;
+    failed: number;
+  } | null>(null);
   const startedRef = useRef(false);
+  const finishedRef = useRef(false);
 
   useEffect(() => {
     if (!project || startedRef.current) return;
@@ -89,27 +104,39 @@ export default function AnalyzingPage() {
       router.replace(`/projects/${project.id}/overview`);
       return;
     }
-    startedRef.current = true;
+    if (project.status !== "analyzing") {
+      router.replace("/dashboard");
+      return;
+    }
 
-    // Snapshot now — the store object identity changes on each save.
-    const brands = [...project.brands];
-    const projectId = project.id;
-    // Everything the agent can walk on its own runs up front: the landing
-    // first impression plus every selected public journey. Login-gated
-    // journeys wait for a saved account (Accounts page).
-    const areas = [LANDING, ...project.journeys.filter((j) => agentCanReach(j))];
-
-    const setJob = (key: string, state: JobState) =>
-      setStates((prev) => ({ ...prev, [key]: state }));
-
-    let successCount = 0;
+    let cancelled = false;
 
     (async () => {
-      // Brand-major order: each brand's landing scores first, so the page
-      // shows early results while deeper journeys are still walking.
+      const verified = await ensureEmailVerified();
+      if (cancelled) return;
+      if (!verified) {
+        router.replace("/dashboard?verify=1");
+        return;
+      }
+      if (startedRef.current) return;
+      startedRef.current = true;
+
+      const brands = [...project.brands];
+      const projectId = project.id;
+      const areas = [LANDING, ...project.journeys.filter((j) => agentCanReach(j))];
+
+      const setJob = (key: string, state: JobState) =>
+        setStates((prev) => ({ ...prev, [key]: state }));
+
+      let successCount = 0;
+      let quotaExhausted = false;
+      const quotaMessage =
+        "Browser session quota exhausted — upgrade Browserbase or wait for the monthly reset.";
+
       const queue: { brand: Brand; area: string }[] = brands.flatMap((brand) =>
         areas.map((area) => ({ brand, area }))
       );
+      let nextStartAt = 0;
       const workers = Array.from(
         { length: Math.min(MAX_CONCURRENT, queue.length) },
         async () => {
@@ -117,6 +144,15 @@ export default function AnalyzingPage() {
             const job = queue.shift();
             if (!job) return;
             const key = jobKey(job.brand.id, job.area);
+
+            if (quotaExhausted) {
+              setJob(key, { phase: "failed", reason: quotaMessage });
+              continue;
+            }
+
+            const wait = Math.max(0, nextStartAt - Date.now());
+            nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
+            if (wait > 0) await new Promise((r) => setTimeout(r, wait));
             setJob(key, { phase: "running" });
             try {
               const analysis = await runAgent(projectId, job.brand, job.area);
@@ -128,22 +164,43 @@ export default function AnalyzingPage() {
                   : { phase: "done", score: analysis.score }
               );
             } catch (e) {
-              setJob(key, {
-                phase: "failed",
-                reason: e instanceof Error ? e.message : "analysis failed",
-              });
+              const reason = friendlyAgentError(
+                e instanceof Error ? e : new Error("analysis failed")
+              );
+              if (isBrowserbaseQuotaError(reason)) {
+                quotaExhausted = true;
+                setQuotaError(reason);
+              }
+              setJob(key, { phase: "failed", reason });
             }
           }
         }
       );
       await Promise.all(workers);
-      // Only mark complete when at least one journey scored — a total
-      // infrastructure failure (e.g. prod misconfig) must not skip the audit.
-      if (getProject(projectId) && successCount > 0) {
+      if (cancelled || finishedRef.current || !getProject(projectId)) return;
+      finishedRef.current = true;
+
+      const totalRunJobs = brands.length * areas.length;
+      setRunFinished({
+        scored: successCount,
+        failed: totalRunJobs - successCount,
+      });
+
+      if (successCount > 0) {
         markProjectComplete(projectId);
-        setTimeout(() => router.push(`/projects/${projectId}/overview`), 1200);
+        setTimeout(
+          () => router.replace(`/projects/${projectId}/overview`),
+          1500
+        );
+      } else {
+        markProjectDraft(projectId);
+        setTimeout(() => router.replace("/dashboard?analysis_failed=1"), 1500);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [project, router]);
 
   if (project === null) {
@@ -165,28 +222,39 @@ export default function AnalyzingPage() {
     (s) => s.phase !== "pending" && s.phase !== "running"
   ).length;
   const progress = totalJobs === 0 ? 0 : Math.round((settled / totalJobs) * 100);
+  const allSettled = totalJobs > 0 && settled >= totalJobs;
+  const scoredCount = Object.values(states).filter((s) => s.phase === "done").length;
+  const hasResults = scoredCount > 0 || (runFinished?.scored ?? 0) > 0;
 
   return (
     <div className="flex min-h-screen flex-col items-center px-6 py-16">
-      <div className="flex items-center gap-2">
-        <Telescope className="size-6 text-primary" />
-        <span className="text-lg font-semibold tracking-tight">
-          PlayerScope AI
-        </span>
-      </div>
+      <ScuupMark />
 
       <Card className="mt-10 w-full max-w-2xl">
         <CardHeader>
           <CardTitle>
-            {progress >= 100 ? "Audit complete" : "Walking every journey"}
+            {allSettled
+              ? hasResults
+                ? "Audit complete"
+                : "Analysis couldn't finish"
+              : "Walking every journey"}
           </CardTitle>
           <CardDescription>
             {project
-              ? `${project.name} — real browsers are visiting each brand and walking every selected journey. A vision model scores what they see.`
+              ? allSettled && !hasResults
+                ? `${project.name} — every journey visit failed. You'll be sent back to your dashboard shortly.`
+                : `${project.name} — real browsers are visiting each brand and walking every selected journey. A vision model scores what they see.`
               : "Loading project…"}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
+          {quotaError ? (
+            <Alert variant="destructive">
+              <CircleAlert />
+              <AlertTitle>Browser sessions unavailable</AlertTitle>
+              <AlertDescription>{quotaError}</AlertDescription>
+            </Alert>
+          ) : null}
           <div className="flex flex-col gap-2">
             <Progress value={progress} />
             <span className="text-sm text-muted-foreground tabular-nums">
@@ -234,6 +302,31 @@ export default function AnalyzingPage() {
                 automatically too.
               </span>
             </p>
+          ) : null}
+
+          {allSettled || runFinished ? (
+            <div className="flex flex-col items-center gap-2 pt-2">
+              <p className="text-center text-sm text-muted-foreground">
+                {hasResults
+                  ? "Redirecting to your results…"
+                  : "Redirecting to your dashboard…"}
+              </p>
+              <Button
+                className="w-full sm:w-auto"
+                render={
+                  <Link
+                    href={
+                      hasResults
+                        ? `/projects/${params.id}/overview`
+                        : "/dashboard?analysis_failed=1"
+                    }
+                  />
+                }
+              >
+                {hasResults ? "View results" : "Go to dashboard"}
+                <ArrowRight data-icon="inline-end" />
+              </Button>
+            </div>
           ) : null}
         </CardContent>
       </Card>

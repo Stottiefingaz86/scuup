@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildActionPlan } from "@/lib/action-plan";
+import { requireUser } from "@/lib/auth-server";
 import { listProjects, saveActionPlan } from "@/lib/project-db";
 
 export const runtime = "nodejs";
@@ -13,8 +14,9 @@ export async function POST(
   ctx: RouteContext<"/api/projects/[id]/action-plan">
 ) {
   try {
+    const user = await requireUser();
     const { id } = await ctx.params;
-    const project = (await listProjects()).find((p) => p.id === id);
+    const project = (await listProjects(user.id)).find((p) => p.id === id);
     if (!project) {
       return NextResponse.json({ error: "project not found" }, { status: 404 });
     }

@@ -1,5 +1,14 @@
 const API = "https://api.browserbase.com/v1";
 
+function browserbaseError(action: string, status: number, body: string): Error {
+  if (status === 402 || /browser minutes limit|payment required/i.test(body)) {
+    return new Error(
+      "Browserbase free plan browser minutes limit reached — upgrade at browserbase.com/plans or wait for the monthly reset."
+    );
+  }
+  return new Error(`Browserbase ${action} failed: ${status} ${body}`);
+}
+
 function headers() {
   const key = process.env.BROWSERBASE_API_KEY;
   if (!key) throw new Error("BROWSERBASE_API_KEY is not set");
@@ -33,15 +42,47 @@ export async function createContext(): Promise<string> {
     body: JSON.stringify({ projectId: process.env.BROWSERBASE_PROJECT_ID }),
   });
   if (!res.ok) {
-    throw new Error(
-      `Browserbase context create failed: ${res.status} ${await res.text()}`
-    );
+    throw browserbaseError("context create", res.status, await res.text());
   }
   const data = await res.json();
   return data.id as string;
 }
 
+/** Browserbase burst limit is 5 session creates per minute. When a create
+ * hits 429, wait the time the API suggests and retry instead of failing the
+ * whole journey run. */
+export async function withSessionRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const rateLimited = /429|too many requests|rate limit/i.test(msg);
+      if (!rateLimited || attempt >= attempts) throw e;
+      const suggested = /try again in (\d+) seconds/i.exec(msg);
+      const waitSec = Math.min(90, suggested ? Number(suggested[1]) + 3 : 62);
+      await new Promise((r) => setTimeout(r, waitSec * 1000));
+    }
+  }
+}
+
 export async function createSession(
+  viewport?: Viewport,
+  contextId?: string,
+  requestedProxyCountry?: string | null
+): Promise<{
+  id: string;
+  connectUrl: string;
+}> {
+  return withSessionRetry(() =>
+    createSessionOnce(viewport, contextId, requestedProxyCountry)
+  );
+}
+
+async function createSessionOnce(
   viewport?: Viewport,
   contextId?: string,
   requestedProxyCountry?: string | null
@@ -98,9 +139,7 @@ export async function createSession(
     }),
   });
   if (!res.ok) {
-    throw new Error(
-      `Browserbase create failed: ${res.status} ${await res.text()}`
-    );
+    throw browserbaseError("create", res.status, await res.text());
   }
   const data = await res.json();
   return { id: data.id, connectUrl: data.connectUrl };

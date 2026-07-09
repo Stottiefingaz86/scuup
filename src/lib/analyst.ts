@@ -1,6 +1,11 @@
 import { Stagehand } from "@browserbasehq/stagehand";
 import { chromium } from "playwright-core";
-import { createSession, proxyCountryFor, releaseSession } from "./browserbase";
+import {
+  createSession,
+  proxyCountryFor,
+  releaseSession,
+  withSessionRetry,
+} from "./browserbase";
 import { JOURNEY_HEURISTICS, RETENTION_MECHANICS } from "./constants";
 import { persistShots } from "./evidence-storage";
 import { expertiseFor } from "./igaming-expertise";
@@ -330,7 +335,9 @@ For every mechanic with a non-null score, add a retentionNotes entry with:
 - shot: screenshot index showing that evidence
 - improve: one actionable sentence for the product team — what would lift this score toward Stake/Winna class. ONLY write improve for mechanics you actually scored — never recommend adding features that may already exist behind login.
 
-For null mechanics, omit from retentionNotes unless explaining missing evidence (login / tracked play). Do not give product improvement advice for mechanics scored null due to missing login.`;
+For null mechanics, omit from retentionNotes unless explaining missing evidence (login / tracked play). Do not give product improvement advice for mechanics scored null due to missing login.
+
+Set retentionType to ONE of: "Crypto loop-led" | "Loyalty-led (weaker loop)" | "Hybrid — promo + loyalty" | "Promo page only (no loop)" — plus a 3-5 word tag (e.g. "Loyalty-led — VIP points, thin cadence"). BetOnline-class regulated books usually belong in Loyalty-led or Hybrid, NOT Promo page only. This answers "how deep is the retention loop vs Stake-class?" not "does loyalty exist at all?"`;
 
 export async function scoreScreenshots(
   journey: string,
@@ -680,36 +687,41 @@ async function analyzeWithAgent(
   requestedProxyCountry?: string | null
 ): Promise<JourneyAnalysis> {
   const proxyCountry = proxyCountryFor(requestedProxyCountry);
-  const stagehand = new Stagehand({
-    env: "BROWSERBASE",
-    apiKey: process.env.BROWSERBASE_API_KEY,
-    projectId: process.env.BROWSERBASE_PROJECT_ID,
-    model: {
-      modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
-      apiKey: process.env.OPENAI_API_KEY,
-    },
-    browserbaseSessionCreateParams: {
-      projectId: process.env.BROWSERBASE_PROJECT_ID!,
-      region: (process.env.BROWSERBASE_REGION ??
-        "eu-central-1") as "eu-central-1",
-      timeout: 900,
-      browserSettings: {
-        viewport: { width: 1440, height: 900 },
-        // Resume the brand's logged-in state so gated areas are scoreable.
-        ...(contextId ? { context: { id: contextId, persist: true } } : {}),
+  // Session creation hits Browserbase's 5-per-minute burst limit when many
+  // journeys launch together — retry with a fresh instance on 429.
+  const stagehand = await withSessionRetry(async () => {
+    const sh = new Stagehand({
+      env: "BROWSERBASE",
+      apiKey: process.env.BROWSERBASE_API_KEY,
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      model: {
+        modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
+        apiKey: process.env.OPENAI_API_KEY,
       },
-      ...(proxyCountry
-        ? {
-            proxies: [
-              { type: "browserbase" as const, geolocation: { country: proxyCountry } },
-            ],
-          }
-        : {}),
-    },
-    verbose: 0,
-    disablePino: true,
+      browserbaseSessionCreateParams: {
+        projectId: process.env.BROWSERBASE_PROJECT_ID!,
+        region: (process.env.BROWSERBASE_REGION ??
+          "eu-central-1") as "eu-central-1",
+        timeout: 900,
+        browserSettings: {
+          viewport: { width: 1440, height: 900 },
+          // Resume the brand's logged-in state so gated areas are scoreable.
+          ...(contextId ? { context: { id: contextId, persist: true } } : {}),
+        },
+        ...(proxyCountry
+          ? {
+              proxies: [
+                { type: "browserbase" as const, geolocation: { country: proxyCountry } },
+              ],
+            }
+          : {}),
+      },
+      verbose: 0,
+      disablePino: true,
+    });
+    await sh.init();
+    return sh;
   });
-  await stagehand.init();
   try {
     const page =
       stagehand.context.activePage() ?? (await stagehand.context.newPage());

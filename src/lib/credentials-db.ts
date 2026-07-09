@@ -1,5 +1,10 @@
 import { decryptSecret, encryptSecret } from "./crypto";
 import { supabase } from "./supabase-server";
+import {
+  buildSignupPersona,
+  defaultTestPassword,
+  type SignupPersona,
+} from "./test-persona";
 
 /** What the client is allowed to see — never the secrets themselves. */
 export interface CredentialStatus {
@@ -7,6 +12,7 @@ export interface CredentialStatus {
   email: string | null;
   username: string | null;
   hasPassword: boolean;
+  hasPersona: boolean;
   notes: string | null;
   hasContext: boolean;
   loggedInAt: string | null;
@@ -18,6 +24,7 @@ export interface BrandCredentials {
   username: string | null;
   password: string | null;
   contextId: string | null;
+  persona: SignupPersona | null;
 }
 
 interface Row {
@@ -25,6 +32,7 @@ interface Row {
   email: string | null;
   username: string | null;
   password_enc: string | null;
+  persona_enc: string | null;
   notes: string | null;
   browserbase_context_id: string | null;
   logged_in_at: string | null;
@@ -45,6 +53,7 @@ export async function getCredentialStatus(
     email: row?.email ?? null,
     username: row?.username ?? null,
     hasPassword: Boolean(row?.password_enc),
+    hasPersona: Boolean(row?.persona_enc),
     notes: row?.notes ?? null,
     hasContext: Boolean(row?.browserbase_context_id),
     loggedInAt: row?.logged_in_at ?? null,
@@ -68,11 +77,45 @@ export async function listCredentialStatuses(
       email: row?.email ?? null,
       username: row?.username ?? null,
       hasPassword: Boolean(row?.password_enc),
+      hasPersona: Boolean(row?.persona_enc),
       notes: row?.notes ?? null,
       hasContext: Boolean(row?.browserbase_context_id),
       loggedInAt: row?.logged_in_at ?? null,
     };
   });
+}
+
+function decryptPersona(enc: string | null): SignupPersona | null {
+  if (!enc) return null;
+  try {
+    return JSON.parse(decryptSecret(enc)) as SignupPersona;
+  } catch {
+    return null;
+  }
+}
+
+/** Store email, test password, and market-specific signup persona for a brand. */
+export async function seedTestPersona(
+  brandId: string,
+  opts: { market: string; brandName: string; ownBrand?: boolean }
+): Promise<void> {
+  const persona = buildSignupPersona(opts);
+  const password = defaultTestPassword();
+  await saveCredentials(brandId, {
+    email: persona.email,
+    password,
+  });
+  const { error } = await supabase()
+    .from("ps_brand_credentials")
+    .upsert(
+      {
+        brand_id: brandId,
+        persona_enc: encryptSecret(JSON.stringify(persona)),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "brand_id" }
+    );
+  if (error) throw new Error(error.message);
 }
 
 export async function saveCredentials(
@@ -116,6 +159,7 @@ export async function getCredentialsForLogin(
     username: row?.username ?? null,
     password: row?.password_enc ? decryptSecret(row.password_enc) : null,
     contextId: row?.browserbase_context_id ?? null,
+    persona: decryptPersona(row?.persona_enc ?? null),
   };
 }
 

@@ -76,7 +76,7 @@ export const JOURNEY_HEURISTICS: Record<string, string[]> = {
   ],
   signup: [
     "Form effort",
-    "Offer clarity",
+    "Welcome vs loyalty offer clarity",
     "Speed to account",
     "Trust cues at the form",
     "Verification friction",
@@ -110,11 +110,11 @@ export const JOURNEY_HEURISTICS: Record<string, string[]> = {
     "Odds clarity",
   ],
   loyalty_rewards: [
+    "Retention model (promo vs loop)",
     "Reward visibility",
     "Earning clarity",
     "Tier ladder & aspiration",
-    "Reward cadence",
-    "Value-back transparency",
+    "Gamification & reward cadence",
   ],
   support: [
     "Chat accessibility",
@@ -152,6 +152,20 @@ export const MARKETS = [
   "Global / Crypto",
 ];
 
+/** Default test-account inbox for agent logins. Gmail plus-addresses per
+ * brand (stottiefingaz+stake@gmail.com) all land here — one inbox for every
+ * site's verification email. */
+export const DEFAULT_TEST_EMAIL = "stottiefingaz@gmail.com";
+
+/** Per-brand signup email — same inbox, unique address per operator. */
+export function defaultTestEmailForBrand(brandName: string): string {
+  const slug = brandName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24);
+  if (!slug) return DEFAULT_TEST_EMAIL;
+  const at = DEFAULT_TEST_EMAIL.indexOf("@");
+  if (at === -1) return DEFAULT_TEST_EMAIL;
+  return `${DEFAULT_TEST_EMAIL.slice(0, at)}+${slug}${DEFAULT_TEST_EMAIL.slice(at)}`;
+}
+
 /** Market → the country the agent's browser should appear from. iGaming
  * sites geo-gate content, offers and payment methods, so auditing from the
  * wrong region skews every score. Sessions route through a residential
@@ -178,12 +192,13 @@ export const PRODUCTS = [
 ];
 
 /** Product-specific journeys, hidden unless the matching product is picked.
- * Account and money journeys (signup, deposit, withdraw, support, account)
- * apply to every operator and are always offered. */
+ * Signup, support, and account apply to every operator and are always offered. */
 const JOURNEY_PRODUCT_GATE: Partial<Record<JourneyType, string[]>> = {
   casino: ["Casino", "Live Casino"],
   sports_betslip: ["Sports"],
   loyalty_rewards: ["Rewards"],
+  deposit: ["Payments"],
+  withdraw: ["Payments"],
 };
 
 /** The journeys relevant to a product selection, in canonical order. */
