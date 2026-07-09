@@ -16,6 +16,7 @@ import {
   WhatWeMeasure,
   WhatYouGet,
 } from "@/components/landing/landing-explainer";
+import { LandingHeaderActions } from "@/components/landing/landing-header-actions";
 
 const PRICING = [
   {
@@ -74,12 +75,7 @@ export function LandingShowcase() {
             </a>
           </nav>
           <div className="ms-auto flex items-center gap-2">
-            <Button variant="ghost" nativeButton={false} render={<Link href="/login" />}>
-              Log in
-            </Button>
-            <Button nativeButton={false} render={<Link href="/projects/new" />}>
-              Start audit
-            </Button>
+            <LandingHeaderActions />
           </div>
         </div>
       </header>
