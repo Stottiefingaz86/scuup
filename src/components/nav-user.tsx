@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import {
   Bell,
   CircleUserRound,
@@ -23,27 +24,49 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { useAuthUser } from "@/lib/use-auth-user";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
-const USER = { name: "Chris Hunt", email: "chris@playerscope.ai" };
-
-function Initials({ className }: { className?: string }) {
+function UserAvatar({
+  initials,
+  className,
+}: {
+  initials: string;
+  className?: string;
+}) {
   return (
     <Avatar className={cn("size-8 rounded-lg", className)}>
       <AvatarFallback className="rounded-lg text-xs font-semibold">
-        {USER.name
-          .split(" ")
-          .map((part) => part[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase()}
+        {initials}
       </AvatarFallback>
     </Avatar>
   );
 }
 
 export function NavUser() {
+  const router = useRouter();
   const { isMobile } = useSidebar();
+  const { user, loading, name, email, initials } = useAuthUser();
+
+  async function signOut() {
+    await supabaseBrowser().auth.signOut();
+    router.push("/login");
+    router.refresh();
+  }
+
+  if (loading) {
+    return (
+      <SidebarMenu className="group-data-[collapsible=icon]:items-center">
+        <SidebarMenuItem>
+          <Skeleton className="h-10 w-full rounded-lg group-data-[collapsible=icon]:size-8" />
+        </SidebarMenuItem>
+      </SidebarMenu>
+    );
+  }
+
+  if (!user || !name || !email || !initials) return null;
 
   return (
     <SidebarMenu className="group-data-[collapsible=icon]:items-center">
@@ -53,16 +76,19 @@ export function NavUser() {
             render={
               <SidebarMenuButton
                 size="lg"
-                tooltip={USER.name}
+                tooltip={name}
                 className="data-[state=open]:bg-sidebar-accent group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center"
               />
             }
           >
-            <Initials className="group-data-[collapsible=icon]:size-6 group-data-[collapsible=icon]:text-[10px]" />
+            <UserAvatar
+              initials={initials}
+              className="group-data-[collapsible=icon]:size-6 group-data-[collapsible=icon]:text-[10px]"
+            />
             <div className="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-              <span className="truncate font-medium">{USER.name}</span>
+              <span className="truncate font-medium">{name}</span>
               <span className="truncate text-xs text-muted-foreground">
-                {USER.email}
+                {email}
               </span>
             </div>
             <EllipsisVertical className="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
@@ -76,11 +102,11 @@ export function NavUser() {
             <DropdownMenuGroup>
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                  <Initials />
+                  <UserAvatar initials={initials} />
                   <div className="grid flex-1 text-left text-sm leading-tight">
-                    <span className="truncate font-medium">{USER.name}</span>
+                    <span className="truncate font-medium">{name}</span>
                     <span className="truncate text-xs text-muted-foreground">
-                      {USER.email}
+                      {email}
                     </span>
                   </div>
                 </div>
@@ -88,21 +114,21 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <CircleUserRound />
                 Account
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <CreditCard />
                 Billing
               </DropdownMenuItem>
-              <DropdownMenuItem>
+              <DropdownMenuItem disabled>
                 <Bell />
                 Notifications
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={signOut}>
               <LogOut />
               Log out
             </DropdownMenuItem>
