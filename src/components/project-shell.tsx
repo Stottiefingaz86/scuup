@@ -45,6 +45,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { NavUser } from "@/components/nav-user";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
+import { VerifyEmailPrompt } from "@/components/verify-email-dialog";
 import { AnalysisFailedBanner } from "@/components/analysis-failed-banner";
 import { useProject } from "@/lib/project-store";
 import type { Project } from "@/lib/types";
@@ -218,6 +219,9 @@ export function ProjectShell({
         <div className="flex-1 p-4 md:p-6 print:p-0">
           <Suspense fallback={null}>
             <VerifyEmailBanner />
+          </Suspense>
+          <Suspense fallback={null}>
+            <VerifyEmailPrompt />
           </Suspense>
           <Suspense fallback={null}>
             <AnalysisFailedBanner />

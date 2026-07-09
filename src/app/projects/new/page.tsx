@@ -31,6 +31,7 @@ import {
 } from "@/lib/constants";
 import { createProject, LimitError } from "@/lib/project-store";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
+import { VerifyEmailDialog } from "@/components/verify-email-dialog";
 import type { JourneyType } from "@/lib/types";
 
 const JOURNEY_ICONS: Record<JourneyType, typeof UserPlus> = {
@@ -143,6 +144,8 @@ export default function NewProjectPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const pendingLaunchRef = useRef(false);
 
   const [name, setName] = useState("");
   const [ownBrandUrl, setOwnBrandUrl] = useState("");
@@ -217,9 +220,11 @@ export default function NewProjectPage() {
     try {
       const verified = await ensureEmailVerified();
       if (!verified) {
-        setError("Verify your email before running analysis — check the banner on your dashboard.");
+        pendingLaunchRef.current = true;
+        setVerifyOpen(true);
         return;
       }
+      pendingLaunchRef.current = false;
       const project = await createProject({
         name: name.trim(),
         ownBrandName: "",
@@ -599,6 +604,14 @@ export default function NewProjectPage() {
           </div>
         </div>
       </footer>
+
+      <VerifyEmailDialog
+        open={verifyOpen}
+        onOpenChange={setVerifyOpen}
+        onVerified={() => {
+          if (pendingLaunchRef.current) void launch();
+        }}
+      />
     </div>
   );
 }
