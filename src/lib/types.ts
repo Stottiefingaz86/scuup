@@ -144,6 +144,36 @@ export interface CaptureRecord {
   events: CaptureEvent[];
 }
 
+export type RecommendationType = "fix_now" | "improve_next" | "strategic_bet";
+
+export type RecommendationLevel = "high" | "medium" | "low";
+
+/** One prioritised action synthesised from the project's real analyses. */
+export interface Recommendation {
+  id: string;
+  type: RecommendationType;
+  title: string;
+  description: string;
+  /** Analysis area this action belongs to, or "cross_journey". */
+  area: string;
+  impact: RecommendationLevel;
+  effort: RecommendationLevel;
+  confidence: RecommendationLevel;
+  /** Team best placed to own it, e.g. "Product", "CRM", "Design". */
+  owner: string;
+  /** What the analyst saw — on your site or a named competitor — that
+   * justifies this action. */
+  evidence: string;
+}
+
+/** AI-synthesised prioritised roadmap, built from all real analyses. */
+export interface ActionPlan {
+  generatedAt: string;
+  /** Number of successful analyses the plan was built from. */
+  basedOnAnalyses: number;
+  recommendations: Recommendation[];
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -154,6 +184,7 @@ export interface Project {
   analysisMode: string;
   brands: Brand[];
   sessions: CaptureRecord[];
+  actionPlan?: ActionPlan;
   status: "draft" | "analyzing" | "complete";
   createdAt: string;
   analysedAt?: string;

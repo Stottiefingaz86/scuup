@@ -1,9 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { Stagehand } from "@browserbasehq/stagehand";
 import { chromium } from "playwright-core";
 import { createSession, proxyCountryFor, releaseSession } from "./browserbase";
 import { JOURNEY_HEURISTICS, RETENTION_MECHANICS } from "./constants";
+import { persistShots } from "./evidence-storage";
 import { expertiseFor } from "./igaming-expertise";
 import {
   applyRetentionGates,
@@ -612,21 +611,6 @@ export async function extractRetentionNotesFromShots(
   if (!text) throw new Error("OpenAI returned no output text");
   const parsed = JSON.parse(text) as { retentionNotes: RetentionMechanicNote[] };
   return fillGatedRetentionNotes(gated, ctx, parsed.retentionNotes ?? []);
-}
-
-/** Evidence screenshots live outside the build; served by /api/evidence. */
-const EVIDENCE_DIR = path.join(process.cwd(), ".evidence");
-
-export async function persistShots(shots: string[]): Promise<string[]> {
-  await mkdir(EVIDENCE_DIR, { recursive: true });
-  const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-  return Promise.all(
-    shots.map(async (b64, i) => {
-      const name = `${stamp}-${i}.jpg`;
-      await writeFile(path.join(EVIDENCE_DIR, name), Buffer.from(b64, "base64"));
-      return `/api/evidence/${name}`;
-    })
-  );
 }
 
 /** Journeys that only make sense with an authenticated session. They run

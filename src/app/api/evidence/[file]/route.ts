@@ -1,11 +1,9 @@
 import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { type NextRequest } from "next/server";
+import { localEvidencePath } from "@/lib/evidence-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const EVIDENCE_DIR = path.join(process.cwd(), ".evidence");
 
 export async function GET(
   _req: NextRequest,
@@ -17,7 +15,7 @@ export async function GET(
     return new Response("not found", { status: 404 });
   }
   try {
-    const data = await readFile(path.join(EVIDENCE_DIR, file));
+    const data = await readFile(localEvidencePath(file));
     return new Response(new Uint8Array(data), {
       headers: {
         "Content-Type": "image/jpeg",

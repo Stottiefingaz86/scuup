@@ -6,10 +6,10 @@ import {
   type Page,
 } from "playwright-core";
 import {
-  persistShots,
   scoreScreenshots,
   type JourneyAnalysis,
 } from "./analyst";
+import { persistShots } from "./evidence-storage";
 import {
   createSession,
   getLiveViewUrl,

@@ -1,5 +1,6 @@
 import { supabase } from "./supabase-server";
 import type {
+  ActionPlan,
   Brand,
   CaptureRecord,
   JourneyAnalysis,
@@ -44,11 +45,17 @@ interface SessionRow {
   data: CaptureRecord;
 }
 
+interface ActionPlanRow {
+  project_id: string;
+  data: ActionPlan;
+}
+
 function assemble(
   row: ProjectRow,
   brandRows: BrandRow[],
   analysisRows: AnalysisRow[],
-  sessionRows: SessionRow[]
+  sessionRows: SessionRow[],
+  planRow?: ActionPlanRow
 ): Project {
   const analysesByBrand = new Map<string, Record<string, JourneyAnalysis>>();
   for (const a of analysisRows) {
@@ -75,6 +82,7 @@ function assemble(
     analysisMode: row.analysis_mode,
     brands,
     sessions: sessionRows.map((s) => s.data),
+    actionPlan: planRow?.data,
     status: row.status as Project["status"],
     createdAt: row.created_at,
     analysedAt: row.analysed_at ?? undefined,
@@ -83,18 +91,20 @@ function assemble(
 
 export async function listProjects(): Promise<Project[]> {
   const db = supabase();
-  const [projects, brands, analyses, sessions] = await Promise.all([
+  const [projects, brands, analyses, sessions, plans] = await Promise.all([
     db.from("ps_projects").select("*").order("created_at", { ascending: false }),
     db.from("ps_brands").select("*"),
     db.from("ps_analyses").select("brand_id, area, data"),
     db.from("ps_sessions").select("id, project_id, data").order("created_at", { ascending: false }),
+    db.from("ps_action_plans").select("project_id, data"),
   ]);
-  for (const res of [projects, brands, analyses, sessions]) {
+  for (const res of [projects, brands, analyses, sessions, plans]) {
     if (res.error) throw new Error(res.error.message);
   }
   const brandRows = (brands.data ?? []) as BrandRow[];
   const analysisRows = (analyses.data ?? []) as AnalysisRow[];
   const sessionRows = (sessions.data ?? []) as SessionRow[];
+  const planRows = (plans.data ?? []) as ActionPlanRow[];
   return ((projects.data ?? []) as ProjectRow[]).map((p) =>
     assemble(
       p,
@@ -102,7 +112,8 @@ export async function listProjects(): Promise<Project[]> {
       analysisRows.filter((a) =>
         brandRows.some((b) => b.id === a.brand_id && b.project_id === p.id)
       ),
-      sessionRows.filter((s) => s.project_id === p.id)
+      sessionRows.filter((s) => s.project_id === p.id),
+      planRows.find((pl) => pl.project_id === p.id)
     )
   );
 }
@@ -187,6 +198,18 @@ export async function insertSession(
     brand_id: record.brandId,
     data: record,
     created_at: record.date,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function saveActionPlan(
+  projectId: string,
+  plan: ActionPlan
+): Promise<void> {
+  const { error } = await supabase().from("ps_action_plans").upsert({
+    project_id: projectId,
+    data: plan,
+    generated_at: plan.generatedAt,
   });
   if (error) throw new Error(error.message);
 }

@@ -1,138 +1,150 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { Badge } from "@/components/ui/badge";
+import { useEffect, useRef, useState } from "react";
+import { LoaderCircle, RefreshCw, Zap } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Zap } from "lucide-react";
-import { BrandMark } from "@/components/brand-mark";
+import { ActionPlanView } from "@/components/action-plan-view";
 import { ProjectShell } from "@/components/project-shell";
-import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
-import { toObservation, type Project } from "@/lib/types";
+import { generateActionPlan } from "@/lib/project-store";
+import type { Project } from "@/lib/types";
+
+/** True when any analysis is newer than the plan — time for a refresh. */
+function planIsStale(project: Project): boolean {
+  const plan = project.actionPlan;
+  if (!plan) return false;
+  return project.brands.some((b) =>
+    Object.values(b.analyses).some(
+      (a) => !a.blocked && a.analysedAt > plan.generatedAt
+    )
+  );
+}
 
 function ActionPlanContent({ project }: { project: Project }) {
-  const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
-  const competitors = project.brands.filter((b) => b.role === "competitor");
+  const [building, setBuilding] = useState(false);
+  const autoTriggered = useRef(false);
 
-  // Real actions: what the analyst observed on your own site (fix these),
-  // plus what it observed working on competitor sites (learn from these).
-  const ownActions = Object.values(ownBrand.analyses)
-    .filter((a) => !a.blocked)
-    .flatMap((a) =>
-      a.observations.map((o) => ({
-        area: a.area,
-        observation: toObservation(o).text,
-      }))
-    );
-  const competitorSignals = competitors.flatMap((brand) =>
-    Object.values(brand.analyses)
-      .filter((a) => !a.blocked)
-      .flatMap((a) =>
-        a.observations.map((o) => ({
-          brand,
-          area: a.area,
-          observation: toObservation(o).text,
-        }))
-      )
+  const analysedCount = project.brands.reduce(
+    (n, b) => n + Object.values(b.analyses).filter((a) => !a.blocked).length,
+    0
   );
+  const plan = project.actionPlan;
+  const stale = planIsStale(project);
+
+  const build = async () => {
+    setBuilding(true);
+    try {
+      await generateActionPlan(project.id);
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to build the action plan."
+      );
+    } finally {
+      setBuilding(false);
+    }
+  };
+
+  // First visit with analyses but no plan yet: build it automatically.
+  useEffect(() => {
+    if (!plan && analysedCount > 0 && !autoTriggered.current) {
+      autoTriggered.current = true;
+      void build();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan, analysedCount]);
 
   return (
     <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Zap className="size-4 text-brand" />
-            Action plan
-          </CardTitle>
-          <CardDescription>
-            Built from what the analyst actually saw — your issues to fix and
-            competitor patterns worth stealing. It sharpens with every
-            analysis and recorded session.
-          </CardDescription>
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="size-4 text-brand" />
+                Action plan
+              </CardTitle>
+              <CardDescription>
+                Synthesised from {analysedCount} real analysed visit
+                {analysedCount === 1 ? "" : "s"} across your set — every action
+                cites the finding that justifies it.
+                {plan ? (
+                  <>
+                    {" "}
+                    Last built{" "}
+                    {new Date(plan.generatedAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                    {stale
+                      ? " — new analyses have landed since, refresh to fold them in."
+                      : "."}
+                  </>
+                ) : null}
+              </CardDescription>
+            </div>
+            {plan ? (
+              <Button
+                size="sm"
+                variant={stale ? "default" : "outline"}
+                disabled={building}
+                onClick={build}
+              >
+                {building ? (
+                  <LoaderCircle
+                    data-icon="inline-start"
+                    className="animate-spin"
+                  />
+                ) : (
+                  <RefreshCw data-icon="inline-start" />
+                )}
+                {building ? "Rebuilding…" : "Refresh plan"}
+              </Button>
+            ) : null}
+          </div>
         </CardHeader>
       </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {plan ? (
+        <ActionPlanView plan={plan} />
+      ) : building ? (
         <Card>
-          <CardHeader>
+          <CardHeader className="items-center py-14 text-center">
+            <LoaderCircle className="mx-auto size-6 animate-spin text-brand" />
             <CardTitle className="text-base">
-              On your site — observed issues & wins
+              Building your action plan
             </CardTitle>
             <CardDescription>
-              From analyses of {ownBrand.name}.
+              The strategist is weighing every finding across{" "}
+              {project.brands.length} brands — prioritising by impact and
+              effort. Takes about half a minute.
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            {ownActions.length === 0 ? (
-              <p className="py-2 text-sm text-muted-foreground">
-                Nothing yet — your site hasn&apos;t had a successful analysis.
-                Resolve the block from the Overview coverage card to populate
-                this.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {ownActions.map((action, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start gap-3 rounded-xl border p-4"
-                  >
-                    <Badge variant="outline" className="mt-0.5 shrink-0">
-                      {ANALYSIS_AREA_LABELS[action.area] ?? action.area}
-                    </Badge>
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {action.observation}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
         </Card>
-
+      ) : (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              On competitor sites — patterns to learn from
-            </CardTitle>
+          <CardHeader className="items-center py-14 text-center">
+            <CardTitle className="text-base">No plan yet</CardTitle>
             <CardDescription>
-              What&apos;s working (or failing) for the brands taking your
-              players.
+              {analysedCount === 0
+                ? "The plan is built from real analyses — run the agent on at least one area first."
+                : "Something went wrong building the plan automatically."}
             </CardDescription>
+            {analysedCount > 0 ? (
+              <Button size="sm" className="mt-2" onClick={build}>
+                <Zap data-icon="inline-start" />
+                Build action plan
+              </Button>
+            ) : null}
           </CardHeader>
-          <CardContent>
-            {competitorSignals.length === 0 ? (
-              <p className="py-2 text-sm text-muted-foreground">
-                No competitor analyses yet.
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {competitorSignals.map((signal, i) => (
-                  <li
-                    key={i}
-                    className="flex items-start gap-3 rounded-xl border p-4"
-                  >
-                    <BrandMark brand={signal.brand} className="mt-0.5 size-5" />
-                    <div className="flex min-w-0 flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">
-                        {signal.brand.name} ·{" "}
-                        {ANALYSIS_AREA_LABELS[signal.area] ?? signal.area}
-                      </span>
-                      <p className="text-sm leading-relaxed text-muted-foreground">
-                        {signal.observation}
-                      </p>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

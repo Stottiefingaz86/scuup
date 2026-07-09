@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 import { faviconUrl } from "./constants";
 import type {
+  ActionPlan,
   Brand,
   CaptureRecord,
   JourneyAnalysis,
@@ -237,6 +238,21 @@ export function saveCapture(projectId: string, record: CaptureRecord) {
   post(`/api/projects/${projectId}/sessions`, { record }).catch((e) =>
     console.error("[store] session sync failed:", e.message)
   );
+}
+
+/** Ask the server to (re)build the prioritised action plan from all real
+ * analyses, then reflect it in the local cache. */
+export async function generateActionPlan(projectId: string): Promise<ActionPlan> {
+  const res = await fetch(`/api/projects/${projectId}/action-plan`, {
+    method: "POST",
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? `request failed (${res.status})`);
+  }
+  const plan = data.plan as ActionPlan;
+  mutateLocal(projectId, (p) => ({ ...p, actionPlan: plan }));
+  return plan;
 }
 
 export function markProjectComplete(id: string) {

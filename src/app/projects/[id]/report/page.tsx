@@ -27,6 +27,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { ActionPlanView } from "@/components/action-plan-view";
 import { BrandMark } from "@/components/brand-mark";
 import { ProjectShell } from "@/components/project-shell";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
@@ -45,6 +46,7 @@ const SECTIONS = [
   { id: "summary", title: "Executive summary" },
   { id: "ranking", title: "Competitor ranking" },
   { id: "findings", title: "Findings by area" },
+  { id: "action-plan", title: "Action plan" },
   { id: "coverage", title: "Data coverage & next steps" },
 ];
 
@@ -398,10 +400,40 @@ function ReportContent({ project }: { project: Project }) {
         )}
       </section>
 
-      {/* 04 — Coverage */}
-      <section id="coverage" className="flex flex-col gap-6">
+      {/* 04 — Action plan */}
+      <section id="action-plan" className="flex flex-col gap-6">
         <SectionHeading
           index={4}
+          title="Action plan"
+          description="Prioritised roadmap synthesised from every finding in this report — each action cites the evidence behind it."
+        />
+        {project.actionPlan ? (
+          <ActionPlanView plan={project.actionPlan} />
+        ) : (
+          <Card>
+            <CardContent className="flex flex-col items-start gap-3 py-8">
+              <p className="text-sm text-muted-foreground">
+                The action plan hasn&apos;t been built for this project yet.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="print:hidden"
+                nativeButton={false}
+                render={<Link href={`/projects/${project.id}/action-plan`} />}
+              >
+                Build it on the Action Plan page
+                <ArrowRight data-icon="inline-end" />
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </section>
+
+      {/* 05 — Coverage */}
+      <section id="coverage" className="flex flex-col gap-6">
+        <SectionHeading
+          index={5}
           title="Data coverage & next steps"
           description="What this edition could and couldn't observe, and exactly how the next edition gets sharper."
         />
