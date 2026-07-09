@@ -102,6 +102,8 @@ export default function AnalyzingPage() {
     const setJob = (key: string, state: JobState) =>
       setStates((prev) => ({ ...prev, [key]: state }));
 
+    let successCount = 0;
+
     (async () => {
       // Brand-major order: each brand's landing scores first, so the page
       // shows early results while deeper journeys are still walking.
@@ -118,6 +120,7 @@ export default function AnalyzingPage() {
             setJob(key, { phase: "running" });
             try {
               const analysis = await runAgent(projectId, job.brand, job.area);
+              if (!analysis.blocked) successCount += 1;
               setJob(
                 key,
                 analysis.blocked
@@ -134,8 +137,9 @@ export default function AnalyzingPage() {
         }
       );
       await Promise.all(workers);
-      // Only complete if the project still exists (not deleted mid-run).
-      if (getProject(projectId)) {
+      // Only mark complete when at least one journey scored — a total
+      // infrastructure failure (e.g. prod misconfig) must not skip the audit.
+      if (getProject(projectId) && successCount > 0) {
         markProjectComplete(projectId);
         setTimeout(() => router.push(`/projects/${projectId}/overview`), 1200);
       }
