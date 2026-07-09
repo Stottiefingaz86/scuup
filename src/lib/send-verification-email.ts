@@ -1,3 +1,5 @@
+import { authCallbackUrl } from "./app-url";
+
 /** Sends a magic link via Supabase Auth — proves inbox ownership for analysis. */
 export async function supabaseBrowserSendVerification(
   email: string,
@@ -9,7 +11,7 @@ export async function supabaseBrowserSendVerification(
     throw new Error("Auth is not configured.");
   }
 
-  const redirectTo = `${origin}/auth/callback?verified=1`;
+  const redirectTo = authCallbackUrl(origin);
 
   const res = await fetch(`${url}/auth/v1/otp`, {
     method: "POST",

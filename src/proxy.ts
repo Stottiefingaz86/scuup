@@ -36,6 +36,19 @@ export async function proxy(request: NextRequest) {
   } = await client.auth.getUser();
 
   const { pathname } = request.nextUrl;
+
+  if (pathname === "/" && request.nextUrl.searchParams.has("error")) {
+    const url = request.nextUrl.clone();
+    const desc =
+      url.searchParams.get("error_description") ??
+      url.searchParams.get("error_code") ??
+      url.searchParams.get("error");
+    url.pathname = "/login";
+    url.search = "";
+    if (desc) url.searchParams.set("error", desc);
+    return NextResponse.redirect(url);
+  }
+
   const isPublic = PUBLIC_PATHS.some((p) => p.test(pathname));
 
   if (!user && !isPublic) {

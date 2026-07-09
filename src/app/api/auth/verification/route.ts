@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthError, requireUser } from "@/lib/auth-server";
+import { appOriginFromRequest } from "@/lib/app-url";
 import { isEmailVerified } from "@/lib/email-verification";
 import { supabaseBrowserSendVerification } from "@/lib/send-verification-email";
 
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest) {
     if (await isEmailVerified(user.id)) {
       return NextResponse.json({ ok: true, alreadyVerified: true });
     }
-    const origin = new URL(request.url).origin;
+    const origin = appOriginFromRequest(request);
     const email = user.email;
     if (!email) {
       return NextResponse.json({ error: "no email on account" }, { status: 400 });

@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { appOriginClient, authCallbackUrl } from "@/lib/app-url";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 type Mode = "signin" | "signup";
@@ -54,6 +55,7 @@ function LoginForm() {
   const router = useRouter();
   const search = useSearchParams();
   const next = search.get("next") ?? "/dashboard";
+  const authError = search.get("error");
 
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
@@ -102,7 +104,7 @@ function LoginForm() {
           email,
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback?verified=1&next=${encodeURIComponent(next)}`,
+            emailRedirectTo: authCallbackUrl(appOriginClient(), next),
             data: { company, phone },
           },
         });
@@ -235,7 +237,9 @@ function LoginForm() {
             onChange={setPassword}
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
           />
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {error || authError ? (
+            <p className="text-sm text-destructive">{error ?? authError}</p>
+          ) : null}
           <Button type="submit" disabled={busy} className="mt-1">
             {busy ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
             {mode === "signin" ? "Log in" : "Create account"}

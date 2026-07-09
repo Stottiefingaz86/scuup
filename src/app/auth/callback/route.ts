@@ -2,11 +2,23 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 import { appHomePathForUser } from "@/lib/app-home";
+import { appOriginFromRequest } from "@/lib/app-url";
 import { markEmailVerified } from "@/lib/email-verification";
 
 /** Completes email-confirmation / OAuth / verification flows. */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
+  const authError = url.searchParams.get("error");
+  if (authError) {
+    const desc =
+      url.searchParams.get("error_description") ??
+      url.searchParams.get("error_code") ??
+      authError;
+    const login = new URL("/login", appOriginFromRequest(request));
+    login.searchParams.set("error", desc);
+    return NextResponse.redirect(login);
+  }
+
   const code = url.searchParams.get("code");
   const nextParam = url.searchParams.get("next");
   const markVerified = url.searchParams.get("verified") === "1";
@@ -34,10 +46,10 @@ export async function GET(request: NextRequest) {
       const next =
         nextParam ??
         (data.user ? await appHomePathForUser(data.user.id) : "/dashboard");
-      const dest = new URL(next, url.origin);
+      const dest = new URL(next, appOriginFromRequest(request));
       if (markVerified) dest.searchParams.set("verified", "1");
       return NextResponse.redirect(dest);
     }
   }
-  return NextResponse.redirect(new URL("/login", url.origin));
+  return NextResponse.redirect(new URL("/login", appOriginFromRequest(request)));
 }
