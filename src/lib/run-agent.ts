@@ -33,6 +33,9 @@ export function friendlyAgentError(err: Error): string {
   if (/timeout|timed out/i.test(m)) {
     return "The run timed out — the site was slow or the agent got stuck. Retry, or launch the site manually if it keeps happening.";
   }
+  if (/playwright|browsers\.json|external module/i.test(m)) {
+    return "The analysis engine failed to start on the server — this is usually a deployment config issue. The team has been notified; retry after the next deploy.";
+  }
   if (/proxy|geo/i.test(m)) {
     return "The site appears to geo-block the agent's location. Set BROWSERBASE_PROXY_COUNTRY to route through the right market.";
   }
