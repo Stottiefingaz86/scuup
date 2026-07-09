@@ -17,7 +17,12 @@ export function ScuupMark({
       )}
     >
       Scuup
-      <span className="scuup-blink text-primary">.</span>
+      <span
+        aria-hidden
+        className="inline-block translate-y-px animate-scuup-blink text-[1.15em] font-bold text-primary"
+      >
+        .
+      </span>
     </span>
   );
 }
