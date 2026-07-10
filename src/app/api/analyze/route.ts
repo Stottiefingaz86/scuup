@@ -2,11 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   AuthError,
   EmailNotVerifiedError,
+  planFor,
   requireUser,
 } from "@/lib/auth-server";
 import { requireEmailVerified } from "@/lib/email-verification";
 import { analyzeJourney } from "@/lib/analyst";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
+import { journeyAllowedOnPlan } from "@/lib/plan";
 import { getBrandContextId } from "@/lib/credentials-db";
 
 export const runtime = "nodejs";
@@ -14,9 +16,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  let userId = "";
   try {
     const user = await requireUser();
     await requireEmailVerified(user);
+    userId = user.id;
   } catch (e) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: 401 });
@@ -45,6 +49,18 @@ export async function POST(request: NextRequest) {
   }
   if (!/^https?:\/\//.test(url)) {
     return NextResponse.json({ error: "valid url required" }, { status: 400 });
+  }
+
+  const plan = await planFor(userId);
+  if (!journeyAllowedOnPlan(plan, journey)) {
+    return NextResponse.json(
+      {
+        error:
+          "That journey is a Pro feature. Free audits cover first impression, casino and sports.",
+        code: "limit_reached",
+      },
+      { status: 402 }
+    );
   }
 
   // A saved browser context means the agent starts logged in. Optional:

@@ -2,8 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase-server";
+import type { Plan } from "./plan";
 
 export { EmailNotVerifiedError, isEmailVerified, markEmailVerified, requireEmailVerified } from "./email-verification";
+export { PLAN_COMPETITOR_LIMIT, PLAN_PROJECT_LIMIT, type Plan } from "./plan";
 
 /** The signed-in user for the current request (API route / server
  * component), read from the Supabase auth cookies. Null when logged out. */
@@ -45,8 +47,6 @@ export class AuthError extends Error {
   }
 }
 
-export type Plan = "free" | "pro";
-
 /** The user's plan; profiles are auto-created by a DB trigger on signup. */
 export async function planFor(userId: string): Promise<Plan> {
   const { data } = await supabase()
@@ -56,9 +56,3 @@ export async function planFor(userId: string): Promise<Plan> {
     .maybeSingle();
   return data?.plan === "pro" ? "pro" : "free";
 }
-
-/** How many reports a plan may create. */
-export const PLAN_PROJECT_LIMIT: Record<Plan, number> = {
-  free: 1,
-  pro: Number.POSITIVE_INFINITY,
-};

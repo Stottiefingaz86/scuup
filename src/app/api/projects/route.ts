@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   AuthError,
+  PLAN_COMPETITOR_LIMIT,
   PLAN_PROJECT_LIMIT,
   planFor,
   requireUser,
 } from "@/lib/auth-server";
+import { journeyAllowedOnPlan } from "@/lib/plan";
 import { countProjects, insertProject, listProjects } from "@/lib/project-db";
 import type { Project } from "@/lib/types";
 
@@ -48,6 +50,33 @@ export async function POST(request: NextRequest) {
         {
           error:
             "Free accounts include one report. Upgrade to create more audits.",
+          code: "limit_reached",
+        },
+        { status: 402 }
+      );
+    }
+
+    const competitorCount = project.brands.filter(
+      (b) => b.role === "competitor"
+    ).length;
+    if (competitorCount > PLAN_COMPETITOR_LIMIT[plan]) {
+      return NextResponse.json(
+        {
+          error:
+            "Competitor benchmarking is a Pro feature. Upgrade to add up to 3 competitors.",
+          code: "limit_reached",
+        },
+        { status: 402 }
+      );
+    }
+    const blockedJourney = (project.journeys ?? []).find(
+      (j) => !journeyAllowedOnPlan(plan, j)
+    );
+    if (blockedJourney) {
+      return NextResponse.json(
+        {
+          error:
+            "That journey is a Pro feature. Free audits cover first impression, casino and sports.",
           code: "limit_reached",
         },
         { status: 402 }

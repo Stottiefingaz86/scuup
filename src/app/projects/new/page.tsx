@@ -13,6 +13,7 @@ import {
   Goal,
   Headphones,
   Landmark,
+  Lock,
   ShieldCheck,
   Sparkles,
   UserCog,
@@ -29,6 +30,7 @@ import {
   MARKETS,
   PRODUCTS,
 } from "@/lib/constants";
+import { FREE_JOURNEYS, PRO_SELLING_POINTS, type Plan } from "@/lib/plan";
 import { createProject, LimitError } from "@/lib/project-store";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
 import { VerifyEmailDialog } from "@/components/verify-email-dialog";
@@ -56,30 +58,35 @@ const JOURNEY_HINTS: Record<JourneyType, string> = {
   my_account: "Balance, bonus, verification",
 };
 
-const ANALYSIS_MODES = [
-  {
-    value: "Public Audit Mode",
-    hint: "Public pages only. No credentials needed. Available now.",
-    available: true,
-  },
-  {
-    value: "Logged-In Audit Mode",
-    hint: "Uses saved test accounts — set them up on the Accounts page after launch.",
-    available: true,
-  },
-  {
-    value: "Assisted Audit Mode",
-    hint: "Pauses for OTP, CAPTCHA and manual steps. Coming in v2.",
-    available: false,
-  },
-  {
-    value: "Manual Capture Mode",
-    hint: "You drive, we record and analyse. Coming in v2.",
-    available: false,
-  },
+type StepId =
+  | "brand"
+  | "competitors"
+  | "market"
+  | "products"
+  | "journeys"
+  | "launch";
+
+const FREE_STEPS: StepId[] = ["brand", "market", "products", "launch"];
+const PRO_STEPS: StepId[] = [
+  "brand",
+  "competitors",
+  "market",
+  "products",
+  "journeys",
+  "launch",
 ];
 
-const TOTAL_STEPS = 7;
+/** "https://www.betfair.com/uk" → "Betfair" */
+function brandNameFromUrl(url: string): string {
+  try {
+    const host = new URL(url.startsWith("http") ? url : `https://${url}`)
+      .hostname;
+    const base = host.replace(/^www\./, "").split(".")[0];
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  } catch {
+    return url;
+  }
+}
 
 /* Typeform-style oversized underline input. */
 function BigInput({
@@ -110,24 +117,24 @@ function BigInput({
 }
 
 function StepShell({
-  step,
+  index,
   question,
   hint,
   children,
 }: {
-  step: number;
+  index: number;
   question: string;
   hint?: string;
   children: React.ReactNode;
 }) {
   return (
     <div
-      key={step}
+      key={index}
       className="flex w-full max-w-2xl flex-col gap-8 duration-500 animate-in fade-in slide-in-from-bottom-6"
     >
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2 text-sm font-medium text-primary">
-          <span className="tabular-nums">{step + 1}</span>
+          <span className="tabular-nums">{index + 1}</span>
           <ArrowRight className="size-3.5" />
         </div>
         <h1 className="font-heading text-3xl font-medium tracking-tight sm:text-4xl">
@@ -140,41 +147,147 @@ function StepShell({
   );
 }
 
+/** Compact Pro pitch shown on the free launch step — sells, never blocks. */
+function ProUpsellCard() {
+  return (
+    <div className="mt-6 flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-5">
+      <div className="flex items-center gap-2">
+        <Sparkles className="size-4 text-primary" />
+        <span className="font-heading text-sm font-medium">
+          Want to see who&apos;s taking your players?
+        </span>
+      </div>
+      <ul className="flex flex-col gap-1.5">
+        {PRO_SELLING_POINTS.slice(0, 3).map((f) => (
+          <li
+            key={f}
+            className="flex items-start gap-2 text-sm text-muted-foreground"
+          >
+            <Check className="mt-0.5 size-3.5 shrink-0 text-brand" />
+            {f}
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        nativeButton={false}
+        render={<Link href="/upgrade?from=new" />}
+      >
+        <Lock data-icon="inline-start" />
+        Unlock with Pro
+      </Button>
+    </div>
+  );
+}
+
+/** Free accounts get one report — say so before they fill anything out. */
+function LimitReachedScreen() {
+  return (
+    <div className="flex w-full max-w-lg flex-col gap-6 duration-500 animate-in fade-in slide-in-from-bottom-6">
+      <div className="flex flex-col gap-2">
+        <h1 className="font-heading text-3xl font-medium tracking-tight">
+          You&apos;ve used your free audit
+        </h1>
+        <p className="text-muted-foreground">
+          Free accounts include one report so you can see how Scuup scores
+          your brand. Pro unlocks competitors, every journey, and unlimited
+          reports.
+        </p>
+      </div>
+      <ul className="flex flex-col gap-2">
+        {PRO_SELLING_POINTS.map((f) => (
+          <li key={f} className="flex items-start gap-2 text-sm">
+            <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+            {f}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          className="glow-primary"
+          nativeButton={false}
+          render={<Link href="/upgrade?from=limit" />}
+        >
+          <Sparkles data-icon="inline-start" />
+          Upgrade to Pro
+        </Button>
+        <Button
+          variant="outline"
+          nativeButton={false}
+          render={<Link href="/dashboard" />}
+        >
+          <ArrowLeft data-icon="inline-start" />
+          Back to my report
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function NewProjectPage() {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [stepIndex, setStepIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [verifyOpen, setVerifyOpen] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const pendingLaunchRef = useRef(false);
 
-  const [name, setName] = useState("");
+  const [plan, setPlan] = useState<Plan>("free");
+  const [limitReached, setLimitReached] = useState(false);
+
   const [ownBrandUrl, setOwnBrandUrl] = useState("");
   const [competitors, setCompetitors] = useState<string[]>(["", "", ""]);
   const [market, setMarket] = useState<string | null>(null);
-  const [products, setProducts] = useState<string[]>([
-    "Casino",
-    "Sports",
-    "Payments",
-    "Rewards",
+  const [products, setProducts] = useState<string[]>(["Casino", "Sports"]);
+  const [journeys, setJourneys] = useState<JourneyType[]>([
+    "casino",
+    "sports_betslip",
   ]);
-  const [journeys, setJourneys] = useState<JourneyType[]>(
-    journeysForProducts(["Casino", "Sports", "Payments", "Rewards"])
-  );
 
-  /** Only journeys relevant to the picked products are offered. */
+  useEffect(() => {
+    void fetch("/api/account/plan")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (data: {
+          plan?: Plan;
+          projectCount?: number;
+          projectLimit?: number | null;
+        } | null) => {
+          if (!data) return;
+          if (data.plan) setPlan(data.plan);
+          if (
+            typeof data.projectLimit === "number" &&
+            (data.projectCount ?? 0) >= data.projectLimit
+          ) {
+            setLimitReached(true);
+          }
+        }
+      );
+  }, []);
+
+  const steps = plan === "pro" ? PRO_STEPS : FREE_STEPS;
+  const stepId = steps[Math.min(stepIndex, steps.length - 1)];
+  const totalSteps = steps.length;
+
+  /** Pro: journeys follow the picked products. Free: casino/sports only. */
   const availableJourneys = useMemo(
-    () => journeysForProducts(products),
-    [products]
+    () =>
+      plan === "pro"
+        ? journeysForProducts(products)
+        : FREE_JOURNEYS.filter((j) =>
+            journeysForProducts(products).includes(j)
+          ),
+    [plan, products]
   );
 
-  // Drop deposit/withdraw (etc.) when their product was deselected on a prior step.
   useEffect(() => {
     setJourneys((prev) => {
       const next = prev.filter((j) => availableJourneys.includes(j));
       return next.length === prev.length ? prev : next;
     });
   }, [availableJourneys]);
-  const [mode, setMode] = useState<string>("Public Audit Mode");
 
   const validCompetitors = useMemo(
     () => competitors.filter((c) => c.trim().length > 0),
@@ -182,41 +295,46 @@ export default function NewProjectPage() {
   );
 
   const validate = useCallback(
-    (s: number): string | null => {
-      if (s === 0 && name.trim().length === 0) return "Give the project a name to continue.";
-      if (s === 1 && ownBrandUrl.trim().length === 0) return "Enter your brand URL to continue.";
-      if (s === 2 && validCompetitors.length === 0) return "Add at least one competitor URL.";
-      if (s === 3 && !market) return "Pick the market you want audited.";
-      if (s === 5 && journeys.length === 0) return "Select at least one journey.";
+    (id: StepId): string | null => {
+      if (id === "brand" && ownBrandUrl.trim().length === 0)
+        return "Enter your brand URL to continue.";
+      if (id === "market" && !market) return "Pick the market you want audited.";
+      if (id === "products" && products.length === 0)
+        return "Pick at least one product.";
+      if (id === "journeys" && journeys.length === 0)
+        return "Select at least one journey.";
+      if (id === "launch" && journeys.length === 0)
+        return "Select at least one product to audit.";
       return null;
     },
-    [name, ownBrandUrl, validCompetitors, market, journeys]
+    [ownBrandUrl, market, products, journeys]
   );
 
   const next = useCallback(() => {
-    const problem = validate(step);
+    const problem = validate(stepId);
     if (problem) {
       setError(problem);
       return;
     }
     setError(null);
-    if (step < TOTAL_STEPS - 1) setStep((s) => s + 1);
-  }, [step, validate]);
+    if (stepIndex < totalSteps - 1) setStepIndex((s) => s + 1);
+  }, [stepId, stepIndex, totalSteps, validate]);
 
   const back = useCallback(() => {
     setError(null);
-    if (step > 0) setStep((s) => s - 1);
-  }, [step]);
+    if (stepIndex > 0) setStepIndex((s) => s - 1);
+  }, [stepIndex]);
 
   const launch = useCallback(async () => {
-    for (let s = 0; s < TOTAL_STEPS; s++) {
-      const problem = validate(s);
+    for (let i = 0; i < steps.length; i++) {
+      const problem = validate(steps[i]);
       if (problem) {
         setError(problem);
-        setStep(s);
+        setStepIndex(i);
         return;
       }
     }
+    setLaunching(true);
     try {
       const verified = await ensureEmailVerified();
       if (!verified) {
@@ -225,36 +343,42 @@ export default function NewProjectPage() {
         return;
       }
       pendingLaunchRef.current = false;
+      const brandName = brandNameFromUrl(ownBrandUrl.trim());
       const project = await createProject({
-        name: name.trim(),
-        ownBrandName: "",
+        name: `${brandName} — ${market}`,
+        ownBrandName: brandName,
         ownBrandUrl: ownBrandUrl.trim(),
-        competitors: validCompetitors.map((url) => ({ name: "", url: url.trim() })),
+        competitors:
+          plan === "pro"
+            ? validCompetitors.map((url) => ({ name: "", url: url.trim() }))
+            : [],
         market: market!,
         products,
         journeys: journeys.filter((j) => availableJourneys.includes(j)),
-        analysisMode: mode,
+        analysisMode: "Public Audit Mode",
       });
       router.push(`/projects/${project.id}/analyzing`);
     } catch (e) {
       if (e instanceof LimitError) {
-        router.push("/upgrade");
+        setLimitReached(true);
         return;
       }
       setError(e instanceof Error ? e.message : "Failed to create project");
+    } finally {
+      setLaunching(false);
     }
-  }, [validate, name, ownBrandUrl, validCompetitors, market, products, journeys, availableJourneys, mode, router]);
+  }, [steps, validate, ownBrandUrl, market, plan, validCompetitors, products, journeys, availableJourneys, router]);
 
   // Enter advances, except on the final step where it launches.
-  const stepRef = useRef({ next, launch, step });
+  const stepRef = useRef({ next, launch, stepId });
   useEffect(() => {
-    stepRef.current = { next, launch, step };
-  }, [next, launch, step]);
+    stepRef.current = { next, launch, stepId };
+  }, [next, launch, stepId]);
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Enter" || e.shiftKey) return;
       e.preventDefault();
-      if (stepRef.current.step === TOTAL_STEPS - 1) stepRef.current.launch();
+      if (stepRef.current.stepId === "launch") stepRef.current.launch();
       else stepRef.current.next();
     }
     window.addEventListener("keydown", onKey);
@@ -276,19 +400,41 @@ export default function NewProjectPage() {
         : [...prev, product];
       // Deselecting a product removes its journeys; selecting one offers
       // them again (pre-ticked, since the user just said they matter).
-      const available = journeysForProducts(nextProducts);
+      const available =
+        plan === "pro"
+          ? journeysForProducts(nextProducts)
+          : FREE_JOURNEYS.filter((j) =>
+              journeysForProducts(nextProducts).includes(j)
+            );
       setJourneys((prevJourneys) => {
+        const wasAvailable =
+          plan === "pro"
+            ? journeysForProducts(prev)
+            : FREE_JOURNEYS.filter((j) => journeysForProducts(prev).includes(j));
         const kept = prevJourneys.filter((j) => available.includes(j));
-        const added = available.filter(
-          (j) => !journeysForProducts(prev).includes(j)
-        );
+        const added = available.filter((j) => !wasAvailable.includes(j));
         return [...new Set([...kept, ...added])];
       });
       return nextProducts;
     });
   }
 
-  const progress = ((step + 1) / TOTAL_STEPS) * 100;
+  const progress = ((stepIndex + 1) / totalSteps) * 100;
+  const freeProducts = ["Casino", "Sports"];
+  const productChoices = plan === "pro" ? PRODUCTS : freeProducts;
+
+  if (limitReached) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <header className="flex items-center px-6 py-5">
+          <ScuupLogo href="/dashboard" />
+        </header>
+        <main className="flex flex-1 items-center justify-center px-6 pb-20">
+          <LimitReachedScreen />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -303,32 +449,20 @@ export default function NewProjectPage() {
       <header className="flex items-center px-6 py-5">
         <ScuupLogo href="/dashboard" />
         <span className="ms-auto text-sm text-muted-foreground tabular-nums">
-          {step + 1} / {TOTAL_STEPS}
+          {stepIndex + 1} / {totalSteps}
         </span>
       </header>
 
       <main className="flex flex-1 items-center justify-center px-6 pb-28 pt-8">
-        {step === 0 ? (
+        {stepId === "brand" ? (
           <StepShell
-            step={0}
-            question="What should we call this audit?"
-            hint="You'll see this on your dashboard and on the report cover."
-          >
-            <BigInput
-              autoFocus
-              id="project-name"
-              value={name}
-              onChange={setName}
-              placeholder="UK Market — Q3 Competitor Audit"
-            />
-          </StepShell>
-        ) : null}
-
-        {step === 1 ? (
-          <StepShell
-            step={1}
+            index={stepIndex}
             question="Where do your players play?"
-            hint="Your brand's URL. This is the experience everything gets benchmarked against."
+            hint={
+              plan === "pro"
+                ? "Your brand's URL — the experience everything gets benchmarked against."
+                : "Your brand's URL. Your free audit scores its first impression, casino and sports experience."
+            }
           >
             <BigInput
               autoFocus
@@ -340,11 +474,11 @@ export default function NewProjectPage() {
           </StepShell>
         ) : null}
 
-        {step === 2 ? (
+        {stepId === "competitors" ? (
           <StepShell
-            step={2}
+            index={stepIndex}
             question="Who's taking your players?"
-            hint="Up to three competitors. One is enough to start."
+            hint="Up to three competitors, benchmarked side by side. Leave blank to audit solo."
           >
             <div className="flex flex-col gap-6">
               {competitors.map((url, i) => (
@@ -373,9 +507,9 @@ export default function NewProjectPage() {
           </StepShell>
         ) : null}
 
-        {step === 3 ? (
+        {stepId === "market" ? (
           <StepShell
-            step={3}
+            index={stepIndex}
             question="Which market are we auditing?"
             hint="Journeys, payment methods and compliance expectations differ by market."
           >
@@ -413,22 +547,28 @@ export default function NewProjectPage() {
                     : "the selected market automatically"}{" "}
                   via regional routing, so geo-gated offers, payment methods
                   and compliance content are what a real local player sees.
-                  Global / Crypto brands serve one worldwide experience, so
-                  they&apos;re audited without routing.
                 </span>
               </p>
             </div>
           </StepShell>
         ) : null}
 
-        {step === 4 ? (
+        {stepId === "products" ? (
           <StepShell
-            step={4}
-            question="Which products matter to you?"
-            hint="We'll weight the analysis toward the products you actually compete on."
+            index={stepIndex}
+            question={
+              plan === "pro"
+                ? "Which products matter to you?"
+                : "What does your brand offer?"
+            }
+            hint={
+              plan === "pro"
+                ? "We'll weight the analysis toward the products you actually compete on."
+                : "Your free audit walks the casino lobby and the sports betslip — pick what applies."
+            }
           >
             <div className="flex flex-wrap gap-2">
-              {PRODUCTS.map((p) => {
+              {productChoices.map((p) => {
                 const selected = products.includes(p);
                 return (
                   <button
@@ -447,12 +587,25 @@ export default function NewProjectPage() {
                 );
               })}
             </div>
+            {plan === "free" ? (
+              <div className="flex flex-wrap gap-2 pt-2">
+                {["Payments", "Rewards", "Support"].map((p) => (
+                  <span
+                    key={p}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-4 py-2 font-heading text-sm text-muted-foreground/60"
+                  >
+                    <Lock className="size-3" />
+                    {p} — Pro
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </StepShell>
         ) : null}
 
-        {step === 5 ? (
+        {stepId === "journeys" ? (
           <StepShell
-            step={5}
+            index={stepIndex}
             question="Which player journeys should we walk?"
             hint="Each journey is scored with iGaming-specific heuristics and evidence."
           >
@@ -503,63 +656,53 @@ export default function NewProjectPage() {
           </StepShell>
         ) : null}
 
-        {step === 6 ? (
+        {stepId === "launch" ? (
           <StepShell
-            step={6}
-            question="Ready to see the gaps?"
-            hint="Public Audit Mode walks everything visible without credentials. The analysis pauses at CAPTCHAs, OTP, KYC and payment confirmation — no real money ever moves."
+            index={stepIndex}
+            question={
+              plan === "pro" ? "Ready to see the gaps?" : "Ready for your free audit?"
+            }
+            hint="Real browsers visit your site and walk each journey — a vision model scores what they see. Public pages only, no credentials needed."
           >
             <div className="flex flex-col gap-2">
-              {ANALYSIS_MODES.map((m) => {
-                const selected = mode === m.value;
-                return (
-                  <button
-                    key={m.value}
-                    type="button"
-                    disabled={!m.available}
-                    onClick={() => setMode(m.value)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-all",
-                      selected
-                        ? "border-primary/60 bg-primary/10"
-                        : "border-border bg-card/50 hover:border-primary/30",
-                      !m.available && "cursor-not-allowed opacity-40 hover:border-border"
-                    )}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <span className="font-heading text-sm font-medium">
-                        {m.value}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {m.hint}
-                      </span>
-                    </div>
-                    {selected ? (
-                      <Check className="ms-auto size-4 shrink-0 text-primary" />
-                    ) : null}
-                  </button>
-                );
-              })}
-
               {/* Review strip */}
-              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card/50 px-4 py-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card/50 px-4 py-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <ShieldCheck className="size-3.5 text-primary" />
-                  {name || "Untitled audit"}
+                  {ownBrandUrl || "your brand"}
                 </span>
-                <span>{ownBrandUrl || "your brand"}</span>
-                <span>
-                  vs {validCompetitors.length} competitor
-                  {validCompetitors.length === 1 ? "" : "s"}
-                </span>
+                {plan === "pro" && validCompetitors.length > 0 ? (
+                  <span>
+                    vs {validCompetitors.length} competitor
+                    {validCompetitors.length === 1 ? "" : "s"}
+                  </span>
+                ) : null}
                 <span>{market ?? "no market"}</span>
-                <span>{journeys.length} journeys</span>
+                <span>
+                  first impression
+                  {journeys.length > 0
+                    ? ` + ${journeys
+                        .map((j) => JOURNEY_LABELS[j].toLowerCase())
+                        .join(", ")}`
+                    : ""}
+                </span>
               </div>
 
-              <Button size="lg" className="mt-4 h-12 w-full text-base glow-primary" onClick={launch}>
+              <Button
+                size="lg"
+                className="mt-4 h-12 w-full text-base glow-primary"
+                disabled={launching}
+                onClick={launch}
+              >
                 <Sparkles data-icon="inline-start" />
-                Run the analysis
+                {launching
+                  ? "Starting your audit…"
+                  : plan === "pro"
+                    ? "Run the analysis"
+                    : "Run my free audit"}
               </Button>
+
+              {plan === "free" ? <ProUpsellCard /> : null}
             </div>
           </StepShell>
         ) : null}
@@ -581,7 +724,7 @@ export default function NewProjectPage() {
             </span>
           )}
           <div className="ms-auto flex items-center gap-2">
-            {step > 0 ? (
+            {stepIndex > 0 ? (
               <Button variant="ghost" onClick={back}>
                 <ArrowLeft data-icon="inline-start" />
                 Back
@@ -595,7 +738,7 @@ export default function NewProjectPage() {
                 Cancel
               </Button>
             )}
-            {step < TOTAL_STEPS - 1 ? (
+            {stepId !== "launch" ? (
               <Button onClick={next}>
                 OK
                 <Check data-icon="inline-end" />

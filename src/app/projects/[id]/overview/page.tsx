@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileText,
   Lightbulb,
+  Lock,
   Radio,
   ShieldAlert,
   Sparkles,
@@ -200,6 +201,28 @@ function OverviewContent({ project }: { project: Project }) {
             rank={rankByBrand[brand.id]}
           />
         ))}
+        {/* Empty competitor slots sell the upgrade better than a banner. */}
+        {project.brands.length === 1
+          ? [0, 1, 2].map((i) => (
+              <Link
+                key={`slot-${i}`}
+                href="/upgrade?from=competitors"
+                className="group flex min-h-44 flex-col items-center justify-center gap-2.5 rounded-xl border border-dashed border-border/80 bg-card/30 p-5 text-center transition-colors hover:border-primary/40 hover:bg-primary/[0.03]"
+              >
+                <span className="flex size-9 items-center justify-center rounded-full border border-dashed border-border text-muted-foreground/50 transition-colors group-hover:border-primary/40 group-hover:text-primary">
+                  <Lock className="size-4" />
+                </span>
+                <span className="font-heading text-sm text-muted-foreground">
+                  Competitor {String.fromCharCode(65 + i)}
+                </span>
+                <span className="text-xs text-muted-foreground/60">
+                  {i === 0
+                    ? "See who's beating you here — Pro benchmarks up to 3 rivals"
+                    : "Unlock with Pro"}
+                </span>
+              </Link>
+            ))
+          : null}
       </div>
 
       {/* Data coverage */}
