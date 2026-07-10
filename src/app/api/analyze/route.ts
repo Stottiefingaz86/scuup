@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth-server";
 import { requireEmailVerified } from "@/lib/email-verification";
 import { analyzeJourney } from "@/lib/analyst";
+import { auditUrlForMarket } from "@/lib/brand-markets";
 import { createContext } from "@/lib/browserbase";
 import { journeyRequiresLogin, MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { journeyAllowedOnPlan } from "@/lib/plan";
@@ -141,6 +142,11 @@ export async function POST(request: NextRequest) {
   // The project's market decides where the browser appears from, so
   // geo-gated offers and payment methods match what a local player sees.
   const proxyCountry = MARKET_PROXY_COUNTRY[market] ?? null;
+
+  // Some brands serve a market from a locally licensed domain (stake.mx
+  // for Mexico) — visiting the main site from that market's IP just shows
+  // a restricted-region wall.
+  url = auditUrlForMarket(url, market);
 
   try {
     const result = await analyzeJourney(url, journey, contextId, proxyCountry, {

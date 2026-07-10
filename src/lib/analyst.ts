@@ -150,6 +150,32 @@ async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Detect geo-restriction walls from the final URL — stake.com from a
+ * Mexico IP lands on `modal=restrictedRegion`, for example. */
+function geoBlockReason(finalUrl: string): string | null {
+  if (/restrictedRegion|regionKey=|not.?available.?in.?your/i.test(finalUrl)) {
+    return "This brand geo-blocked the agent at the main domain for this market — the site detected the proxy location and showed a restricted-region wall instead of the product.";
+  }
+  return null;
+}
+
+/** Poll until a heavy SPA has rendered real content, not just a splash
+ * screen or blank shell. */
+async function waitForPageContent(
+  page: { evaluate: (expr: string) => Promise<unknown>; waitForTimeout: (ms: number) => Promise<void> },
+  minChars = 400,
+  maxPolls = 8
+): Promise<void> {
+  await page.waitForTimeout(6000);
+  for (let i = 0; i < maxPolls; i++) {
+    const text = String(
+      await page.evaluate("document.body?.innerText ?? ''").catch(() => "")
+    );
+    if (text.trim().length > minChars) return;
+    await page.waitForTimeout(2500);
+  }
+}
+
 interface ScrollCapture {
   capture: () => Promise<string>;
   scrollTo: (y: number) => Promise<void>;
@@ -936,7 +962,7 @@ async function analyzeWithAgent(
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
       .catch(() => {});
-    await page.waitForTimeout(8000);
+    await waitForPageContent(page);
 
     const trail: string[] = [];
     const shots: string[] = [];
@@ -1082,6 +1108,10 @@ async function analyzeWithAgent(
       );
     }
 
+    // Navigation steps often land on SPAs that need extra time to paint
+    // the lobby/content after the chrome loads (Betonline casino, etc.).
+    await waitForPageContent(page);
+
     if (DEEP_SCROLL_JOURNEYS.has(journey)) {
       const scrollShots = await captureScrollSequence({
         capture,
@@ -1101,6 +1131,25 @@ async function analyzeWithAgent(
 
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
+
+    const geoReason = geoBlockReason(finalUrl);
+    if (geoReason) {
+      const screenshots = await persistShots(shots.length ? shots : [await capture()]);
+      return {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason: geoReason,
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots,
+        finalUrl,
+        loggedIn: isLoginJourney ? false : undefined,
+      };
+    }
 
     const [result, screenshots] = await Promise.all([
       scoreScreenshots(journey, pageTitle, finalUrl, shots, trail),
@@ -1304,9 +1353,10 @@ async function analyzeLanding(
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeout: 25000 })
       .catch(() => {});
-    // Let Cloudflare interstitials resolve and lazy content render. Heavy
-    // casino SPAs can sit on a branded splash for several seconds.
-    await page.waitForTimeout(10000);
+    await waitForPageContent({
+      evaluate: (expr) => page.evaluate(expr),
+      waitForTimeout: (ms) => page.waitForTimeout(ms),
+    });
 
     // Raw CDP capture: unlike page.screenshot() it doesn't wait for page
     // stability, so bot-challenge pages that never settle can't stall us.
@@ -1331,6 +1381,24 @@ async function analyzeLanding(
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
     await browser.close().catch(() => {});
+
+    const geoReason = geoBlockReason(finalUrl);
+    if (geoReason) {
+      const screenshots = await persistShots(shots);
+      return {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason: geoReason,
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots,
+        finalUrl,
+      };
+    }
 
     const [result, screenshots] = await Promise.all([
       scoreScreenshots(journey, pageTitle, finalUrl, shots),

@@ -38,6 +38,9 @@ interface CuratedBrandMarkets {
   hosts: string[];
   blocked: string[];
   available: string[];
+  /** Markets the brand serves from a different licensed domain — the audit
+   * must visit that domain or the main site geo-blocks the proxy IP. */
+  marketUrls?: Record<string, string>;
 }
 
 /** Ground-truth market lists for brands we audit often. */
@@ -65,6 +68,12 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
       "Philippines",
       "South Africa",
     ],
+    // stake.com geo-blocks these countries and points players at the
+    // locally licensed domains instead.
+    marketUrls: {
+      Mexico: "https://stake.mx",
+      Brazil: "https://stake.bet.br",
+    },
   },
   {
     hosts: ["rainbet.com", "roobet.com", "rollbit.com"],
@@ -170,6 +179,16 @@ export function curatedAvailability(
     blocked: rule.blocked.filter((m) => valid.has(m)),
     available: rule.available.filter((m) => valid.has(m)),
   };
+}
+
+/** The URL the audit should visit for a brand in a market — the locally
+ * licensed domain when one exists (e.g. stake.mx for Mexico), otherwise the
+ * brand's own URL. */
+export function auditUrlForMarket(url: string, market: string): string {
+  const rule = CURATED_BRAND_MARKETS.find((r) =>
+    r.hosts.some((h) => hostMatches(url, h))
+  );
+  return rule?.marketUrls?.[market] ?? url;
 }
 
 /** Curated rules win on conflict — they reflect live audit ground truth. */

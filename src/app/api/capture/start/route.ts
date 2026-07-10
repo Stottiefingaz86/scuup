@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { startCapture } from "@/lib/capture-runtime";
+import { auditUrlForMarket } from "@/lib/brand-markets";
 import { createContext } from "@/lib/browserbase";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { getBrandContextId, saveBrandContext } from "@/lib/credentials-db";
@@ -50,8 +51,10 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    // Brands with locally licensed domains (stake.mx etc.) must be visited
+    // there — the main site geo-blocks the market's proxy IP.
     const { sessionId, liveViewUrl } = await startCapture(
-      url,
+      auditUrlForMarket(url, market),
       viewport,
       contextId,
       MARKET_PROXY_COUNTRY[market] ?? null
