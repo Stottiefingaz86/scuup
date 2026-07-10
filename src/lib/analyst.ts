@@ -43,6 +43,12 @@ interface PlaybookStep {
   /** Required steps that fail end the run as blocked; optional ones are
    * best-effort (e.g. adding a selection to the betslip). */
   required: boolean;
+  /** Alternative phrasings tried in order when the first act fails — sites
+   * label the same thing differently (odds button vs price vs selection). */
+  alternatives?: string[];
+  /** URL paths tried directly when every phrasing fails (e.g. /sports).
+   * Only useful for section-navigation steps. */
+  fallbackPaths?: string[];
 }
 
 /** Navigation the agent performs on its own from the public homepage.
@@ -61,17 +67,44 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
       instruction:
         "open the casino games lobby from the main navigation (it may be labelled Casino, Games, or Slots)",
       required: true,
+      fallbackPaths: ["/casino", "/games", "/slots"],
     },
   ],
   sports_betslip: [
     {
       instruction:
-        "open the sports betting or sportsbook section from the main navigation",
+        "open the sports betting or sportsbook section from the main navigation (it may be labelled Sports, Sportsbook, or Betting)",
       required: true,
+      fallbackPaths: ["/sports", "/sportsbook", "/sport", "/sports-betting"],
     },
     {
       instruction:
-        "click the odds of any market on a visible match to add a selection to the betslip",
+        "click on a featured, live, or upcoming match to open its full market view with all betting markets",
+      required: false,
+      alternatives: [
+        "click on any visible game or event row in the sportsbook to see its betting markets",
+      ],
+    },
+    {
+      instruction:
+        "click one odds button (the numeric price next to a team or outcome) to add that selection to the betslip",
+      required: false,
+      alternatives: [
+        "add any selection to the betslip by clicking the price/odds of a visible outcome, e.g. a moneyline or match-winner price",
+        "click any clickable odds value on the page so a bet selection is created",
+      ],
+    },
+    {
+      instruction:
+        "open or expand the betslip so the added selection and its stake input are fully visible (it may be a Betslip button, a slip icon with a badge, or a side panel)",
+      required: false,
+      alternatives: [
+        "make the betslip panel visible showing the pending selection and stake box",
+      ],
+    },
+    {
+      instruction:
+        "type a small stake like 10 into the betslip stake input so the potential returns are calculated and visible (do NOT place or confirm the bet)",
       required: false,
     },
   ],
@@ -171,7 +204,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   casino:
     "This is the casino lobby. Judge discovery: search quality, category clarity, game tile information, load speed, personalisation.",
   sports_betslip:
-    "This is the sportsbook/betslip experience. Judge usability: market depth visibility, slip clarity, bet builder access, odds presentation, cash-out cues.",
+    "This is the sportsbook/betslip experience, captured while the agent walked a real betting flow: sportsbook → match view → adding a selection → the betslip with a stake entered. Judge usability across that flow: market depth visibility (how many markets per match and how discoverable), odds presentation, how clearly the slip shows the selection, stake input and potential returns, single/multi/bet-builder access, and cash-out cues. If the agent's trail shows a selection was added, score the betslip UX from the screenshots that show it; if no selection could be added, judge what that friction says about the product and note it.",
   loyalty_rewards:
     "This is the loyalty/VIP/rewards area. Judge retention craft by this vertical's standards: layered reward cadence (rakeback, weekly/monthly boosts, reloads, level-ups), aspiration mechanics (lifetime tiers, visible locked rewards), whether the next reward moment feels near, and whether earning rules are discoverable. A modal-based bonus center that keeps the player in their game session is best practice. Compare mentally against Stake's VIP club — the category benchmark.",
   support:
@@ -736,12 +769,45 @@ async function analyzeWithAgent(
     for (const step of playbook) {
       let ok = false;
       let message = "";
-      try {
-        const result = await stagehand.act(step.instruction);
-        ok = result.success;
-        message = result.actionDescription || result.message;
-      } catch (e) {
-        message = e instanceof Error ? e.message : String(e);
+      // Sites label the same control differently — try each phrasing
+      // before concluding the step failed.
+      for (const phrasing of [step.instruction, ...(step.alternatives ?? [])]) {
+        try {
+          const result = await stagehand.act(phrasing);
+          ok = result.success;
+          message = result.actionDescription || result.message;
+        } catch (e) {
+          message = e instanceof Error ? e.message : String(e);
+        }
+        if (ok) break;
+      }
+      // Section navigation can fall back to well-known URL paths when the
+      // agent can't find the nav entry (mega-menus, icon-only navs).
+      if (!ok && step.fallbackPaths?.length) {
+        for (const path of step.fallbackPaths) {
+          try {
+            await page.goto(new URL(path, url).toString(), {
+              waitUntil: "domcontentloaded",
+              timeoutMs: 20000,
+            });
+            await page.waitForTimeout(5000);
+            const bodyText = String(
+              await page.evaluate("document.body?.innerText ?? ''")
+            );
+            const dead =
+              bodyText.length < 300 ||
+              /404|not found|page (doesn'?t|does not) exist/i.test(
+                bodyText.slice(0, 2000)
+              );
+            if (!dead) {
+              ok = true;
+              message = `opened ${path} directly after the nav lookup failed`;
+              break;
+            }
+          } catch {
+            // Try the next known path.
+          }
+        }
       }
       if (ok) {
         trail.push(message || step.instruction);
