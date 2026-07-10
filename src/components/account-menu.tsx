@@ -49,17 +49,21 @@ export function AccountMenuContent({
 
   return (
     <DropdownMenuContent align={align} className="w-56">
-      <DropdownMenuLabel className="p-0 font-normal">
-        <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">
-            {initials ?? "?"}
-          </span>
-          <div className="grid min-w-0 flex-1 text-left leading-tight">
-            <span className="truncate font-medium">{name ?? "Account"}</span>
-            <span className="truncate text-xs text-muted-foreground">{email}</span>
+      {/* Base UI requires GroupLabel to live inside a Group — a bare label
+       * throws MenuGroupContext-missing and crashes the whole page. */}
+      <DropdownMenuGroup>
+        <DropdownMenuLabel className="p-0 font-normal">
+          <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-xs font-semibold text-primary">
+              {initials ?? "?"}
+            </span>
+            <div className="grid min-w-0 flex-1 text-left leading-tight">
+              <span className="truncate font-medium">{name ?? "Account"}</span>
+              <span className="truncate text-xs text-muted-foreground">{email}</span>
+            </div>
           </div>
-        </div>
-      </DropdownMenuLabel>
+        </DropdownMenuLabel>
+      </DropdownMenuGroup>
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         <DropdownMenuItem onClick={() => go("/projects/new")}>
