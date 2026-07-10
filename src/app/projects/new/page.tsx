@@ -465,6 +465,7 @@ export default function NewProjectPage() {
     "casino",
     "sports_betslip",
   ]);
+  const proDefaultsApplied = useRef(false);
 
   useEffect(() => {
     void fetch("/api/account/plan")
@@ -477,6 +478,10 @@ export default function NewProjectPage() {
         } | null) => {
           if (!data) return;
           if (data.plan) setPlan(data.plan);
+          if (data.plan === "pro" && !proDefaultsApplied.current) {
+            proDefaultsApplied.current = true;
+            setProducts(["Casino", "Sports", "Payments", "Rewards"]);
+          }
           if (
             typeof data.projectLimit === "number" &&
             (data.projectCount ?? 0) >= data.projectLimit
@@ -508,6 +513,17 @@ export default function NewProjectPage() {
       return next.length === prev.length ? prev : next;
     });
   }, [availableJourneys]);
+
+  /** Pro audits include signup + logged-in journeys by default. */
+  useEffect(() => {
+    if (plan !== "pro" || !proDefaultsApplied.current) return;
+    setJourneys((prev) => {
+      const merged = [
+        ...new Set([...prev, ...availableJourneys]),
+      ].filter((j) => availableJourneys.includes(j));
+      return merged.length > prev.length ? merged : prev;
+    });
+  }, [plan, availableJourneys]);
 
   const validCompetitors = useMemo(
     () => competitors.filter((c) => c.trim().length > 0),

@@ -307,11 +307,10 @@ function JourneysContent({ project }: { project: Project }) {
           {hasGaps ? (
             <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
               <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-              N/A — not observed yet. The agent reaches public areas (sign-up
-              form, casino, sportsbook, rewards, support) on its own. Deposit,
-              withdrawal and account journeys need a logged-in session — save
-              a test account on the Accounts page and the agent walks those
-              too, or record a live session.
+              N/A — not observed yet. The agent walks public areas logged
+              out, then on Sign Up it fills the form, clicks Create Account,
+              and runs deposit / withdraw / account journeys in the same
+              session when authentication succeeds.
             </p>
           ) : null}
         </CardContent>

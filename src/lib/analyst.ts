@@ -685,17 +685,20 @@ const LOGIN_PLAYBOOKS: Record<string, PlaybookStep[]> = {
 
 /** Analyse a journey. Landing pages are a straight visit; deeper public
  * journeys are navigated autonomously by the Stagehand agent. Login-gated
- * journeys run when the brand has a logged-in browser context. When
- * `signupVars` (persona + password) are provided, the signup journey goes
- * beyond opening the form: the agent fills and submits the registration
- * to create a real test account. */
+ * journeys run when the brand has a logged-in browser context. Signup can
+ * chain deposit/account journeys in the same session once authenticated. */
 export async function analyzeJourney(
   url: string,
   journey: string,
   contextId?: string | null,
   proxyCountry?: string | null,
-  signupVars?: Record<string, string> | null
-): Promise<JourneyAnalysis> {
+  opts?: {
+    signupVars?: Record<string, string> | null;
+    chainLoginJourneys?: string[];
+  }
+): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
+  const signupVars = opts?.signupVars ?? null;
+  const chainLoginJourneys = opts?.chainLoginJourneys;
   const playbook = AGENT_PLAYBOOKS[journey];
   if (playbook) {
     return analyzeWithAgent(
@@ -704,7 +707,8 @@ export async function analyzeJourney(
       playbook,
       contextId,
       proxyCountry,
-      journey === "signup" ? signupVars : null
+      journey === "signup" ? signupVars : null,
+      journey === "signup" ? chainLoginJourneys : undefined
     );
   }
   const loginPlaybook = LOGIN_PLAYBOOKS[journey];
@@ -714,7 +718,13 @@ export async function analyzeJourney(
         `${journey} sits behind a login — save credentials and log the agent in first (Accounts page), or record a live session.`
       );
     }
-    return analyzeWithAgent(url, journey, loginPlaybook, contextId, proxyCountry);
+    return analyzeWithAgent(
+      url,
+      journey,
+      loginPlaybook,
+      contextId,
+      proxyCountry
+    );
   }
   if (journey !== "landing") {
     throw new Error(
@@ -749,12 +759,16 @@ async function runRegistrationWalk(
   shots: string[],
   capture: () => Promise<string>
 ): Promise<boolean> {
-  // Cap the walk at 4 form steps — real registrations are 1-3 — so the
-  // serverless route's 300s budget also covers scoring.
+  const SUBMIT_PHRASINGS = [
+    "click the enabled Create Account button to submit the registration",
+    "click Register, Sign Up, or Create Account to complete registration",
+    "click Continue or Next if this is a multi-step form and not the final screen",
+  ];
+
   for (let step = 1; step <= 4; step++) {
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. Choose a currency if a currency picker is required. Tick age-verification or terms checkboxes if required and visible. Only fill empty fields — do not submit yet.`,
+        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
         { variables: vars }
       );
       trail.push(`filled registration step ${step} with the test persona`);
@@ -766,39 +780,96 @@ async function runRegistrationWalk(
     await page.waitForTimeout(1500);
     shots.push(await capture());
 
-    let advanced = false;
     try {
-      const advance = await stagehand.act(
-        "If this is not the final submit screen, click Continue, Next, or Proceed. If this is the final step, click Create Account, Register, Sign Up, Play Now, or Submit to complete registration."
+      await stagehand.act(
+        "Tick or check every required checkbox on this registration form: terms of service, privacy policy, age confirmation (18+), marketing opt-in if mandatory — anything needed to enable the submit button."
       );
-      advanced = advance.success;
     } catch {
-      // Verification wall or captcha — the logged-in check below decides.
+      // Some forms have no checkboxes on this step.
     }
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(800);
+
+    let submitted = false;
+    for (const phrasing of SUBMIT_PHRASINGS) {
+      try {
+        const result = await stagehand.act(phrasing);
+        if (result.success) {
+          submitted = true;
+          trail.push(`registration step ${step}: ${phrasing}`);
+          break;
+        }
+      } catch {
+        // Try the next phrasing.
+      }
+    }
+    await page.waitForTimeout(6000);
     shots.push(await capture());
 
     if (await agentIsLoggedIn(stagehand)) {
       trail.push("registration submitted — account created and logged in");
       return true;
     }
-    if (!advanced) {
+    if (!submitted && step >= 2) {
       trail.push(
-        `registration stalled at step ${step} — likely captcha, email/SMS verification, or a validation error (visible in the screenshots)`
+        `registration stalled at step ${step} — submit button may be disabled or blocked by captcha`
       );
-      return false;
+      break;
     }
   }
-  // One last settle: some sites auto-login a few seconds after submit.
-  await page.waitForTimeout(8000);
+
+  if (await tryLoginAfterSignup(stagehand, page, vars, trail, shots, capture)) {
+    return true;
+  }
+
+  await page.waitForTimeout(5000);
   if (await agentIsLoggedIn(stagehand)) {
-    trail.push("registration submitted — account created and logged in");
+    trail.push("authenticated after registration settled");
     return true;
   }
   trail.push(
-    "registration submitted but no authenticated session detected — the site may require email or SMS verification first"
+    "registration submitted but no authenticated session — email/SMS verification or captcha may be required"
   );
   return false;
+}
+
+/** Account may exist after submit but the site routes to verify-first — log
+ * in with the same test credentials before giving up. */
+async function tryLoginAfterSignup(
+  stagehand: Stagehand,
+  page: { waitForTimeout: (ms: number) => Promise<void> },
+  vars: Record<string, string>,
+  trail: string[],
+  shots: string[],
+  capture: () => Promise<string>
+): Promise<boolean> {
+  trail.push("trying login with test credentials after registration");
+  try {
+    const open = await stagehand.act(
+      "click Log In or Sign In (not Register or Sign Up) to open the login form"
+    );
+    if (!open.success) return false;
+    await page.waitForTimeout(2500);
+    shots.push(await capture());
+
+    await stagehand.act(
+      "type %email% into the email or username field of the login form",
+      { variables: vars }
+    );
+    await stagehand.act(
+      "type %password% into the password field of the login form",
+      { variables: vars }
+    );
+    const submit = await stagehand.act(
+      "click the Log In or Sign In button to submit the login form"
+    );
+    if (!submit.success) return false;
+    trail.push("login submitted with test credentials");
+    await page.waitForTimeout(8000);
+    shots.push(await capture());
+    return agentIsLoggedIn(stagehand);
+  } catch {
+    return false;
+  }
 }
 
 /** The agent path: navigate from the homepage to the target area with
@@ -809,8 +880,9 @@ async function analyzeWithAgent(
   playbook: PlaybookStep[],
   contextId?: string | null,
   requestedProxyCountry?: string | null,
-  signupVars?: Record<string, string> | null
-): Promise<JourneyAnalysis> {
+  signupVars?: Record<string, string> | null,
+  chainLoginJourneys?: string[]
+): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
   const stagehand = await withSessionRetry(async () => {
@@ -984,7 +1056,7 @@ async function analyzeWithAgent(
       scoreScreenshots(journey, pageTitle, finalUrl, shots, trail),
       persistShots(shots),
     ]);
-    return {
+    const analysis: JourneyAnalysis = {
       ...result,
       area: journey,
       analysedAt: new Date().toISOString(),
@@ -992,9 +1064,168 @@ async function analyzeWithAgent(
       finalUrl,
       ...(authenticated !== undefined ? { authenticated } : {}),
     };
+
+    // Signup created a session — walk deposit/account journeys in the same
+    // browser before closing so scores show as logged-in immediately.
+    const chainedAnalyses: JourneyAnalysis[] = [];
+    if (
+      journey === "signup" &&
+      authenticated &&
+      chainLoginJourneys &&
+      chainLoginJourneys.length > 0
+    ) {
+      for (const loginJourney of chainLoginJourneys) {
+        const loginPlaybook = LOGIN_PLAYBOOKS[loginJourney];
+        if (!loginPlaybook) continue;
+        try {
+          await page
+            .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
+            .catch(() => {});
+          await page.waitForTimeout(5000);
+          if (!(await agentIsLoggedIn(stagehand))) {
+            trail.push(
+              `skipped ${loginJourney} — session lost before logged-in pass`
+            );
+            break;
+          }
+          const chained = await walkPlaybookAndScore(
+            stagehand,
+            page,
+            url,
+            loginJourney,
+            loginPlaybook,
+            [`logged-in pass after signup`]
+          );
+          chainedAnalyses.push(chained);
+        } catch (e) {
+          console.error(
+            `[analyst] chained ${loginJourney} after signup failed:`,
+            e instanceof Error ? e.message : e
+          );
+        }
+      }
+    }
+
+    return chainedAnalyses.length > 0
+      ? { ...analysis, chainedAnalyses }
+      : analysis;
   } finally {
     await stagehand.close().catch(() => {});
   }
+}
+
+/** Run one playbook to completion and score it — used for the primary walk
+ * and for logged-in journeys chained after signup. */
+async function walkPlaybookAndScore(
+  stagehand: Stagehand,
+  page: Awaited<ReturnType<Stagehand["context"]["newPage"]>>,
+  url: string,
+  journey: string,
+  playbook: PlaybookStep[],
+  trailPrefix: string[] = []
+): Promise<JourneyAnalysis> {
+  const capture = async () => {
+    const { data } = await page.sendCDP<{ data: string }>(
+      "Page.captureScreenshot",
+      { format: "jpeg", quality: 60 }
+    );
+    return data;
+  };
+
+  const trail = [...trailPrefix];
+  const shots: string[] = [];
+
+  for (const step of playbook) {
+    let ok = false;
+    let message = "";
+    for (const phrasing of [step.instruction, ...(step.alternatives ?? [])]) {
+      try {
+        const result = await stagehand.act(phrasing);
+        ok = result.success;
+        message = result.actionDescription || result.message;
+      } catch (e) {
+        message = e instanceof Error ? e.message : String(e);
+      }
+      if (ok) break;
+    }
+    if (!ok && step.fallbackPaths?.length) {
+      for (const path of step.fallbackPaths) {
+        try {
+          await page.goto(new URL(path, url).toString(), {
+            waitUntil: "domcontentloaded",
+            timeoutMs: 20000,
+          });
+          await page.waitForTimeout(5000);
+          const bodyText = String(
+            await page.evaluate("document.body?.innerText ?? ''")
+          );
+          const dead =
+            bodyText.length < 300 ||
+            /404|not found|page (doesn'?t|does not) exist/i.test(
+              bodyText.slice(0, 2000)
+            );
+          if (!dead) {
+            ok = true;
+            message = `opened ${path} directly after the nav lookup failed`;
+            break;
+          }
+        } catch {
+          // Try the next known path.
+        }
+      }
+    }
+    if (ok) {
+      trail.push(message || step.instruction);
+      await page.waitForTimeout(4000);
+      shots.push(await capture());
+    } else if (step.required) {
+      const screenshots = await persistShots([await capture()]);
+      return {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason: `The agent couldn't ${step.instruction.split(" — ")[0]} on this site${message ? ` (${message})` : ""}. Launch the site to capture this area manually.`,
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots,
+        finalUrl: page.url(),
+      };
+    }
+  }
+
+  if (DEEP_SCROLL_JOURNEYS.has(journey)) {
+    const scrollShots = await captureScrollSequence({
+      capture,
+      scrollTo: async (y) => {
+        await page.evaluate(`window.scrollTo(0, ${y})`);
+      },
+      getHeight: async () =>
+        Number(await page.evaluate("document.documentElement.scrollHeight")),
+    });
+    if (shots.length) scrollShots.shift();
+    shots.push(...scrollShots);
+  } else {
+    await page.scroll(720, 450, 0, 900);
+    await page.waitForTimeout(1500);
+    shots.push(await capture());
+  }
+
+  const pageTitle = await page.title().catch(() => "");
+  const finalUrl = page.url();
+  const [result, screenshots] = await Promise.all([
+    scoreScreenshots(journey, pageTitle, finalUrl, shots, trail),
+    persistShots(shots),
+  ]);
+  return {
+    ...result,
+    area: journey,
+    analysedAt: new Date().toISOString(),
+    screenshots,
+    finalUrl,
+  };
 }
 
 /** The landing path: straight visit, no navigation needed. */

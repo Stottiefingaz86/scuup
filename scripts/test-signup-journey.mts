@@ -25,7 +25,9 @@ console.log("persona:", {
 });
 
 const t0 = Date.now();
-const analysis = await analyzeJourney(url, "signup", null, null, vars);
+const analysis = await analyzeJourney(url, "signup", null, null, {
+  signupVars: vars,
+});
 console.log(`\ndone in ${Math.round((Date.now() - t0) / 1000)}s`);
 console.log("blocked:", analysis.blocked, analysis.blockReason ?? "");
 console.log("authenticated:", analysis.authenticated);

@@ -391,9 +391,9 @@ export default function AnalyzingPage() {
                 {gatedAreas
                   .map((a) => ANALYSIS_AREA_LABELS[a] ?? a)
                   .join(", ")}{" "}
-                need a logged-in account. Set up test accounts on the Accounts
-                page after this pass — agents then walk those journeys
-                automatically too.
+                need a logged-in account. On Sign Up the agent registers a
+                test account, then automatically walks deposit, withdraw and
+                account journeys in the same session when login succeeds.
               </span>
             </p>
           ) : null}

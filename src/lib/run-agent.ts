@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { getProject, saveAnalysis } from "./project-store";
+import { LOGIN_AGENT_JOURNEYS } from "./constants";
 import type { Brand, JourneyAnalysis } from "./types";
 
 /** In-flight agent runs, shared across every component so the same
@@ -71,6 +72,14 @@ export function runAgent(
   if (existing) return existing;
 
   const promise = (async () => {
+    const project = getProject(projectId);
+    const chainLoginJourneys =
+      area === "signup" && project
+        ? project.journeys.filter((j) =>
+            (LOGIN_AGENT_JOURNEYS as string[]).includes(j)
+          )
+        : [];
+
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -78,10 +87,10 @@ export function runAgent(
         url: brand.url,
         journey: area,
         brandId: brand.id,
-        market: getProject(projectId)?.market ?? "",
-        // Signup runs seed a per-brand test persona from these.
+        market: project?.market ?? "",
         brandName: brand.name,
         ownBrand: brand.role === "own_brand",
+        chainLoginJourneys,
       }),
     });
     const data = await res.json();
@@ -93,8 +102,13 @@ export function runAgent(
       }
       throw new Error(data.error ?? `analysis failed (${res.status})`);
     }
-    const analysis = data as JourneyAnalysis;
+    const { chainedAnalyses, ...analysis } = data as JourneyAnalysis & {
+      chainedAnalyses?: JourneyAnalysis[];
+    };
     saveAnalysis(projectId, brand.id, analysis);
+    for (const chained of chainedAnalyses ?? []) {
+      saveAnalysis(projectId, brand.id, chained);
+    }
     return analysis;
   })();
 

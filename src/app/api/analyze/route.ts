@@ -21,7 +21,7 @@ import { personaVariables } from "@/lib/test-persona";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   let userId = "";
@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
   let market = "";
   let brandName = "";
   let ownBrand = false;
+  let chainLoginJourneys: string[] = [];
   try {
     const body = await request.json();
     url = typeof body.url === "string" ? body.url : "";
@@ -56,6 +57,11 @@ export async function POST(request: NextRequest) {
     if (typeof body.market === "string") market = body.market;
     if (typeof body.brandName === "string") brandName = body.brandName;
     if (typeof body.ownBrand === "boolean") ownBrand = body.ownBrand;
+    if (Array.isArray(body.chainLoginJourneys)) {
+      chainLoginJourneys = body.chainLoginJourneys.filter(
+        (j: unknown): j is string => typeof j === "string"
+      );
+    }
   } catch {
     return NextResponse.json({ error: "invalid body" }, { status: 400 });
   }
@@ -120,17 +126,16 @@ export async function POST(request: NextRequest) {
   const proxyCountry = MARKET_PROXY_COUNTRY[market] ?? null;
 
   try {
-    const analysis = await analyzeJourney(
-      url,
-      journey,
-      contextId,
-      proxyCountry,
-      signupVars
-    );
+    const result = await analyzeJourney(url, journey, contextId, proxyCountry, {
+      signupVars: journey === "signup" ? signupVars : null,
+      chainLoginJourneys:
+        journey === "signup" ? chainLoginJourneys : undefined,
+    });
+    const { chainedAnalyses, ...analysis } = result;
     if (journey === "signup" && brandId && analysis.authenticated) {
       await markLoggedIn(brandId).catch(() => {});
     }
-    return NextResponse.json(analysis);
+    return NextResponse.json({ ...analysis, chainedAnalyses });
   } catch (e) {
     const message = e instanceof Error ? e.message : "analysis failed";
     console.error(`[analyze] ${journey} @ ${url} failed:`, message);
