@@ -2,7 +2,6 @@
 
 import { useSyncExternalStore } from "react";
 import { getProject, saveAnalysis } from "./project-store";
-import { LOGIN_AGENT_JOURNEYS } from "./constants";
 import type { Brand, JourneyAnalysis } from "./types";
 
 /** In-flight agent runs, shared across every component so the same
@@ -73,13 +72,10 @@ export function runAgent(
 
   const promise = (async () => {
     const project = getProject(projectId);
-    const chainLoginJourneys =
-      area === "signup" && project
-        ? project.journeys.filter((j) =>
-            (LOGIN_AGENT_JOURNEYS as string[]).includes(j)
-          )
-        : [];
 
+    // Gated journeys run as their own requests (not chained inside signup)
+    // so each run fits the serverless time limit — the persisted browser
+    // context carries the logged-in session between them.
     const res = await fetch("/api/analyze", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -90,7 +86,6 @@ export function runAgent(
         market: project?.market ?? "",
         brandName: brand.name,
         ownBrand: brand.role === "own_brand",
-        chainLoginJourneys,
       }),
     });
     const data = await res.json();

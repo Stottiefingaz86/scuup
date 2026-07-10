@@ -21,7 +21,10 @@ import { personaVariables } from "@/lib/test-persona";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 800;
+// Hobby-plan ceiling. Signup and each gated journey run as separate
+// requests — the persisted browser context (plus credential re-login)
+// carries the session between them, so no single run needs longer.
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   let userId = "";
