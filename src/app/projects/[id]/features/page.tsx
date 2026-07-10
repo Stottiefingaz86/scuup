@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowRight, Grid3x3, LoaderCircle } from "lucide-react";
+import {
+  ArrowRight,
+  Camera,
+  ChevronDown,
+  Globe,
+  Grid3x3,
+  KeyRound,
+  LoaderCircle,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,10 +39,18 @@ import {
   backfillFeatures,
   jobsNeedingFeatures,
 } from "@/lib/backfill-features";
+import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import { getCoverage } from "@/lib/coverage";
 import { buildFeatureMatrix, analysesNeedingFeatureExtract } from "@/lib/features";
 import { cn } from "@/lib/utils";
-import type { FeatureStatus, Priority, Project } from "@/lib/types";
+import type {
+  Brand,
+  FeatureCellEvidence,
+  FeatureMatrixRow,
+  FeatureStatus,
+  Priority,
+  Project,
+} from "@/lib/types";
 
 const STATUS_LABEL: Record<FeatureStatus, string> = {
   strong: "Strong",
@@ -68,6 +84,105 @@ function PriorityBadge({ priority }: { priority: Priority }) {
   return <Badge variant="outline">Low</Badge>;
 }
 
+/** Where the proof came from: public page or behind a login. */
+function ContextBadge({ loggedIn }: { loggedIn: boolean }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        loggedIn
+          ? "border-primary/30 text-primary"
+          : "border-border text-muted-foreground"
+      )}
+    >
+      {loggedIn ? <KeyRound className="size-2.5" /> : <Globe className="size-2.5" />}
+      {loggedIn ? "Logged in" : "Logged out"}
+    </span>
+  );
+}
+
+/** The proof strip under an expanded feature row: one card per brand with
+ * the screenshot the vision model based the status on. */
+function EvidenceStrip({
+  row,
+  brands,
+}: {
+  row: FeatureMatrixRow;
+  brands: Brand[];
+}) {
+  const withEvidence = brands
+    .map((b) => ({ brand: b, ev: row.evidence[b.id] }))
+    .filter((x): x is { brand: Brand; ev: FeatureCellEvidence } => x.ev != null);
+
+  if (withEvidence.length === 0) {
+    return (
+      <p className="py-2 text-sm text-muted-foreground">
+        No stored evidence for this feature — re-run the journeys to capture
+        fresh screenshots.
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-3 py-1 sm:grid-cols-2 xl:grid-cols-4">
+      {withEvidence.map(({ brand, ev }) => (
+        <div
+          key={brand.id}
+          className="flex flex-col gap-2 rounded-lg border bg-background/40 p-3"
+        >
+          <div className="flex items-center gap-2">
+            <BrandMark brand={brand} className="size-4" />
+            <span className="truncate text-xs font-medium">
+              {brand.name}
+              {brand.role === "own_brand" ? " (you)" : ""}
+            </span>
+            <span
+              className={cn(
+                "ms-auto text-xs font-medium",
+                STATUS_CLASS[ev.status]
+              )}
+            >
+              {STATUS_LABEL[ev.status]}
+            </span>
+          </div>
+          {ev.screenshot ? (
+            <a
+              href={ev.screenshot}
+              target="_blank"
+              rel="noreferrer"
+              className="group relative block overflow-hidden rounded-md border"
+              title="Open full screenshot"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
+              <img
+                src={ev.screenshot}
+                alt={`${brand.name} — ${row.feature} evidence`}
+                loading="lazy"
+                className="h-28 w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
+              />
+            </a>
+          ) : (
+            <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground/60">
+              No screenshot saved for this detection
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <ContextBadge loggedIn={ev.loggedIn} />
+            <span className="text-[11px] text-muted-foreground">
+              {ANALYSIS_AREA_LABELS[ev.area] ?? ev.area}
+            </span>
+          </div>
+          {ev.note ? (
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {ev.note}
+            </p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FeaturesContent({ project }: { project: Project }) {
   const coverage = getCoverage(project);
   const matrix = useMemo(() => buildFeatureMatrix(project), [project]);
@@ -77,6 +192,7 @@ function FeaturesContent({ project }: { project: Project }) {
     [matrix]
   );
   const [category, setCategory] = useState<string>("all");
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillLabel, setBackfillLabel] = useState("");
   const backfillKey = useRef<string | null>(null);
@@ -123,8 +239,10 @@ function FeaturesContent({ project }: { project: Project }) {
             Feature matrix
           </CardTitle>
           <CardDescription>
-            Screenshot-detected features only — each cell is backed by evidence
-            from a captured journey, never keyword guessing.{" "}
+            Screenshot-detected features only — click a row to see the proof.
+            Most cells come from public (logged-out) visits; a &quot;—&quot;
+            means not seen in captured screenshots, so it may still exist
+            behind login.{" "}
             {backfilling
               ? `Extracting from saved screenshots… ${backfillLabel}`
               : matrix.length > 0
@@ -201,44 +319,94 @@ function FeaturesContent({ project }: { project: Project }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((row) => (
-                  <TableRow key={row.feature}>
-                    <TableCell className="font-medium">{row.feature}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.category}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        "font-medium",
-                        row.values[ownBrand.id]
-                          ? STATUS_CLASS[row.values[ownBrand.id]!]
-                          : "text-muted-foreground/50"
-                      )}
-                    >
-                      {row.values[ownBrand.id]
-                        ? STATUS_LABEL[row.values[ownBrand.id]!]
-                        : "—"}
-                    </TableCell>
-                    {competitors.map((c) => {
-                      const value = row.values[c.id];
-                      return (
-                        <TableCell
-                          key={c.id}
-                          className={
-                            value ? STATUS_CLASS[value] : "text-muted-foreground/50"
-                          }
-                        >
-                          {value ? STATUS_LABEL[value] : "—"}
+                {rows.map((row) => {
+                  const isOpen = expanded === row.feature;
+                  const hasShots = Object.values(row.evidence).some(
+                    (ev) => ev?.screenshot
+                  );
+                  const loggedInOnly = Object.values(row.evidence).every(
+                    (ev) => !ev || ev.loggedIn
+                  );
+                  const cellFor = (brandId: string) => {
+                    const value = row.values[brandId];
+                    const ev = row.evidence[brandId];
+                    if (!value)
+                      return <span className="text-muted-foreground/50">—</span>;
+                    return (
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1.5 font-medium",
+                          STATUS_CLASS[value]
+                        )}
+                      >
+                        {STATUS_LABEL[value]}
+                        {ev?.screenshot ? (
+                          <Camera className="size-3 opacity-50" />
+                        ) : null}
+                      </span>
+                    );
+                  };
+                  return (
+                    <React.Fragment key={row.feature}>
+                      <TableRow
+                        onClick={() =>
+                          setExpanded(isOpen ? null : row.feature)
+                        }
+                        className={cn("cursor-pointer", isOpen && "bg-accent/40")}
+                      >
+                        <TableCell className="font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            <ChevronDown
+                              className={cn(
+                                "size-3.5 text-muted-foreground/50 transition-transform",
+                                isOpen && "rotate-180"
+                              )}
+                            />
+                            {row.feature}
+                            {loggedInOnly && Object.values(row.evidence).some(Boolean) ? (
+                              <KeyRound
+                                className="size-3 text-primary/70"
+                                aria-label="Seen in logged-in sessions only"
+                              />
+                            ) : null}
+                          </span>
                         </TableCell>
-                      );
-                    })}
-                    <TableCell>
-                      <PriorityBadge priority={row.priority} />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                        <TableCell className="text-muted-foreground">
+                          {row.category}
+                        </TableCell>
+                        <TableCell>{cellFor(ownBrand.id)}</TableCell>
+                        {competitors.map((c) => (
+                          <TableCell key={c.id}>{cellFor(c.id)}</TableCell>
+                        ))}
+                        <TableCell>
+                          <PriorityBadge priority={row.priority} />
+                        </TableCell>
+                      </TableRow>
+                      {isOpen ? (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={4 + competitors.length}>
+                            <EvidenceStrip row={row} brands={project.brands} />
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })}
               </TableBody>
             </Table>
+          ) : null}
+          {!backfilling && matrix.length > 0 ? (
+            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+              <Camera className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                <Camera className="me-0.5 inline size-3 opacity-50" /> = a
+                screenshot proves this cell — click the row to see it.
+                &quot;—&quot; = not seen on the pages we captured (usually
+                logged out); it may exist behind login. Run deposit, withdraw
+                and account journeys with a saved test account to extend
+                coverage.
+              </span>
+            </p>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

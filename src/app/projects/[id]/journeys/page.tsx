@@ -7,6 +7,8 @@ import {
   ChevronRight,
   CircleAlert,
   ExternalLink,
+  Globe,
+  KeyRound,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -43,10 +45,35 @@ import {
   agentCanReach,
   agentCanReachLoggedIn,
   ANALYSIS_AREA_LABELS,
+  journeyRequiresLogin,
 } from "@/lib/constants";
 import { projectAreas } from "@/lib/coverage";
 import { runAgentBatch, useRunningAgents } from "@/lib/run-agent";
 import { areaScore, type Brand, type Project } from "@/lib/types";
+
+/** Public journeys are walked logged out; the rest need a session. */
+function AccessBadge({ area, muted }: { area: string; muted?: boolean }) {
+  const loggedIn = journeyRequiresLogin(area);
+  return (
+    <span
+      title={
+        loggedIn
+          ? "Scored from a logged-in session — needs a saved test account"
+          : "Scored from the public site, logged out"
+      }
+      className={cn(
+        "inline-flex cursor-help items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        loggedIn
+          ? "border-primary/30 text-primary"
+          : "border-border text-muted-foreground",
+        muted && "opacity-70"
+      )}
+    >
+      {loggedIn ? <KeyRound className="size-2.5" /> : <Globe className="size-2.5" />}
+      {loggedIn ? "Logged in" : "Logged out"}
+    </span>
+  );
+}
 
 function JourneysContent({ project }: { project: Project }) {
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
@@ -222,7 +249,10 @@ function JourneysContent({ project }: { project: Project }) {
                       className="font-medium"
                       onMouseEnter={() => setHoverCol(null)}
                     >
-                      {ANALYSIS_AREA_LABELS[area] ?? area}
+                      <span className="inline-flex items-center gap-2">
+                        {ANALYSIS_AREA_LABELS[area] ?? area}
+                        <AccessBadge area={area} />
+                      </span>
                     </TableCell>
                     <TableCell
                       className="text-center"
@@ -295,6 +325,7 @@ function JourneysContent({ project }: { project: Project }) {
               <CardTitle className="font-heading text-xl">
                 {ANALYSIS_AREA_LABELS[selected] ?? selected} deep dive
               </CardTitle>
+              <AccessBadge area={selected} />
               <div className="ms-auto flex items-center gap-1">
                 <span className="me-1 font-mono text-xs tabular-nums text-muted-foreground">
                   {areas.indexOf(selected) + 1}/{areas.length}

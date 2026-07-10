@@ -1,6 +1,8 @@
+import { journeyRequiresLogin } from "./constants";
 import type {
   Brand,
   DetectedFeature,
+  FeatureCellEvidence,
   FeatureMatrixRow,
   FeatureStatus,
   JourneyAnalysis,
@@ -23,20 +25,37 @@ function betterStatus(a: FeatureStatus, b: FeatureStatus): FeatureStatus {
   return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
 }
 
+/** A detected feature paired with the proof for the matrix cell. */
+interface FeatureWithEvidence extends DetectedFeature {
+  cellEvidence: FeatureCellEvidence;
+}
+
 /** Only structured features from the vision model count — never keyword
  * guessing. Older analyses without a features array simply don't appear
  * until the journey is re-run. */
-function extractedFeatures(analysis: JourneyAnalysis): DetectedFeature[] {
+function extractedFeatures(analysis: JourneyAnalysis): FeatureWithEvidence[] {
   if (!analysis.features?.length) return [];
-  return analysis.features.map((f) => ({
-    ...f,
-    source: "extracted" as const,
-    area: f.area ?? analysis.area,
-  }));
+  return analysis.features.map((f) => {
+    const area = f.area ?? analysis.area;
+    const screenshot =
+      f.shot != null ? (analysis.screenshots?.[f.shot] ?? null) : null;
+    return {
+      ...f,
+      source: "extracted" as const,
+      area,
+      cellEvidence: {
+        status: f.status,
+        note: f.note,
+        area,
+        loggedIn: journeyRequiresLogin(area),
+        screenshot,
+      },
+    };
+  });
 }
 
-function featuresForBrand(brand: Brand): DetectedFeature[] {
-  const all: DetectedFeature[] = [];
+function featuresForBrand(brand: Brand): FeatureWithEvidence[] {
+  const all: FeatureWithEvidence[] = [];
   for (const analysis of Object.values(brand.analyses)) {
     if (analysis.blocked) continue;
     all.push(...extractedFeatures(analysis));
@@ -63,19 +82,32 @@ const PRIORITY_ORDER: Priority[] = ["critical", "high", "medium", "low"];
 export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
   const featureMap = new Map<
     string,
-    { category: string; values: Record<string, FeatureStatus | null> }
+    {
+      category: string;
+      values: Record<string, FeatureStatus | null>;
+      evidence: Record<string, FeatureCellEvidence | null>;
+    }
   >();
 
   for (const brand of project.brands) {
     for (const f of featuresForBrand(brand)) {
       if (!featureMap.has(f.name)) {
-        featureMap.set(f.name, { category: f.category, values: {} });
+        featureMap.set(f.name, { category: f.category, values: {}, evidence: {} });
       }
       const row = featureMap.get(f.name)!;
       const prev = row.values[brand.id];
-      row.values[brand.id] = prev
-        ? betterStatus(prev, f.status)
-        : f.status;
+      const next = prev ? betterStatus(prev, f.status) : f.status;
+      row.values[brand.id] = next;
+      // Keep the proof for the status shown — prefer evidence with a
+      // screenshot when statuses tie.
+      const prevEv = row.evidence[brand.id];
+      const candidate = f.cellEvidence;
+      const candidateWins =
+        !prevEv ||
+        (candidate.status === next &&
+          (prevEv.status !== next ||
+            (!prevEv.screenshot && candidate.screenshot != null)));
+      if (candidateWins) row.evidence[brand.id] = candidate;
     }
   }
 
@@ -83,7 +115,7 @@ export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
   const competitors = project.brands.filter((b) => b.role !== "own_brand");
 
   const rows: FeatureMatrixRow[] = [];
-  for (const [feature, { category, values }] of featureMap) {
+  for (const [feature, { category, values, evidence }] of featureMap) {
     const compStatuses = competitors
       .map((c) => values[c.id])
       .filter((v): v is FeatureStatus => v != null);
@@ -95,6 +127,7 @@ export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
       category,
       priority: derivePriority(values[own.id] ?? null, compBest),
       values,
+      evidence,
     });
   }
 

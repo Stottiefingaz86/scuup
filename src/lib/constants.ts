@@ -57,6 +57,12 @@ export function agentCanReachLoggedIn(area: string): boolean {
   );
 }
 
+/** True when an area sits behind a login — its evidence comes from a
+ * logged-in session, not the public site. */
+export function journeyRequiresLogin(area: string): boolean {
+  return (LOGIN_AGENT_JOURNEYS as string[]).includes(area);
+}
+
 export const ANALYSIS_AREA_LABELS: Record<string, string> = {
   [LANDING]: "First Impression",
   ...JOURNEY_LABELS,

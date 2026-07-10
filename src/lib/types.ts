@@ -64,11 +64,25 @@ export interface DetectedFeature {
   source?: "extracted" | "inferred";
 }
 
+/** Proof behind one feature-matrix cell: where it was seen and the shot. */
+export interface FeatureCellEvidence {
+  status: FeatureStatus;
+  note?: string;
+  /** Journey area the feature was detected in. */
+  area: string;
+  /** True when the evidence came from a logged-in session. */
+  loggedIn: boolean;
+  /** URL of the screenshot that proves it, when available. */
+  screenshot: string | null;
+}
+
 export interface FeatureMatrixRow {
   feature: string;
   category: string;
   priority: Priority;
   values: Record<string, FeatureStatus | null>;
+  /** Per-brand evidence backing the values. */
+  evidence: Record<string, FeatureCellEvidence | null>;
 }
 
 /** One real AI analysis of one journey/area for one brand. Everything the
