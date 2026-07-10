@@ -21,16 +21,15 @@ export interface Viewport {
 }
 
 /**
- * Which location a session's browser should appear from. Regional routing
- * is enabled by setting BROWSERBASE_PROXY_COUNTRY (needs a Browserbase plan
- * with residential proxies); a market-specific geo code then overrides that
- * default. Returns undefined when proxies aren't enabled — sessions run
- * from the datacenter region as before.
+ * Which location a session's browser should appear from. A market-specific
+ * geo code always routes through a residential proxy in that location;
+ * BROWSERBASE_PROXY_COUNTRY is only a fallback default for sessions with no
+ * market. Returns undefined when neither is set — those sessions egress
+ * from the datacenter region (currently eu-central-1, i.e. Germany), which
+ * geo-gated iGaming sites will treat as a German visitor.
  */
 export function proxyCountryFor(requested?: string | null): string | undefined {
-  const fallback = process.env.BROWSERBASE_PROXY_COUNTRY;
-  if (!fallback) return undefined;
-  return requested ?? fallback;
+  return requested ?? process.env.BROWSERBASE_PROXY_COUNTRY ?? undefined;
 }
 
 /** "GB" → { country: "GB" }; "US-NJ" → { country: "US", state: "NJ" }.
@@ -124,10 +123,9 @@ async function createSessionOnce(
   id: string;
   connectUrl: string;
 }> {
-  // Datacenter IPs are US-based and iGaming sites geo-block US traffic
-  // (licensing). Residential proxies fix that but need a paid Browserbase
-  // plan, so only enable when configured (e.g. BROWSERBASE_PROXY_COUNTRY=GB).
-  // The project's market can request a specific location per session.
+  // The project's market requests a specific residential-proxy location so
+  // geo-gated sites see a local visitor; without one, sessions egress from
+  // the datacenter region.
   const res = await fetch(`${API}/sessions`, {
     method: "POST",
     headers: headers(),

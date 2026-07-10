@@ -207,8 +207,9 @@ export const MARKET_OPTIONS: MarketOption[] = [
   { label: "South Africa", flag: "🇿🇦", geo: "ZA", group: "Africa" },
   { label: "Nigeria", flag: "🇳🇬", geo: "NG", group: "Africa" },
   { label: "Kenya", flag: "🇰🇪", geo: "KE", group: "Africa" },
-  // Other
-  { label: "Global (no routing)", flag: "🌐", group: "Other" },
+  // Other — global audits appear from the US, the most common baseline for
+  // crypto-first operators, instead of the datacenter's own region.
+  { label: "Global (US routing)", flag: "🌐", geo: "US", group: "Other" },
 ];
 
 export const MARKETS = MARKET_OPTIONS.map((m) => m.label);
@@ -237,6 +238,10 @@ export const MARKET_PROXY_COUNTRY: Record<string, string> = {
     MARKET_OPTIONS.filter((m) => m.geo).map((m) => [m.label, m.geo!])
   ),
   Nordics: "SE",
+  // Aliases stored on older projects.
+  "Global (no routing)": "US",
+  "Global / Crypto": "US",
+  Global: "US",
 };
 
 export const PRODUCTS = [
