@@ -204,11 +204,18 @@ function MarketPicker({
   const blockedIn = (label: string): PickerBrand[] =>
     brands.filter((b) => availability[b.url]?.blocked.includes(label));
 
+  /** Every entered brand confidently serves this market. */
+  const servedByAll = (label: string): boolean =>
+    brands.length > 0 &&
+    brands.every((b) => availability[b.url]?.available.includes(label));
+
   const selectedBlocked = market ? blockedIn(market) : [];
+  const selectedServed = market ? servedByAll(market) : false;
 
   const MarketButton = ({ m }: { m: MarketOption }) => {
     const selected = market === m.label;
     const blocked = blockedIn(m.label);
+    const allServe = servedByAll(m.label);
     return (
       <button
         type="button"
@@ -216,13 +223,17 @@ function MarketPicker({
         title={
           blocked.length > 0
             ? `${blocked.map((b) => b.name).join(" and ")} geo-block${blocked.length === 1 ? "s" : ""} players in ${m.label}`
-            : undefined
+            : allServe
+              ? `All your brands serve ${m.label}`
+              : undefined
         }
         className={cn(
           "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-all",
           selected
             ? "border-primary/60 bg-primary/10 text-foreground"
-            : "border-border bg-card/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+            : allServe && brands.length > 0
+              ? "border-brand/35 bg-brand/[0.04] text-foreground hover:border-brand/50"
+              : "border-border bg-card/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
         )}
       >
         <span className="text-base leading-none">{m.flag}</span>
@@ -239,6 +250,10 @@ function MarketPicker({
                   className="size-3.5 rounded-full opacity-90 outline outline-1 outline-score-weak grayscale-[35%]"
                 />
               ))}
+            </span>
+          ) : allServe && brands.length > 0 ? (
+            <span className="rounded border border-brand/35 px-1 py-px text-[10px] uppercase tracking-wide text-brand">
+              all brands
             </span>
           ) : null}
           {m.cryptoFriendly ? (
@@ -295,7 +310,7 @@ function MarketPicker({
         })}
         {matches.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
-            No market matches &quot;{query}&quot; — pick Global (no routing) or
+            No market matches &quot;{query}&quot; — pick Global (US routing) or
             the closest country.
           </p>
         ) : null}
@@ -308,9 +323,21 @@ function MarketPicker({
         </p>
       ) : hasAvailabilityData ? (
         <p className="text-xs text-muted-foreground">
-          A brand&apos;s icon on a market means it geo-blocks players there —
-          its journeys would come back blocked. Based on each brand&apos;s
-          licences and geo policy.
+          A brand&apos;s icon means it geo-blocks that market.{" "}
+          <span className="text-brand">All brands</span> means every brand you
+          entered serves it — Stake and Rainbet block Canada and all US routes;
+          Winna and offshore books like BetOnline need different markets.
+        </p>
+      ) : null}
+
+      {selectedServed && selectedBlocked.length === 0 && brands.length > 0 ? (
+        <p className="flex items-start gap-2 rounded-lg border border-brand/30 bg-brand/[0.06] px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+          <span>
+            Every brand you entered serves{" "}
+            <span className="font-medium text-foreground">{market}</span> — good
+            pick for a side-by-side audit.
+          </span>
         </p>
       ) : null}
 
@@ -333,7 +360,7 @@ function MarketPicker({
         <span>
           {selectedOption && !selectedOption.geo
             ? "No routing — sessions browse from our datacenter. Fine for brands that serve one worldwide experience."
-            : `Auditing crypto casinos like Stake? They block the UK, US and much of the EU — pick a market tagged "crypto" (Finland, Canada, Brazil, Japan, New Zealand) to see their real product.`}
+            : `Stake and Rainbet block Canada and all US routes — pick Finland, Brazil or Japan for crypto brands, or US (rest / offshore) for BetOnline-class books.`}
         </span>
       </p>
     </div>

@@ -168,7 +168,12 @@ export function personaRegionForMarket(market: string): keyof typeof PERSONA_BY_
   if (market === "Nordics") return "nordic";
   if (market === "United Kingdom") return "uk";
   if (market === "Ireland") return "ie";
-  if (market === "Ontario, Canada") return "ca";
+  if (
+    market === "Ontario, Canada" ||
+    market === "Canada (rest / crypto)" ||
+    market === "Canada (rest)"
+  )
+    return "ca";
   if (market === "Germany") return "de";
   if (market === "Netherlands") return "nl";
   // Global / Crypto, New Jersey US, and unknown → US-style address.

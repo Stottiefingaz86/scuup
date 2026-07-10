@@ -1,5 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { AuthError, requireUser } from "@/lib/auth-server";
+import {
+  curatedAvailability,
+  mergeAvailability,
+  normalizeBrandHost,
+} from "@/lib/brand-markets";
 import { MARKET_OPTIONS } from "@/lib/constants";
 
 export const runtime = "nodejs";
@@ -23,9 +28,7 @@ const cache = (store.__marketAvailability ??= new Map());
 
 function hostnameOf(url: string): string | null {
   try {
-    return new URL(url.startsWith("http") ? url : `https://${url}`).hostname
-      .replace(/^www\./, "")
-      .toLowerCase();
+    return normalizeBrandHost(url);
   } catch {
     return null;
   }
@@ -56,7 +59,13 @@ async function lookupAvailability(
   urls: string[],
   markets: string[]
 ): Promise<BrandMarketAvailability[]> {
-  const prompt = `You are an iGaming market-access expert. For each casino/sportsbook brand below, classify the listed markets by whether a player physically located there can actually use the site — considering the brand's licences (UKGC, MGA, AGCO/Ontario, US state licences, Curacao/Anjouan), its geo-blocking policy, and national bans. Crypto casinos (Stake, Rainbet, Roobet class) typically geo-block the UK, US, Netherlands, France, Spain, Italy, Germany, Australia and Ontario, while serving Canada (outside Ontario), Finland, Norway, Japan, New Zealand, Brazil and much of LatAm. Regulated operators (bet365, Betfair class) serve their licensed markets and block the rest.
+  const prompt = `You are an iGaming market-access expert. For each casino/sportsbook brand below, classify the listed markets by whether a player physically located there can actually use the site — considering the brand's licences (UKGC, MGA, AGCO/Ontario, US state licences, Curacao/Anjouan), its geo-blocking policy, and national bans.
+
+Important distinctions:
+- "US (rest / offshore)" = unlicensed US states where offshore/crypto books (BetOnline, Bovada) accept players. NOT the same as licensed NJ/PA/MI.
+- "Canada (rest / crypto)" = Canada outside Ontario — crypto brands often block here entirely (Stake, Rainbet), while others (Winna) may serve it. Ontario is separately licensed (AGCO).
+- Crypto casinos (Stake, Rainbet, Roobet) geo-block UK, US (all routes), Netherlands, France, Spain, Italy, Germany, Australia and often all of Canada.
+- US offshore books (BetOnline class) serve "US (rest / offshore)" and block most of EU.
 
 Rules:
 - "blocked": you are confident players there are geo-blocked or the brand holds no right to serve them.
@@ -143,21 +152,37 @@ export async function POST(request: NextRequest) {
 
   const missing = hosts.filter((h) => !cache.has(h.host));
   if (missing.length > 0) {
+    for (const h of missing) {
+      const curated = curatedAvailability(h.host, markets);
+      if (curated) {
+        cache.set(h.host, { url: h.host, ...curated });
+      }
+    }
+  }
+
+  const stillMissing = hosts.filter((h) => !cache.has(h.host));
+  if (stillMissing.length > 0) {
     try {
       const fresh = await lookupAvailability(
-        missing.map((h) => h.host),
+        stillMissing.map((h) => h.host),
         markets
       );
       for (const entry of fresh) {
         const host = hostnameOf(entry.url);
-        if (host) cache.set(host, entry);
+        if (!host) continue;
+        const curated = curatedAvailability(host, markets);
+        const merged = mergeAvailability(curated, {
+          blocked: entry.blocked,
+          available: entry.available,
+        });
+        cache.set(host, { url: host, ...merged });
       }
     } catch (e) {
       console.error(
         "[market-availability] lookup failed:",
         e instanceof Error ? e.message : e
       );
-      // Fall through — return what the cache has; unknown is a safe answer.
+      // Fall through — return curated cache hits; unknown is a safe answer.
     }
   }
 

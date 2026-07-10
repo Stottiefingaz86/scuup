@@ -184,12 +184,14 @@ export const MARKET_OPTIONS: MarketOption[] = [
   { label: "Romania", flag: "🇷🇴", geo: "RO", group: "Europe" },
   { label: "Greece", flag: "🇬🇷", geo: "GR", group: "Europe" },
   { label: "Malta", flag: "🇲🇹", geo: "MT", group: "Europe" },
-  // North America — US iGaming is state-licensed, so route to the state.
+  // North America — US iGaming is state-licensed; offshore crypto books
+  // serve unlicensed states (TX proxy as the "rest of US" baseline).
   { label: "New Jersey, US", flag: "🇺🇸", geo: "US-NJ", group: "North America", popular: true },
   { label: "Pennsylvania, US", flag: "🇺🇸", geo: "US-PA", group: "North America" },
   { label: "Michigan, US", flag: "🇺🇸", geo: "US-MI", group: "North America" },
+  { label: "US (rest / offshore)", flag: "🇺🇸", geo: "US-TX", group: "North America", popular: true, cryptoFriendly: true },
   { label: "Ontario, Canada", flag: "🇨🇦", geo: "CA-ON", group: "North America", popular: true },
-  { label: "Canada (rest)", flag: "🇨🇦", geo: "CA-BC", group: "North America", cryptoFriendly: true },
+  { label: "Canada (rest / crypto)", flag: "🇨🇦", geo: "CA-BC", group: "North America", popular: true, cryptoFriendly: true },
   // Latin America
   { label: "Brazil", flag: "🇧🇷", geo: "BR", group: "Latin America", popular: true, cryptoFriendly: true },
   { label: "Mexico", flag: "🇲🇽", geo: "MX", group: "Latin America" },
@@ -239,6 +241,7 @@ export const MARKET_PROXY_COUNTRY: Record<string, string> = {
   ),
   Nordics: "SE",
   // Aliases stored on older projects.
+  "Canada (rest)": "CA-BC",
   "Global (no routing)": "US",
   "Global / Crypto": "US",
   Global: "US",
