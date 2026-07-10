@@ -104,20 +104,22 @@ export async function withSessionRetry<T>(
 export async function createSession(
   viewport?: Viewport,
   contextId?: string,
-  requestedProxyCountry?: string | null
+  requestedProxyCountry?: string | null,
+  keepAlive = false
 ): Promise<{
   id: string;
   connectUrl: string;
 }> {
   return withSessionRetry(() =>
-    createSessionOnce(viewport, contextId, requestedProxyCountry)
+    createSessionOnce(viewport, contextId, requestedProxyCountry, keepAlive)
   );
 }
 
 async function createSessionOnce(
   viewport?: Viewport,
   contextId?: string,
-  requestedProxyCountry?: string | null
+  requestedProxyCountry?: string | null,
+  keepAlive = false
 ): Promise<{
   id: string;
   connectUrl: string;
@@ -136,6 +138,9 @@ async function createSessionOnce(
       region: process.env.BROWSERBASE_REGION ?? "eu-central-1",
       // Long enough for a real play session; falls back to plan max if lower.
       timeout: 1800,
+      // Live capture sessions must survive serverless disconnects — each
+      // poll reconnects to the same remote browser.
+      ...(keepAlive ? { keepAlive: true } : {}),
       // Match the browser's resolution to the embedding container so the
       // live view renders 1:1 instead of scaling a 1920x1080 desktop down.
       // Attaching a context resumes the brand's logged-in state; persist
@@ -165,6 +170,22 @@ async function createSessionOnce(
   }
   const data = await res.json();
   return { id: data.id, connectUrl: data.connectUrl };
+}
+
+/** Connect URL for an already-running session — how a fresh serverless
+ * instance re-attaches to a keepAlive capture session. */
+export async function getConnectUrl(id: string): Promise<string> {
+  const res = await fetch(`${API}/sessions/${id}`, { headers: headers() });
+  if (!res.ok) {
+    throw new Error(
+      `Browserbase session lookup failed: ${res.status} ${await res.text()}`
+    );
+  }
+  const data = await res.json();
+  if (data.status && data.status !== "RUNNING") {
+    throw new Error(`session ${id} is ${data.status}`);
+  }
+  return data.connectUrl as string;
 }
 
 /** The embeddable, interactive live view of the remote browser. */

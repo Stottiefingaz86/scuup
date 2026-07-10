@@ -1,94 +1,99 @@
-import { EventEmitter } from "node:events";
+import { readFile } from "node:fs/promises";
 import {
   chromium,
   type Browser,
   type CDPSession,
   type Page,
 } from "playwright-core";
+import { scoreScreenshots, type JourneyAnalysis } from "./analyst";
 import {
-  scoreScreenshots,
-  type JourneyAnalysis,
-} from "./analyst";
-import { persistShots } from "./evidence-storage";
+  classifyMoneyChange,
+  classifyUrl,
+  MONEY_RE,
+  type SessionShotRef,
+} from "./capture-shared";
+import { localEvidencePath, persistShots } from "./evidence-storage";
 import {
   createSession,
+  getConnectUrl,
   getLiveViewUrl,
   releaseSession,
   type Viewport,
 } from "./browserbase";
+
+/**
+ * Live capture on serverless: every API call may land on a different
+ * instance, so NOTHING can rely on module state. Sessions are created with
+ * keepAlive so the remote browser survives disconnects; each poll
+ * re-attaches over CDP, observes, and disconnects. The popup client owns
+ * the session's accumulated state (events, shot refs, balances) and hands
+ * it back to the server at finish time for scoring.
+ */
 
 export interface RecorderEvent {
   at: number; // seconds since session start
   kind: "screen" | "money" | "reward" | "info";
   label: string;
   detail?: string;
-  /** URL the browser was on when the event fired — lets the UI tie events
-   * (and session goals) to the journey they belong to. */
+  /** URL the browser was on when the event fired. */
   context?: string;
 }
 
-/** A screenshot taken mid-session, tagged with where it was taken. */
-interface SessionShot {
-  at: number;
-  url: string;
-  data: string; // base64 jpeg
-}
-
-interface CaptureSession {
-  id: string;
+interface Connection {
   browser: Browser;
   page: Page;
   cdp: CDPSession | null;
-  liveViewUrl: string;
-  startedAt: number;
-  emitter: EventEmitter;
-  events: RecorderEvent[];
-  shots: SessionShot[];
-  balances: string[];
-  currentUrl: string;
-  poll: NodeJS.Timeout;
-  shotTimer: NodeJS.Timeout | null;
 }
 
-/** Survive HMR in dev by stashing sessions on globalThis. */
+/** Warm-instance connection cache — a pure optimisation. Correctness never
+ * depends on a hit; a cold instance just reconnects. */
 const store = globalThis as unknown as {
-  __captureSessions?: Map<string, CaptureSession>;
+  __captureConns?: Map<string, Connection>;
 };
-const sessions = (store.__captureSessions ??= new Map<
-  string,
-  CaptureSession
->());
+const conns = (store.__captureConns ??= new Map<string, Connection>());
 
-const MONEY_RE = /(?:[$£€]\s?\d[\d,]*(?:\.\d+)?)|(?:\d+\.\d{2,}\s?(?:USDT|BTC|ETH|SOL|LTC))/gi;
+async function connect(sessionId: string): Promise<Connection> {
+  const cached = conns.get(sessionId);
+  if (cached) {
+    try {
+      // Cheap liveness probe — a dead CDP connection throws immediately.
+      cached.page.url();
+      if (cached.browser.isConnected()) return cached;
+    } catch {
+      // Fall through to reconnect.
+    }
+    conns.delete(sessionId);
+    await cached.browser.close().catch(() => {});
+  }
+  const connectUrl = await getConnectUrl(sessionId);
+  const browser = await chromium.connectOverCDP(connectUrl);
+  const context = browser.contexts()[0] ?? (await browser.newContext());
+  const page = context.pages()[0] ?? (await context.newPage());
+  const cdp = await context.newCDPSession(page).catch(() => null);
+  const conn: Connection = { browser, page, cdp };
+  conns.set(sessionId, conn);
+  return conn;
+}
+
+async function disconnect(sessionId: string): Promise<void> {
+  const conn = conns.get(sessionId);
+  if (!conn) return;
+  conns.delete(sessionId);
+  await conn.browser.close().catch(() => {});
+}
 
 /** Raw CDP screenshot — doesn't wait for page stability, safe on any state. */
-async function takeShot(session: CaptureSession) {
-  if (!session.cdp) return;
+async function takeShotBase64(conn: Connection): Promise<string | null> {
+  if (!conn.cdp) return null;
   try {
-    const { data } = (await session.cdp.send("Page.captureScreenshot", {
+    const { data } = (await conn.cdp.send("Page.captureScreenshot", {
       format: "jpeg",
       quality: 60,
     })) as { data: string };
-    session.shots.push({
-      at: Math.round((Date.now() - session.startedAt) / 1000),
-      url: session.currentUrl,
-      data,
-    });
-    // Keep memory bounded; recent screens matter most for scoring.
-    if (session.shots.length > 40) session.shots.shift();
+    return data;
   } catch {
-    // Page mid-navigation or session closing — skip this shot.
+    return null;
   }
-}
-
-function emit(session: CaptureSession, event: Omit<RecorderEvent, "at">) {
-  const full: RecorderEvent = {
-    ...event,
-    at: Math.round((Date.now() - session.startedAt) / 1000),
-    context: event.context ?? session.currentUrl,
-  };
-  session.events.push(full);
-  session.emitter.emit("event", full);
 }
 
 export async function startCapture(
@@ -100,190 +105,169 @@ export async function startCapture(
   sessionId: string;
   liveViewUrl: string;
 }> {
-  const { id, connectUrl } = await createSession(viewport, contextId, proxyCountry);
+  const { id, connectUrl } = await createSession(
+    viewport,
+    contextId,
+    proxyCountry,
+    /* keepAlive */ true
+  );
   const browser = await chromium.connectOverCDP(connectUrl);
   const context = browser.contexts()[0] ?? (await browser.newContext());
   const page = context.pages()[0] ?? (await context.newPage());
+  const cdp = await context.newCDPSession(page).catch(() => null);
+  conns.set(id, { browser, page, cdp });
+
   const liveViewUrl = await getLiveViewUrl(id);
 
-  const session: CaptureSession = {
-    id,
-    browser,
-    page,
-    cdp: null,
-    liveViewUrl,
-    startedAt: Date.now(),
-    emitter: new EventEmitter(),
-    events: [],
-    shots: [],
-    balances: [],
-    currentUrl: url,
-    poll: undefined as unknown as NodeJS.Timeout,
-    shotTimer: null,
-  };
-  sessions.set(id, session);
-  session.cdp = await context.newCDPSession(page).catch(() => null);
-
-  emit(session, { kind: "info", label: "Remote browser attached" });
-
-  // Real navigation detection. Each navigation schedules a screenshot after
-  // the destination has had a moment to render (debounced for SPA bursts).
-  page.on("framenavigated", (frame) => {
-    if (frame === page.mainFrame()) {
-      session.currentUrl = frame.url();
-      emit(session, {
-        kind: "screen",
-        label: "Navigated",
-        detail: frame.url(),
-      });
-      if (session.shotTimer) clearTimeout(session.shotTimer);
-      session.shotTimer = setTimeout(() => void takeShot(session), 2500);
-    }
-  });
-
-  // Generic balance-delta detection: scan the page for monetary values and
-  // report when the set changes (deposit, bet settle, reward credit).
-  let tick = 0;
-  session.poll = setInterval(async () => {
-    // Periodic screenshot so long stays on one page (playing, cashier
-    // modals) still leave scoreable evidence.
-    if (++tick % 3 === 0) void takeShot(session);
-    try {
-      const text = await page.evaluate(() => document.body?.innerText ?? "");
-      const found = Array.from(
-        new Set(text.match(MONEY_RE)?.map((s) => s.trim()) ?? [])
-      ).slice(0, 12);
-      const prev = new Set(session.balances);
-      const added = found.filter((v) => !prev.has(v));
-      if (session.balances.length > 0 && added.length > 0) {
-        // Classify by where the change happened so the feed (and session
-        // goals) reflect the actual activity, not a generic delta.
-        const at = session.currentUrl.toLowerCase();
-        const label = /withdraw|cash.?out|payout/.test(at)
-          ? "Withdrawal activity detected"
-          : /deposit|cashier|top.?up|wallet/.test(at)
-            ? "Deposit / cashier activity detected"
-            : /reward|vip|loyal|rakeback|rebate/.test(at)
-              ? "Reward value change detected"
-              : /casino|game|slot|sport|bet|play/.test(at)
-                ? "Stake / balance change while playing"
-                : "Balance / amount change detected";
-        emit(session, {
-          kind: /reward|vip|loyal|rakeback|rebate/.test(at)
-            ? "reward"
-            : "money",
-          label,
-          detail: added.join(", "),
-        });
-      }
-      if (found.length > 0) session.balances = found;
-    } catch {
-      // Page navigating or closed — ignore this tick.
-    }
-  }, 4000);
-
-  // Kick off navigation (don't await full load; live view shows progress).
-  page
-    .goto(url, { waitUntil: "domcontentloaded", timeout: 45000 })
-    .then(() => {
-      emit(session, { kind: "screen", label: "Page loaded", detail: url });
-      setTimeout(() => void takeShot(session), 4000);
-    })
-    .catch((e) =>
-      emit(session, {
-        kind: "info",
-        label: "Navigation issue",
-        detail: String(e.message ?? e).slice(0, 140),
-      })
-    );
+  // Get the navigation underway before responding. Don't fail the session
+  // on a slow site — the user watches it load in the live view.
+  await page
+    .goto(url, { waitUntil: "domcontentloaded", timeout: 25000 })
+    .catch(() => {});
 
   return { sessionId: id, liveViewUrl };
 }
 
-export function getSession(id: string): CaptureSession | undefined {
-  return sessions.get(id);
-}
-
-export async function stopCapture(id: string): Promise<void> {
-  const session = sessions.get(id);
-  if (!session) return;
-  clearInterval(session.poll);
-  if (session.shotTimer) clearTimeout(session.shotTimer);
-  session.emitter.emit("done");
-  await session.browser.close().catch(() => {});
-  await releaseSession(id);
-  sessions.delete(id);
-}
-
-/** URL → journey classification, most specific first ("deposit" must win
- * over "casino" when both appear in a cashier URL). */
-const JOURNEY_URL_PATTERNS: [string, RegExp][] = [
-  ["withdraw", /withdraw|cash-?out|payout/],
-  ["deposit", /deposit|cashier|top-?up|wallet/],
-  ["loyalty_rewards", /reward|vip|loyal|rakeback|rebate|bonus|promo/],
-  ["signup", /sign-?up|register|registration|join/],
-  ["support", /support|help|faq|contact/],
-  ["my_account", /account|profile|settings|verification|kyc/],
-  ["sports_betslip", /sport|betslip/],
-  ["casino", /casino|game|slot|live-?dealer|play/],
-];
-
-function classifyUrl(url: string): string | null {
-  const u = url.toLowerCase();
-  for (const [journey, re] of JOURNEY_URL_PATTERNS) {
-    if (re.test(u)) return journey;
-  }
-  return null;
+export interface TickResult {
+  /** Where the remote browser is right now. */
+  url: string;
+  /** Monetary values currently visible (client sends them back next tick). */
+  balances: string[];
+  /** Money / reward events detected on this tick. */
+  events: Omit<RecorderEvent, "at">[];
+  /** Persisted screenshot, when one was requested or a navigation landed. */
+  shot: { url: string; storedUrl: string } | null;
 }
 
 /**
- * End a session the productive way: group its screenshots by the journeys
- * the user actually visited, score each with the vision analyst, then tear
- * the session down. This is how a recorded session becomes real scores.
+ * One observation pass over a running capture session: current URL, money
+ * deltas vs the balances the client last saw, and optionally a persisted
+ * screenshot. Stateless — everything needed comes in, everything learned
+ * goes out.
+ */
+export async function captureTick(
+  sessionId: string,
+  prevBalances: string[],
+  lastUrl: string,
+  wantShot: boolean
+): Promise<TickResult> {
+  const conn = await connect(sessionId);
+  const url = conn.page.url();
+
+  let balances: string[] = prevBalances;
+  const events: Omit<RecorderEvent, "at">[] = [];
+  try {
+    const text = await conn.page.evaluate(
+      () => document.body?.innerText ?? ""
+    );
+    const found = Array.from(
+      new Set(text.match(MONEY_RE)?.map((s) => s.trim()) ?? [])
+    ).slice(0, 12);
+    const prev = new Set(prevBalances);
+    const added = found.filter((v) => !prev.has(v));
+    if (prevBalances.length > 0 && added.length > 0) {
+      const { kind, label } = classifyMoneyChange(url);
+      events.push({ kind, label, detail: added.join(", "), context: url });
+    }
+    if (found.length > 0) balances = found;
+  } catch {
+    // Page mid-navigation — skip money detection this tick.
+  }
+
+  // Screenshot on navigation or when the client's cadence asks for one.
+  let shot: TickResult["shot"] = null;
+  if (wantShot || url !== lastUrl) {
+    const data = await takeShotBase64(conn);
+    if (data) {
+      const [storedUrl] = await persistShots([data]);
+      shot = { url, storedUrl };
+    }
+  }
+
+  return { url, balances, events, shot };
+}
+
+export async function stopCapture(id: string): Promise<void> {
+  await disconnect(id);
+  await releaseSession(id);
+}
+
+/** Load a persisted shot back as base64 for scoring. Handles both remote
+ * (public URL) and local-dev (/api/evidence/name) storage. */
+async function readShotBase64(storedUrl: string): Promise<string | null> {
+  try {
+    if (/^https?:\/\//.test(storedUrl)) {
+      const res = await fetch(storedUrl);
+      if (!res.ok) return null;
+      return Buffer.from(await res.arrayBuffer()).toString("base64");
+    }
+    const name = storedUrl.split("/").pop();
+    if (!name) return null;
+    return (await readFile(localEvidencePath(name))).toString("base64");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * End a session the productive way: group the shots the client accumulated
+ * by the journeys the user actually visited, score each with the vision
+ * analyst, then tear the remote session down. This is how a recorded
+ * session becomes real scores.
  */
 export async function finishCapture(
-  id: string
+  id: string,
+  shotRefs: SessionShotRef[]
 ): Promise<{ analyses: JourneyAnalysis[] }> {
-  const session = sessions.get(id);
-  if (!session) return { analyses: [] };
+  // One final shot of wherever the user ended up, then release the browser
+  // before the (slow) scoring calls — it costs money while idle.
+  try {
+    const conn = await connect(id);
+    const url = conn.page.url();
+    const data = await takeShotBase64(conn);
+    if (data) {
+      const [storedUrl] = await persistShots([data]);
+      shotRefs = [
+        ...shotRefs,
+        { at: shotRefs[shotRefs.length - 1]?.at ?? 0, url, storedUrl },
+      ];
+    }
+  } catch {
+    // Session already gone — score whatever the client collected.
+  }
+  await stopCapture(id);
 
-  // Final shot of wherever the user ended up.
-  await takeShot(session);
-
-  const byJourney = new Map<string, SessionShot[]>();
-  for (const shot of session.shots) {
-    const journey = classifyUrl(shot.url);
+  const byJourney = new Map<string, SessionShotRef[]>();
+  for (const ref of shotRefs) {
+    const journey = classifyUrl(ref.url);
     if (!journey) continue;
     const list = byJourney.get(journey) ?? [];
-    list.push(shot);
+    list.push(ref);
     byJourney.set(journey, list);
   }
 
-  // Stop the browser before the (slow) scoring calls — the evidence is
-  // already in memory and the remote session costs money while idle.
-  await stopCapture(id);
-
   const analyses: JourneyAnalysis[] = [];
-  for (const [journey, shots] of byJourney) {
-    const picked = shots.slice(-3);
+  for (const [journey, refs] of byJourney) {
+    const picked = refs.slice(-3);
     const finalUrl = picked[picked.length - 1].url;
+    const shots = (
+      await Promise.all(picked.map((r) => readShotBase64(r.storedUrl)))
+    ).filter((s): s is string => s !== null);
+    if (shots.length === 0) continue;
     try {
-      const [result, screenshots] = await Promise.all([
-        scoreScreenshots(
-          journey,
-          "",
-          finalUrl,
-          picked.map((s) => s.data),
-          [],
-          "session"
-        ),
-        persistShots(picked.map((s) => s.data)),
-      ]);
+      const result = await scoreScreenshots(
+        journey,
+        "",
+        finalUrl,
+        shots,
+        [],
+        "session"
+      );
       analyses.push({
         ...result,
         area: journey,
         analysedAt: new Date().toISOString(),
-        screenshots,
+        screenshots: picked.map((r) => r.storedUrl),
         finalUrl,
       });
     } catch (e) {

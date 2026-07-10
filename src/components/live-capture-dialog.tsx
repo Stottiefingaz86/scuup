@@ -15,7 +15,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
-import { getProject } from "@/lib/project-store";
+import { getProject, refreshProjects } from "@/lib/project-store";
 import {
   Dialog,
   DialogContent,
@@ -130,11 +130,12 @@ export function LiveCaptureDialog({
       onClose();
     };
 
-    // The popup persists the session itself (it shares the same store), so
-    // this listener is only for closing the dialog and confirming to the user.
+    // The popup persists the session and its scores server-side; pull the
+    // fresh data into this window so scores appear without a reload.
     const onMessage = (e: MessageEvent<CaptureMessage>) => {
       if (e.origin !== window.location.origin) return;
       if (e.data?.type === "capture-saved") {
+        void refreshProjects();
         if (e.data.live) {
           const scored = e.data.scoredAreas ?? [];
           toast.success("Session saved", {
@@ -159,7 +160,11 @@ export function LiveCaptureDialog({
     };
 
     const poll = setInterval(() => {
-      if (popupRef.current?.closed) cleanup();
+      if (popupRef.current?.closed) {
+        // Closed via the X — the popup still saved server-side on pagehide.
+        void refreshProjects();
+        cleanup();
+      }
     }, 1000);
 
     window.addEventListener("message", onMessage);

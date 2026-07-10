@@ -19,8 +19,8 @@ import {
   formatElapsed,
   type CaptureMessage,
 } from "@/components/live-capture-dialog";
-import { saveAnalysis, saveCapture } from "@/lib/project-store";
-import type { JourneyAnalysis } from "@/lib/types";
+import type { SessionShotRef } from "@/lib/capture-shared";
+import type { CaptureRecord, JourneyAnalysis } from "@/lib/types";
 
 interface FeedItem {
   at: number;
@@ -177,6 +177,12 @@ function CaptureContent() {
   const endedRef = useRef(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
 
+  // Session evidence accumulated client-side: the serverless API holds no
+  // state between calls, so the popup is the session's source of truth.
+  const shotsRef = useRef<SessionShotRef[]>([]);
+  const balancesRef = useRef<string[]>([]);
+  const lastUrlRef = useRef<string>(url);
+
   // Keep the latest state in a ref so the pagehide handler (bound once) can
   // save a session even when the user just closes the window.
   const stateRef = useRef({
@@ -194,11 +200,67 @@ function CaptureContent() {
     return () => clearInterval(interval);
   }, [name]);
 
-  // Kick off a real remote-browser session; fall back to simulation on error.
+  const pushEvent = (event: Omit<WireEvent, "at">) => {
+    const at = stateRef.current.elapsed;
+    setLiveEvents((prev) => [...prev, { ...event, at }]);
+  };
+
+  // Kick off a real remote-browser session; fall back to simulation on
+  // error. While live, poll the observation endpoint — each tick reports
+  // navigations, money deltas and (periodically) a persisted screenshot.
   useEffect(() => {
     if (startedRef.current || !url) return;
     startedRef.current = true;
-    let source: EventSource | null = null;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async (n: number) => {
+      const id = sessionIdRef.current;
+      if (cancelled || endedRef.current || !id) return;
+      try {
+        const res = await fetch("/api/capture/tick", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionId: id,
+            balances: balancesRef.current,
+            lastUrl: lastUrlRef.current,
+            // First tick and then roughly every 3rd (~12s) even without
+            // navigating, so long stays on one page leave scoreable evidence.
+            wantShot: n % 3 === 1,
+          }),
+        });
+        if (res.status === 410) return; // session released — stop polling
+        if (res.ok) {
+          const data = (await res.json()) as {
+            url: string;
+            balances: string[];
+            events: Omit<WireEvent, "at">[];
+            shot: { url: string; storedUrl: string } | null;
+          };
+          if (data.url && data.url !== lastUrlRef.current) {
+            pushEvent({ kind: "screen", label: "Navigated", detail: data.url });
+            lastUrlRef.current = data.url;
+          }
+          for (const event of data.events) pushEvent(event);
+          if (data.shot) {
+            shotsRef.current.push({
+              at: stateRef.current.elapsed,
+              url: data.shot.url,
+              storedUrl: data.shot.storedUrl,
+            });
+            // Recent screens matter most for scoring; keep memory bounded.
+            if (shotsRef.current.length > 60) shotsRef.current.shift();
+          }
+          balancesRef.current = data.balances;
+        }
+      } catch {
+        // Transient network error — try again next tick.
+      }
+      if (!cancelled && !endedRef.current) {
+        timer = setTimeout(() => void tick(n + 1), 4000);
+      }
+    };
 
     (async () => {
       try {
@@ -224,22 +286,18 @@ function CaptureContent() {
         sessionIdRef.current = data.sessionId;
         setLiveViewUrl(data.liveViewUrl);
         setMode("live");
-
-        source = new EventSource(
-          `/api/capture/events?sessionId=${data.sessionId}`
-        );
-        source.onmessage = (e) => {
-          const event = JSON.parse(e.data) as WireEvent;
-          setLiveEvents((prev) => [...prev, event]);
-        };
-        source.addEventListener("done", () => source?.close());
-        source.onerror = () => source?.close();
+        pushEvent({ kind: "info", label: "Remote browser attached" });
+        timer = setTimeout(() => void tick(1), 4000);
       } catch {
         setMode("sim");
       }
     })();
 
-    return () => source?.close();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, brandId, market]);
 
   const stopBeacon = (id: string) => {
@@ -263,39 +321,53 @@ function CaptureContent() {
     const id = sessionIdRef.current;
     const live = mode === "live";
 
-    // Persist the session record synchronously first: this popup shares the
-    // same localStorage-backed store as the app, so the evidence survives
-    // even if the opener page navigated away or this window closes early.
+    // Persist the session record first, with keepalive so the request
+    // survives even when this window is closing (the X / pagehide path).
     if (save && live && projectId && brandId) {
-      saveCapture(projectId, {
+      const record: CaptureRecord = {
         id: `cap-${Date.now().toString(36)}`,
         brandId,
         brandName: name,
         date: new Date().toISOString(),
         durationSec: elapsed,
         events: liveEvents,
-      });
+      };
+      void fetch(`/api/projects/${projectId}/sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record }),
+        keepalive: true,
+      }).catch(() => {});
     }
 
     let scoredAreas: string[] = [];
     if (save && live && id && canScore) {
-      // Turn the recording into scores: the server groups this session's
-      // screenshots by journey and runs the vision analyst on each.
+      // Turn the recording into scores: the server groups the screenshots
+      // this popup accumulated by journey and runs the vision analyst on
+      // each. The window stays open until the results are saved.
       setScoring(true);
       try {
         const res = await fetch("/api/capture/finish", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: id }),
+          body: JSON.stringify({ sessionId: id, shots: shotsRef.current }),
         });
         if (res.ok) {
           const data = (await res.json()) as { analyses: JourneyAnalysis[] };
-          for (const analysis of data.analyses ?? []) {
-            if (projectId && brandId) {
-              saveAnalysis(projectId, brandId, analysis);
-            }
+          const analyses = data.analyses ?? [];
+          if (projectId && brandId && analyses.length > 0) {
+            await Promise.all(
+              analyses.map((analysis) =>
+                fetch(`/api/projects/${projectId}/analysis`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ brandId, analysis }),
+                  keepalive: true,
+                }).catch(() => {})
+              )
+            );
           }
-          scoredAreas = (data.analyses ?? []).map((a) => a.area);
+          scoredAreas = analyses.map((a) => a.area);
         } else {
           stopBeacon(id);
         }
