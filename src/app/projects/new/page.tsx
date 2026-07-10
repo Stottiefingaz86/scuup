@@ -7,12 +7,14 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  CircleAlert,
   CornerDownLeft,
   Dice5,
   Gift,
   Goal,
   Headphones,
   Landmark,
+  LoaderCircle,
   Lock,
   ShieldCheck,
   Sparkles,
@@ -24,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { ScuupLogo } from "@/components/scuup-logo";
 import { cn } from "@/lib/utils";
 import {
+  faviconUrl,
   JOURNEY_LABELS,
   journeysForProducts,
   MARKET_OPTIONS,
@@ -156,13 +159,31 @@ const MARKET_GROUPS: MarketOption["group"][] = [
   "Other",
 ];
 
+/** Best-effort licensing/geo knowledge for one brand: which markets it's
+ * known to block or serve. Markets in neither list are unknown. */
+interface BrandAvailability {
+  blocked: string[];
+  available: string[];
+}
+
+interface PickerBrand {
+  url: string;
+  name: string;
+}
+
 /** NordVPN-style country picker: search, popular row, grouped list. */
 function MarketPicker({
   market,
   onSelect,
+  brands = [],
+  availability = {},
+  checkingAvailability = false,
 }: {
   market: string | null;
   onSelect: (label: string) => void;
+  brands?: PickerBrand[];
+  availability?: Record<string, BrandAvailability>;
+  checkingAvailability?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();
@@ -175,13 +196,28 @@ function MarketPicker({
   );
   const popular = MARKET_OPTIONS.filter((m) => m.popular);
   const selectedOption = MARKET_OPTIONS.find((m) => m.label === market);
+  const hasAvailabilityData = Object.values(availability).some(
+    (a) => a.blocked.length > 0 || a.available.length > 0
+  );
+
+  /** Brands known to geo-block a market — the decision-relevant signal. */
+  const blockedIn = (label: string): PickerBrand[] =>
+    brands.filter((b) => availability[b.url]?.blocked.includes(label));
+
+  const selectedBlocked = market ? blockedIn(market) : [];
 
   const MarketButton = ({ m }: { m: MarketOption }) => {
     const selected = market === m.label;
+    const blocked = blockedIn(m.label);
     return (
       <button
         type="button"
         onClick={() => onSelect(m.label)}
+        title={
+          blocked.length > 0
+            ? `${blocked.map((b) => b.name).join(" and ")} geo-block${blocked.length === 1 ? "s" : ""} players in ${m.label}`
+            : undefined
+        }
         className={cn(
           "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-all",
           selected
@@ -191,19 +227,27 @@ function MarketPicker({
       >
         <span className="text-base leading-none">{m.flag}</span>
         <span className="min-w-0 truncate">{m.label}</span>
-        {m.cryptoFriendly ? (
-          <span className="ms-auto shrink-0 rounded border border-brand/30 px-1 py-px text-[10px] uppercase tracking-wide text-brand/80">
-            crypto
-          </span>
-        ) : null}
-        {selected ? (
-          <Check
-            className={cn(
-              "size-4 shrink-0 text-primary",
-              !m.cryptoFriendly && "ms-auto"
-            )}
-          />
-        ) : null}
+        <span className="ms-auto flex shrink-0 items-center gap-1">
+          {blocked.length > 0 ? (
+            <span className="flex items-center -space-x-1">
+              {blocked.slice(0, 3).map((b) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={b.url}
+                  src={faviconUrl(b.url, 32)}
+                  alt={b.name}
+                  className="size-3.5 rounded-full opacity-90 outline outline-1 outline-score-weak grayscale-[35%]"
+                />
+              ))}
+            </span>
+          ) : null}
+          {m.cryptoFriendly ? (
+            <span className="rounded border border-brand/30 px-1 py-px text-[10px] uppercase tracking-wide text-brand/80">
+              crypto
+            </span>
+          ) : null}
+          {selected ? <Check className="size-4 text-primary" /> : null}
+        </span>
       </button>
     );
   };
@@ -256,6 +300,33 @@ function MarketPicker({
           </p>
         ) : null}
       </div>
+
+      {checkingAvailability ? (
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          <LoaderCircle className="size-3.5 animate-spin" />
+          Checking which markets your brands serve…
+        </p>
+      ) : hasAvailabilityData ? (
+        <p className="text-xs text-muted-foreground">
+          A brand&apos;s icon on a market means it geo-blocks players there —
+          its journeys would come back blocked. Based on each brand&apos;s
+          licences and geo policy.
+        </p>
+      ) : null}
+
+      {selectedBlocked.length > 0 ? (
+        <p className="flex items-start gap-2 rounded-lg border border-score-weak/40 bg-score-weak/[0.06] px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-score-weak" />
+          <span>
+            <span className="font-medium text-foreground">
+              {selectedBlocked.map((b) => b.name).join(" and ")}
+            </span>{" "}
+            geo-block{selectedBlocked.length === 1 ? "s" : ""} players in{" "}
+            {market} — those audits will come back blocked. Pick a market every
+            brand serves, or continue if this market is what you compete in.
+          </span>
+        </p>
+      ) : null}
 
       <p className="flex items-start gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" />
@@ -415,6 +486,64 @@ export default function NewProjectPage() {
     () => competitors.filter((c) => c.trim().length > 0),
     [competitors]
   );
+
+  // Best-effort brand→market availability, fetched when the market step
+  // opens so the picker can flag markets a chosen brand geo-blocks.
+  const [availability, setAvailability] = useState<
+    Record<string, BrandAvailability>
+  >({});
+  const [checkingAvailability, setCheckingAvailability] = useState(false);
+  const availabilityKeyRef = useRef("");
+  const pickerBrands = useMemo<PickerBrand[]>(
+    () =>
+      [ownBrandUrl, ...validCompetitors]
+        .map((u) => u.trim())
+        .filter(Boolean)
+        .map((url) => ({ url, name: brandNameFromUrl(url) })),
+    [ownBrandUrl, validCompetitors]
+  );
+
+  useEffect(() => {
+    if (stepId !== "market" || pickerBrands.length === 0) return;
+    const key = pickerBrands.map((b) => b.url).join("|");
+    if (availabilityKeyRef.current === key) return;
+    availabilityKeyRef.current = key;
+    setCheckingAvailability(true);
+    let cancelled = false;
+    let settled = false;
+    void fetch("/api/market-availability", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brands: pickerBrands.map((b) => b.url) }),
+    })
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then(
+        (data: { brands?: (BrandAvailability & { url: string })[] } | null) => {
+          if (cancelled || !data?.brands) return;
+          setAvailability(
+            Object.fromEntries(
+              data.brands.map((b) => [
+                b.url,
+                { blocked: b.blocked, available: b.available },
+              ])
+            )
+          );
+        }
+      )
+      .catch(() => {
+        availabilityKeyRef.current = "";
+      })
+      .finally(() => {
+        settled = true;
+        if (!cancelled) setCheckingAvailability(false);
+      });
+    return () => {
+      cancelled = true;
+      // A discarded in-flight response should be refetched next time the
+      // market step opens.
+      if (!settled) availabilityKeyRef.current = "";
+    };
+  }, [stepId, pickerBrands]);
 
   const validate = useCallback(
     (id: StepId): string | null => {
@@ -641,6 +770,9 @@ export default function NewProjectPage() {
                 setMarket(m);
                 setError(null);
               }}
+              brands={pickerBrands}
+              availability={availability}
+              checkingAvailability={checkingAvailability}
             />
           </StepShell>
         ) : null}
