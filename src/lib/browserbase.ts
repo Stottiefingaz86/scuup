@@ -21,9 +21,9 @@ export interface Viewport {
 }
 
 /**
- * Which country a session's browser should appear from. Regional routing
+ * Which location a session's browser should appear from. Regional routing
  * is enabled by setting BROWSERBASE_PROXY_COUNTRY (needs a Browserbase plan
- * with residential proxies); a market-specific country then overrides that
+ * with residential proxies); a market-specific geo code then overrides that
  * default. Returns undefined when proxies aren't enabled — sessions run
  * from the datacenter region as before.
  */
@@ -31,6 +31,38 @@ export function proxyCountryFor(requested?: string | null): string | undefined {
   const fallback = process.env.BROWSERBASE_PROXY_COUNTRY;
   if (!fallback) return undefined;
   return requested ?? fallback;
+}
+
+/** "GB" → { country: "GB" }; "US-NJ" → { country: "US", state: "NJ" }.
+ * US iGaming is licensed per state, so state-level routing matters there.
+ * Browserbase's state field is US-only; other subdivisions map to a city
+ * (CA-ON → Toronto) so session creation never fails on an invalid combo. */
+export function proxyGeolocation(code: string): {
+  country: string;
+  state?: string;
+  city?: string;
+} {
+  const [country, region] = code.split("-");
+  if (!region) return { country };
+  if (country === "US") return { country, state: region };
+  if (code === "CA-ON") return { country: "CA", city: "TORONTO" };
+  if (code === "CA-BC") return { country: "CA", city: "VANCOUVER" };
+  return { country };
+}
+
+/** The proxies array for a Browserbase session create, or {} when routing
+ * is disabled. Shared by every session-creating runtime. */
+export function proxyConfig(requested?: string | null): {
+  proxies?: {
+    type: "browserbase";
+    geolocation: { country: string; state?: string; city?: string };
+  }[];
+} {
+  const code = proxyCountryFor(requested);
+  if (!code) return {};
+  return {
+    proxies: [{ type: "browserbase", geolocation: proxyGeolocation(code) }],
+  };
 }
 
 /** A persistent browser context: cookies/auth state that survives across
@@ -93,8 +125,7 @@ async function createSessionOnce(
   // Datacenter IPs are US-based and iGaming sites geo-block US traffic
   // (licensing). Residential proxies fix that but need a paid Browserbase
   // plan, so only enable when configured (e.g. BROWSERBASE_PROXY_COUNTRY=GB).
-  // The project's market can request a specific country per session.
-  const proxyCountry = proxyCountryFor(requestedProxyCountry);
+  // The project's market can request a specific location per session.
   const res = await fetch(`${API}/sessions`, {
     method: "POST",
     headers: headers(),
@@ -126,16 +157,7 @@ async function createSessionOnce(
             },
           }
         : {}),
-      ...(proxyCountry
-        ? {
-            proxies: [
-              {
-                type: "browserbase",
-                geolocation: { country: proxyCountry },
-              },
-            ],
-          }
-        : {}),
+      ...proxyConfig(requestedProxyCountry),
     }),
   });
   if (!res.ok) {

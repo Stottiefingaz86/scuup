@@ -26,9 +26,9 @@ import { cn } from "@/lib/utils";
 import {
   JOURNEY_LABELS,
   journeysForProducts,
-  MARKET_PROXY_COUNTRY,
-  MARKETS,
+  MARKET_OPTIONS,
   PRODUCTS,
+  type MarketOption,
 } from "@/lib/constants";
 import { FREE_JOURNEYS, PRO_SELLING_POINTS, type Plan } from "@/lib/plan";
 import { createProject, LimitError } from "@/lib/project-store";
@@ -143,6 +143,128 @@ function StepShell({
         {hint ? <p className="text-muted-foreground">{hint}</p> : null}
       </div>
       {children}
+    </div>
+  );
+}
+
+const MARKET_GROUPS: MarketOption["group"][] = [
+  "Europe",
+  "North America",
+  "Latin America",
+  "Asia-Pacific",
+  "Africa",
+  "Other",
+];
+
+/** NordVPN-style country picker: search, popular row, grouped list. */
+function MarketPicker({
+  market,
+  onSelect,
+}: {
+  market: string | null;
+  onSelect: (label: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matches = useMemo(
+    () =>
+      q.length === 0
+        ? MARKET_OPTIONS
+        : MARKET_OPTIONS.filter((m) => m.label.toLowerCase().includes(q)),
+    [q]
+  );
+  const popular = MARKET_OPTIONS.filter((m) => m.popular);
+  const selectedOption = MARKET_OPTIONS.find((m) => m.label === market);
+
+  const MarketButton = ({ m }: { m: MarketOption }) => {
+    const selected = market === m.label;
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(m.label)}
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm transition-all",
+          selected
+            ? "border-primary/60 bg-primary/10 text-foreground"
+            : "border-border bg-card/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+        )}
+      >
+        <span className="text-base leading-none">{m.flag}</span>
+        <span className="min-w-0 truncate">{m.label}</span>
+        {m.cryptoFriendly ? (
+          <span className="ms-auto shrink-0 rounded border border-brand/30 px-1 py-px text-[10px] uppercase tracking-wide text-brand/80">
+            crypto
+          </span>
+        ) : null}
+        {selected ? (
+          <Check
+            className={cn(
+              "size-4 shrink-0 text-primary",
+              !m.cryptoFriendly && "ms-auto"
+            )}
+          />
+        ) : null}
+      </button>
+    );
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <input
+        type="text"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search markets…"
+        autoComplete="off"
+        className="w-full rounded-lg border border-input bg-transparent px-4 py-2.5 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary"
+      />
+
+      {q.length === 0 ? (
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+            Popular
+          </span>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {popular.map((m) => (
+              <MarketButton key={m.label} m={m} />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex max-h-72 flex-col gap-4 overflow-y-auto pe-1">
+        {MARKET_GROUPS.map((group) => {
+          const inGroup = matches.filter((m) => m.group === group);
+          if (inGroup.length === 0) return null;
+          return (
+            <div key={group} className="flex flex-col gap-1.5">
+              <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                {group === "Other" ? "No routing" : group}
+              </span>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {inGroup.map((m) => (
+                  <MarketButton key={m.label} m={m} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {matches.length === 0 ? (
+          <p className="py-2 text-sm text-muted-foreground">
+            No market matches &quot;{query}&quot; — pick Global (no routing) or
+            the closest country.
+          </p>
+        ) : null}
+      </div>
+
+      <p className="flex items-start gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+        <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" />
+        <span>
+          {selectedOption && !selectedOption.geo
+            ? "No routing — sessions browse from our datacenter. Fine for brands that serve one worldwide experience."
+            : `Auditing crypto casinos like Stake? They block the UK, US and much of the EU — pick a market tagged "crypto" (Finland, Canada, Brazil, Japan, New Zealand) to see their real product.`}
+        </span>
+      </p>
     </div>
   );
 }
@@ -511,45 +633,15 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question="Which market are we auditing?"
-            hint="Journeys, payment methods and compliance expectations differ by market."
+            hint="Sessions browse from this location through residential routing — no VPN needed. Offers, payment methods and geo-gates match what a real local player sees."
           >
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-2 sm:grid-cols-2">
-                {MARKETS.map((m) => {
-                  const selected = market === m;
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setMarket(m);
-                        setError(null);
-                      }}
-                      className={cn(
-                        "flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-all",
-                        selected
-                          ? "border-primary/60 bg-primary/10 text-foreground"
-                          : "border-border bg-card/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
-                      )}
-                    >
-                      {m}
-                      {selected ? <Check className="size-4 text-primary" /> : null}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="flex items-start gap-2 rounded-lg border bg-muted/30 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" />
-                <span>
-                  No VPN needed — our agents browse from{" "}
-                  {market && MARKET_PROXY_COUNTRY[market]
-                    ? `${market} automatically`
-                    : "the selected market automatically"}{" "}
-                  via regional routing, so geo-gated offers, payment methods
-                  and compliance content are what a real local player sees.
-                </span>
-              </p>
-            </div>
+            <MarketPicker
+              market={market}
+              onSelect={(m) => {
+                setMarket(m);
+                setError(null);
+              }}
+            />
           </StepShell>
         ) : null}
 

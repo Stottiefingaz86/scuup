@@ -141,16 +141,71 @@ export {
   type RetentionMechanicMeta,
 } from "./retention-scoring";
 
-export const MARKETS = [
-  "United Kingdom",
-  "Ireland",
-  "Ontario, Canada",
-  "New Jersey, US",
-  "Germany",
-  "Netherlands",
-  "Nordics",
-  "Global / Crypto",
+export interface MarketOption {
+  label: string;
+  flag: string;
+  /** Browserbase proxy geolocation code: "GB", "US-NJ", "CA-ON".
+   * Undefined = session runs without regional routing. */
+  geo?: string;
+  group: "Europe" | "North America" | "Latin America" | "Asia-Pacific" | "Africa" | "Other";
+  popular?: boolean;
+  /** Good pick for crypto casinos — most geo-block the UK, US and much of the EU. */
+  cryptoFriendly?: boolean;
+}
+
+/** Every market a session can browse from, NordVPN-style. Each maps to a
+ * residential proxy geolocation so geo-gated offers, payment methods and
+ * compliance content match what a real local player sees. */
+export const MARKET_OPTIONS: MarketOption[] = [
+  // Europe
+  { label: "United Kingdom", flag: "🇬🇧", geo: "GB", group: "Europe", popular: true },
+  { label: "Ireland", flag: "🇮🇪", geo: "IE", group: "Europe", popular: true },
+  { label: "Germany", flag: "🇩🇪", geo: "DE", group: "Europe", popular: true },
+  { label: "Netherlands", flag: "🇳🇱", geo: "NL", group: "Europe", popular: true },
+  { label: "Sweden", flag: "🇸🇪", geo: "SE", group: "Europe", popular: true },
+  { label: "Denmark", flag: "🇩🇰", geo: "DK", group: "Europe" },
+  { label: "Finland", flag: "🇫🇮", geo: "FI", group: "Europe", cryptoFriendly: true },
+  { label: "Norway", flag: "🇳🇴", geo: "NO", group: "Europe" },
+  { label: "Spain", flag: "🇪🇸", geo: "ES", group: "Europe" },
+  { label: "Italy", flag: "🇮🇹", geo: "IT", group: "Europe" },
+  { label: "France", flag: "🇫🇷", geo: "FR", group: "Europe" },
+  { label: "Portugal", flag: "🇵🇹", geo: "PT", group: "Europe" },
+  { label: "Belgium", flag: "🇧🇪", geo: "BE", group: "Europe" },
+  { label: "Austria", flag: "🇦🇹", geo: "AT", group: "Europe" },
+  { label: "Switzerland", flag: "🇨🇭", geo: "CH", group: "Europe" },
+  { label: "Poland", flag: "🇵🇱", geo: "PL", group: "Europe" },
+  { label: "Czechia", flag: "🇨🇿", geo: "CZ", group: "Europe" },
+  { label: "Romania", flag: "🇷🇴", geo: "RO", group: "Europe" },
+  { label: "Greece", flag: "🇬🇷", geo: "GR", group: "Europe" },
+  { label: "Malta", flag: "🇲🇹", geo: "MT", group: "Europe" },
+  // North America — US iGaming is state-licensed, so route to the state.
+  { label: "New Jersey, US", flag: "🇺🇸", geo: "US-NJ", group: "North America", popular: true },
+  { label: "Pennsylvania, US", flag: "🇺🇸", geo: "US-PA", group: "North America" },
+  { label: "Michigan, US", flag: "🇺🇸", geo: "US-MI", group: "North America" },
+  { label: "Ontario, Canada", flag: "🇨🇦", geo: "CA-ON", group: "North America", popular: true },
+  { label: "Canada (rest)", flag: "🇨🇦", geo: "CA-BC", group: "North America", cryptoFriendly: true },
+  // Latin America
+  { label: "Brazil", flag: "🇧🇷", geo: "BR", group: "Latin America", popular: true, cryptoFriendly: true },
+  { label: "Mexico", flag: "🇲🇽", geo: "MX", group: "Latin America" },
+  { label: "Argentina", flag: "🇦🇷", geo: "AR", group: "Latin America" },
+  { label: "Chile", flag: "🇨🇱", geo: "CL", group: "Latin America" },
+  { label: "Colombia", flag: "🇨🇴", geo: "CO", group: "Latin America" },
+  { label: "Peru", flag: "🇵🇪", geo: "PE", group: "Latin America" },
+  // Asia-Pacific
+  { label: "Japan", flag: "🇯🇵", geo: "JP", group: "Asia-Pacific", cryptoFriendly: true },
+  { label: "India", flag: "🇮🇳", geo: "IN", group: "Asia-Pacific" },
+  { label: "New Zealand", flag: "🇳🇿", geo: "NZ", group: "Asia-Pacific", cryptoFriendly: true },
+  { label: "Australia", flag: "🇦🇺", geo: "AU", group: "Asia-Pacific" },
+  { label: "Philippines", flag: "🇵🇭", geo: "PH", group: "Asia-Pacific" },
+  // Africa
+  { label: "South Africa", flag: "🇿🇦", geo: "ZA", group: "Africa" },
+  { label: "Nigeria", flag: "🇳🇬", geo: "NG", group: "Africa" },
+  { label: "Kenya", flag: "🇰🇪", geo: "KE", group: "Africa" },
+  // Other
+  { label: "Global (no routing)", flag: "🌐", group: "Other" },
 ];
+
+export const MARKETS = MARKET_OPTIONS.map((m) => m.label);
 
 /** Default test-account inbox for agent logins. Gmail plus-addresses per
  * brand (stottiefingaz+stake@gmail.com) all land here — one inbox for every
@@ -166,18 +221,15 @@ export function defaultTestEmailForBrand(brandName: string): string {
   return `${DEFAULT_TEST_EMAIL.slice(0, at)}+${slug}${DEFAULT_TEST_EMAIL.slice(at)}`;
 }
 
-/** Market → the country the agent's browser should appear from. iGaming
- * sites geo-gate content, offers and payment methods, so auditing from the
- * wrong region skews every score. Sessions route through a residential
- * proxy in this country — the user never needs a VPN. Global/Crypto has no
- * mapping: those brands serve one worldwide experience. */
+/** Market label → proxy geolocation code ("GB", "US-NJ"). iGaming sites
+ * geo-gate content, offers and payment methods, so auditing from the wrong
+ * region skews every score. Sessions route through a residential proxy in
+ * this location — the user never needs a VPN. Includes aliases for market
+ * labels stored on older projects. */
 export const MARKET_PROXY_COUNTRY: Record<string, string> = {
-  "United Kingdom": "GB",
-  Ireland: "IE",
-  "Ontario, Canada": "CA",
-  "New Jersey, US": "US",
-  Germany: "DE",
-  Netherlands: "NL",
+  ...Object.fromEntries(
+    MARKET_OPTIONS.filter((m) => m.geo).map((m) => [m.label, m.geo!])
+  ),
   Nordics: "SE",
 };
 

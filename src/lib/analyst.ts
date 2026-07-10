@@ -2,7 +2,7 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import { chromium } from "playwright-core";
 import {
   createSession,
-  proxyCountryFor,
+  proxyConfig,
   releaseSession,
   withSessionRetry,
 } from "./browserbase";
@@ -686,7 +686,6 @@ async function analyzeWithAgent(
   contextId?: string | null,
   requestedProxyCountry?: string | null
 ): Promise<JourneyAnalysis> {
-  const proxyCountry = proxyCountryFor(requestedProxyCountry);
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
   const stagehand = await withSessionRetry(async () => {
@@ -708,13 +707,7 @@ async function analyzeWithAgent(
           // Resume the brand's logged-in state so gated areas are scoreable.
           ...(contextId ? { context: { id: contextId, persist: true } } : {}),
         },
-        ...(proxyCountry
-          ? {
-              proxies: [
-                { type: "browserbase" as const, geolocation: { country: proxyCountry } },
-              ],
-            }
-          : {}),
+        ...proxyConfig(requestedProxyCountry),
       },
       verbose: 0,
       disablePino: true,

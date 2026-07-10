@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { MARKETS } from "@/lib/constants";
+import { MARKET_OPTIONS } from "@/lib/constants";
 import {
   HEURISTIC_COUNT,
   HowItWorks,
@@ -137,9 +137,10 @@ export function LandingShowcase() {
             </p>
           </div>
           <div className="mt-8 flex flex-wrap gap-2">
-            {MARKETS.map((m) => (
-              <Badge key={m} variant="outline" className="px-3 py-1 font-normal">
-                {m}
+            {MARKET_OPTIONS.filter((m) => m.geo).map((m) => (
+              <Badge key={m.label} variant="outline" className="gap-1.5 px-3 py-1 font-normal">
+                <span aria-hidden>{m.flag}</span>
+                {m.label}
               </Badge>
             ))}
           </div>

@@ -2,7 +2,7 @@ import { Stagehand } from "@browserbasehq/stagehand";
 import {
   createContext,
   getLiveViewUrl,
-  proxyCountryFor,
+  proxyConfig,
   withSessionRetry,
 } from "./browserbase";
 import {
@@ -113,7 +113,6 @@ export async function startSignup(
   };
   jobs.set(brandId, job);
 
-  const proxyCountry = proxyCountryFor(opts.requestedProxyCountry);
   // Retry on Browserbase's 5-creates-per-minute burst limit.
   const stagehand = await withSessionRetry(async () => {
     const sh = new Stagehand({
@@ -132,13 +131,7 @@ export async function startSignup(
           viewport: { width: 1440, height: 900 },
           context: { id: contextId, persist: true },
         },
-        ...(proxyCountry
-          ? {
-              proxies: [
-                { type: "browserbase" as const, geolocation: { country: proxyCountry } },
-              ],
-            }
-          : {}),
+        ...proxyConfig(opts.requestedProxyCountry),
       },
       verbose: 0,
       disablePino: true,
