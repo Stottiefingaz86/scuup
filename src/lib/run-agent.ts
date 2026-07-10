@@ -63,7 +63,7 @@ export function useRunningAgents(): string[] {
 /** Run the journey agent for one brand+area and persist the result. */
 export function runAgent(
   projectId: string,
-  brand: Pick<Brand, "id" | "url">,
+  brand: Pick<Brand, "id" | "url" | "name" | "role">,
   area: string
 ): Promise<JourneyAnalysis> {
   const key = agentKey(brand.id, area);
@@ -79,6 +79,9 @@ export function runAgent(
         journey: area,
         brandId: brand.id,
         market: getProject(projectId)?.market ?? "",
+        // Signup runs seed a per-brand test persona from these.
+        brandName: brand.name,
+        ownBrand: brand.role === "own_brand",
       }),
     });
     const data = await res.json();
@@ -107,33 +110,46 @@ export function runAgent(
 }
 
 /** Run many agent analyses with limited concurrency (remote browser +
- * model calls per run — don't stampede the session pool). Returns failures
- * so callers can tell the user exactly what didn't run and why. */
+ * model calls per run — don't stampede the session pool). A brand's jobs
+ * run in the order given, one at a time — so a signup run that creates a
+ * logged-in session finishes before that brand's gated journeys start.
+ * Returns failures so callers can tell the user what didn't run and why. */
 export async function runAgentBatch(
   projectId: string,
-  jobs: { brand: Pick<Brand, "id" | "url" | "name">; area: string }[],
+  jobs: { brand: Pick<Brand, "id" | "url" | "name" | "role">; area: string }[],
   concurrency = 2
 ): Promise<{ brand: string; area: string; error: string }[]> {
-  const queue = [...jobs];
+  const byBrand = new Map<string, typeof jobs>();
+  for (const job of jobs) {
+    const list = byBrand.get(job.brand.id) ?? [];
+    list.push(job);
+    byBrand.set(job.brand.id, list);
+  }
+  const brandQueues = [...byBrand.values()];
   const failures: { brand: string; area: string; error: string }[] = [];
   await Promise.all(
-    Array.from({ length: Math.min(concurrency, queue.length) }, async () => {
-      for (;;) {
-        const job = queue.shift();
-        if (!job) return;
-        try {
-          await runAgent(projectId, job.brand, job.area);
-        } catch (e) {
-          failures.push({
-            brand: job.brand.name,
-            area: job.area,
-            error: friendlyAgentError(
-              e instanceof Error ? e : new Error(String(e))
-            ),
-          });
+    Array.from(
+      { length: Math.min(concurrency, brandQueues.length) },
+      async () => {
+        for (;;) {
+          const brandJobs = brandQueues.shift();
+          if (!brandJobs) return;
+          for (const job of brandJobs) {
+            try {
+              await runAgent(projectId, job.brand, job.area);
+            } catch (e) {
+              failures.push({
+                brand: job.brand.name,
+                area: job.area,
+                error: friendlyAgentError(
+                  e instanceof Error ? e : new Error(String(e))
+                ),
+              });
+            }
+          }
         }
       }
-    })
+    )
   );
   return failures;
 }

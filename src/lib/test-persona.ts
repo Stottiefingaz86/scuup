@@ -7,6 +7,8 @@ import {
 export interface SignupPersona {
   firstName: string;
   lastName: string;
+  /** Random handle for sites that ask for a username. */
+  username?: string;
   email: string;
   dateOfBirth: string;
   /** Display format for date fields (US vs EU). */
@@ -18,6 +20,57 @@ export interface SignupPersona {
   state: string;
   postalCode: string;
   country: string;
+}
+
+/* Randomised identity: a fresh name/phone/username per brand so repeated
+ * signups don't collide on operator-side dedupe. Persisted encrypted per
+ * brand, so the same persona is reused on retries. */
+const FIRST_NAMES = [
+  "Alex", "Jordan", "Sam", "Chris", "Jamie", "Taylor", "Ryan", "Casey",
+  "Morgan", "Drew", "Lee", "Jesse",
+];
+const LAST_NAMES = [
+  "Morgan", "Hunter", "Bennett", "Walker", "Reid", "Carter", "Brooks",
+  "Hayes", "Ellis", "Grant", "Porter", "Shaw",
+];
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomDigits(n: number): string {
+  return Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join("");
+}
+
+/** Randomise the trailing digits of a region phone number so each brand
+ * gets a unique but correctly-formatted mobile. */
+function randomizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "").length;
+  const keep = Math.max(4, digits - 6);
+  let seen = 0;
+  return phone
+    .split("")
+    .map((ch) => {
+      if (!/\d/.test(ch)) return ch;
+      seen += 1;
+      return seen <= keep ? ch : String(Math.floor(Math.random() * 10));
+    })
+    .join("");
+}
+
+function randomDob(region: string): { iso: string; display: string } {
+  const year = 1986 + Math.floor(Math.random() * 12); // 21+ everywhere
+  const month = 1 + Math.floor(Math.random() * 12);
+  const day = 3 + Math.floor(Math.random() * 25);
+  const mm = String(month).padStart(2, "0");
+  const dd = String(day).padStart(2, "0");
+  return {
+    iso: `${year}-${mm}-${dd}`,
+    display:
+      region === "us" || region === "ca"
+        ? `${mm}/${dd}/${year}`
+        : `${dd}/${mm}/${year}`,
+  };
 }
 
 const PERSONA_BY_REGION: Record<
@@ -140,12 +193,18 @@ export function buildSignupPersona(opts: {
   const email = opts.ownBrand
     ? DEFAULT_TEST_EMAIL
     : defaultTestEmailForBrand(opts.brandName);
-  const dobDisplay =
-    region === "us" || region === "ca" ? "05/15/1990" : "15/05/1990";
+  const firstName = pick(FIRST_NAMES);
+  const lastName = pick(LAST_NAMES);
+  const dob = randomDob(region);
   return {
     ...base,
+    firstName,
+    lastName,
+    username: `${firstName}${lastName}${randomDigits(4)}`.toLowerCase(),
+    phone: randomizePhone(base.phone),
     email,
-    dateOfBirthDisplay: dobDisplay,
+    dateOfBirth: dob.iso,
+    dateOfBirthDisplay: dob.display,
   };
 }
 
@@ -157,6 +216,9 @@ export function personaVariables(
   return {
     email: persona.email,
     password,
+    username:
+      persona.username ??
+      `${persona.firstName}${persona.lastName}${Math.floor(1000 + Math.random() * 9000)}`.toLowerCase(),
     firstName: persona.firstName,
     lastName: persona.lastName,
     fullName: `${persona.firstName} ${persona.lastName}`,

@@ -105,9 +105,15 @@ function JourneysContent({ project }: { project: Project }) {
     areas.some((a) => areaScore(b, a) === null)
   );
   const runningCount = useRunningAgents().length;
+  // Signup first (it registers a test account and unlocks the session),
+  // login-gated journeys last so they reuse it. runAgentBatch keeps each
+  // brand's jobs in this order.
+  const jobOrder = (a: string) =>
+    a === "signup" ? 0 : journeyRequiresLogin(a) ? 2 : 1;
   const agentJobs = project.brands.flatMap((brand) =>
     areas
-      .filter((a) => agentCanReach(a) && areaScore(brand, a) === null)
+      .filter((a) => agentCanReachLoggedIn(a) && areaScore(brand, a) === null)
+      .sort((a, b) => jobOrder(a) - jobOrder(b))
       .map((area) => ({ brand, area }))
   );
 
@@ -446,10 +452,12 @@ function JourneysContent({ project }: { project: Project }) {
                     "The agent was blocked before it could observe this area.")
                   : agentCanReach(selected)
                     ? `No analysis captured for ${detailBrand.name} here yet. The agent can navigate there and score it on its own.`
-                    : `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login — launch the site in a recorded session to score it.`}
+                    : agentCanReachLoggedIn(selected)
+                      ? `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login — run the signup journey first (the agent registers a test account), then the agent can walk it.`
+                      : `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login — launch the site in a recorded session to score it.`}
               </p>
               <div className="flex items-center gap-2">
-                {agentCanReach(selected) ? (
+                {agentCanReachLoggedIn(selected) ? (
                   <RunAgentButton
                     projectId={project.id}
                     brand={detailBrand}

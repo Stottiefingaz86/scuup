@@ -116,6 +116,9 @@ export interface JourneyAnalysis {
   retentionType?: string;
   /** Product features detected in the captured screenshots. */
   features?: DetectedFeature[];
+  /** Signup journeys only: the agent's registration ended in an
+   * authenticated session, unlocking the brand's logged-in journeys. */
+  authenticated?: boolean;
   finalUrl: string;
 }
 

@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 import {
   agentCanReach,
+  agentCanReachLoggedIn,
   ANALYSIS_AREA_LABELS,
   LANDING,
 } from "@/lib/constants";
@@ -169,7 +170,16 @@ export default function AnalyzingPage() {
 
       const brands = [...project.brands];
       const projectId = project.id;
-      const areas = [LANDING, ...project.journeys.filter((j) => agentCanReach(j))];
+      const publicAreas = [
+        LANDING,
+        ...project.journeys.filter((j) => agentCanReach(j)),
+      ];
+      // Gated journeys run in a second phase: the signup run in phase one
+      // registers a test account, and phase two reuses that logged-in
+      // session for deposit / withdraw / account.
+      const gatedAreas = project.journeys.filter(
+        (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
+      );
 
       const setJob = (key: string, state: JobState) =>
         setStates((prev) => ({ ...prev, [key]: state }));
@@ -179,57 +189,66 @@ export default function AnalyzingPage() {
       const quotaMessage =
         "Browser session quota exhausted — upgrade Browserbase or wait for the monthly reset.";
 
-      const queue: { brand: Brand; area: string }[] = brands.flatMap((brand) =>
-        areas.map((area) => ({ brand, area }))
-      );
       let nextStartAt = 0;
-      const workers = Array.from(
-        { length: Math.min(MAX_CONCURRENT, queue.length) },
-        async () => {
-          for (;;) {
-            const job = queue.shift();
-            if (!job) return;
-            const key = jobKey(job.brand.id, job.area);
+      const runQueue = async (queue: { brand: Brand; area: string }[]) => {
+        const workers = Array.from(
+          { length: Math.min(MAX_CONCURRENT, queue.length) },
+          async () => {
+            for (;;) {
+              const job = queue.shift();
+              if (!job) return;
+              const key = jobKey(job.brand.id, job.area);
 
-            if (abortRef.current) return;
+              if (abortRef.current) return;
 
-            if (quotaExhausted) {
-              setJob(key, { phase: "failed", reason: quotaMessage });
-              continue;
-            }
-
-            const wait = Math.max(0, nextStartAt - Date.now());
-            nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
-            if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-            if (abortRef.current) return;
-            setJob(key, { phase: "running" });
-            try {
-              const analysis = await runAgent(projectId, job.brand, job.area);
-              if (!analysis.blocked) successCount += 1;
-              setJob(
-                key,
-                analysis.blocked
-                  ? { phase: "blocked" }
-                  : { phase: "done", score: analysis.score }
-              );
-            } catch (e) {
-              const reason = friendlyAgentError(
-                e instanceof Error ? e : new Error("analysis failed")
-              );
-              if (isBrowserbaseQuotaError(reason)) {
-                quotaExhausted = true;
-                setQuotaError(reason);
+              if (quotaExhausted) {
+                setJob(key, { phase: "failed", reason: quotaMessage });
+                continue;
               }
-              setJob(key, { phase: "failed", reason });
+
+              const wait = Math.max(0, nextStartAt - Date.now());
+              nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
+              if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+              if (abortRef.current) return;
+              setJob(key, { phase: "running" });
+              try {
+                const analysis = await runAgent(projectId, job.brand, job.area);
+                if (!analysis.blocked) successCount += 1;
+                setJob(
+                  key,
+                  analysis.blocked
+                    ? { phase: "blocked" }
+                    : { phase: "done", score: analysis.score }
+                );
+              } catch (e) {
+                const reason = friendlyAgentError(
+                  e instanceof Error ? e : new Error("analysis failed")
+                );
+                if (isBrowserbaseQuotaError(reason)) {
+                  quotaExhausted = true;
+                  setQuotaError(reason);
+                }
+                setJob(key, { phase: "failed", reason });
+              }
             }
           }
-        }
+        );
+        await Promise.all(workers);
+      };
+
+      await runQueue(
+        brands.flatMap((brand) => publicAreas.map((area) => ({ brand, area })))
       );
-      await Promise.all(workers);
+      if (!abortRef.current && gatedAreas.length > 0) {
+        await runQueue(
+          brands.flatMap((brand) => gatedAreas.map((area) => ({ brand, area })))
+        );
+      }
       if (cancelled || finishedRef.current || !getProject(projectId)) return;
       finishedRef.current = true;
 
-      const totalRunJobs = brands.length * areas.length;
+      const totalRunJobs =
+        brands.length * (publicAreas.length + gatedAreas.length);
       setRunFinished({
         scored: successCount,
         failed: totalRunJobs - successCount,
@@ -252,10 +271,18 @@ export default function AnalyzingPage() {
   }
 
   const areas = project
-    ? [LANDING, ...project.journeys.filter((j) => agentCanReach(j))]
+    ? [
+        LANDING,
+        ...project.journeys.filter((j) => agentCanReach(j)),
+        // Second-phase gated journeys — the agent registers a test account
+        // during signup and walks these logged in.
+        ...project.journeys.filter(
+          (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
+        ),
+      ]
     : [];
   const gatedAreas = project
-    ? project.journeys.filter((j) => !agentCanReach(j))
+    ? project.journeys.filter((j) => !agentCanReachLoggedIn(j))
     : [];
   const totalJobs = project ? project.brands.length * areas.length : 0;
   const settled = Object.values(states).filter(

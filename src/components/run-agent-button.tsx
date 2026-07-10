@@ -19,7 +19,7 @@ export function RunAgentButton({
   size = "sm",
 }: {
   projectId: string;
-  brand: Pick<Brand, "id" | "url" | "name">;
+  brand: Pick<Brand, "id" | "url" | "name" | "role">;
   area: string;
   label?: string;
   className?: string;

@@ -36,6 +36,9 @@ export interface JourneyAnalysis extends AnalysisResult {
   analysedAt: string;
   screenshots: string[];
   finalUrl: string;
+  /** Signup journeys only: true when the agent's registration ended in an
+   * authenticated session — the saved context can now walk gated journeys. */
+  authenticated?: boolean;
 }
 
 interface PlaybookStep {
@@ -196,7 +199,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   landing:
     "This is the brand's landing/home experience. Judge first impressions: value proposition clarity, trust signals (licence, responsible gambling), CTA prominence, visual hierarchy, perceived speed — and above all, focus.",
   signup:
-    "This is the registration flow. Judge friction: number of visible fields, progressive disclosure, social/fast sign-up options, clarity of requirements, trust cues near the form.",
+    "This is the registration flow. If the agent's trail shows it filled and submitted the form with a test persona, judge the WHOLE flow it walked: number of steps and fields, progressive disclosure, inline validation quality, error recovery, social/fast sign-up options, verification friction (email/SMS walls), and what the post-submit state communicates. If the trail only shows the opened form, judge visible friction: field count, clarity of requirements, trust cues near the form.",
   deposit:
     "This is the deposit flow. Judge trust and speed: payment method breadth, fee/limit transparency, expected crediting times, security cues, number of steps to complete.",
   withdraw:
@@ -682,16 +685,27 @@ const LOGIN_PLAYBOOKS: Record<string, PlaybookStep[]> = {
 
 /** Analyse a journey. Landing pages are a straight visit; deeper public
  * journeys are navigated autonomously by the Stagehand agent. Login-gated
- * journeys run when the brand has a logged-in browser context. */
+ * journeys run when the brand has a logged-in browser context. When
+ * `signupVars` (persona + password) are provided, the signup journey goes
+ * beyond opening the form: the agent fills and submits the registration
+ * to create a real test account. */
 export async function analyzeJourney(
   url: string,
   journey: string,
   contextId?: string | null,
-  proxyCountry?: string | null
+  proxyCountry?: string | null,
+  signupVars?: Record<string, string> | null
 ): Promise<JourneyAnalysis> {
   const playbook = AGENT_PLAYBOOKS[journey];
   if (playbook) {
-    return analyzeWithAgent(url, journey, playbook, contextId, proxyCountry);
+    return analyzeWithAgent(
+      url,
+      journey,
+      playbook,
+      contextId,
+      proxyCountry,
+      journey === "signup" ? signupVars : null
+    );
   }
   const loginPlaybook = LOGIN_PLAYBOOKS[journey];
   if (loginPlaybook) {
@@ -710,6 +724,83 @@ export async function analyzeJourney(
   return analyzeLanding(url, contextId, proxyCountry);
 }
 
+/** "LOGGED_IN" check the registration walk uses to know it's done. */
+async function agentIsLoggedIn(stagehand: Stagehand): Promise<boolean> {
+  try {
+    const result = await stagehand.extract(
+      "Answer with exactly LOGGED_IN or LOGGED_OUT. LOGGED_IN means a player avatar, account menu, deposit button, or wallet balance for an authenticated user is visible. Prominent Sign Up / Register CTAs mean LOGGED_OUT."
+    );
+    return result.extraction.toUpperCase().includes("LOGGED_IN");
+  } catch {
+    return false;
+  }
+}
+
+/** Fill and submit the (possibly multi-step) registration form with the
+ * test persona, capturing each step as scoring evidence. Returns true when
+ * the walk ended in an authenticated session. */
+async function runRegistrationWalk(
+  stagehand: Stagehand,
+  page: {
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  vars: Record<string, string>,
+  trail: string[],
+  shots: string[],
+  capture: () => Promise<string>
+): Promise<boolean> {
+  // Cap the walk at 4 form steps — real registrations are 1-3 — so the
+  // serverless route's 300s budget also covers scoring.
+  for (let step = 1; step <= 4; step++) {
+    try {
+      await stagehand.act(
+        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. Choose a currency if a currency picker is required. Tick age-verification or terms checkboxes if required and visible. Only fill empty fields — do not submit yet.`,
+        { variables: vars }
+      );
+      trail.push(`filled registration step ${step} with the test persona`);
+    } catch (e) {
+      trail.push(
+        `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
+      );
+    }
+    await page.waitForTimeout(1500);
+    shots.push(await capture());
+
+    let advanced = false;
+    try {
+      const advance = await stagehand.act(
+        "If this is not the final submit screen, click Continue, Next, or Proceed. If this is the final step, click Create Account, Register, Sign Up, Play Now, or Submit to complete registration."
+      );
+      advanced = advance.success;
+    } catch {
+      // Verification wall or captcha — the logged-in check below decides.
+    }
+    await page.waitForTimeout(5000);
+    shots.push(await capture());
+
+    if (await agentIsLoggedIn(stagehand)) {
+      trail.push("registration submitted — account created and logged in");
+      return true;
+    }
+    if (!advanced) {
+      trail.push(
+        `registration stalled at step ${step} — likely captcha, email/SMS verification, or a validation error (visible in the screenshots)`
+      );
+      return false;
+    }
+  }
+  // One last settle: some sites auto-login a few seconds after submit.
+  await page.waitForTimeout(8000);
+  if (await agentIsLoggedIn(stagehand)) {
+    trail.push("registration submitted — account created and logged in");
+    return true;
+  }
+  trail.push(
+    "registration submitted but no authenticated session detected — the site may require email or SMS verification first"
+  );
+  return false;
+}
+
 /** The agent path: navigate from the homepage to the target area with
  * AI-driven actions, then capture and score what it found. */
 async function analyzeWithAgent(
@@ -717,7 +808,8 @@ async function analyzeWithAgent(
   journey: string,
   playbook: PlaybookStep[],
   contextId?: string | null,
-  requestedProxyCountry?: string | null
+  requestedProxyCountry?: string | null,
+  signupVars?: Record<string, string> | null
 ): Promise<JourneyAnalysis> {
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
@@ -766,6 +858,28 @@ async function analyzeWithAgent(
 
     const trail: string[] = [];
     const shots: string[] = [];
+    let authenticated: boolean | undefined;
+
+    // A persisted context that's already authenticated has no register
+    // button to walk — report the unlocked state instead of a bogus block.
+    if (journey === "signup" && signupVars && (await agentIsLoggedIn(stagehand))) {
+      const screenshots = await persistShots([await capture()]);
+      return {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason:
+          "This brand already has an authenticated test session from an earlier registration — the signup form can't be re-walked while logged in. Logged-in journeys (deposit, withdraw, account) are unlocked.",
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots,
+        finalUrl: page.url(),
+        authenticated: true,
+      };
+    }
     for (const step of playbook) {
       let ok = false;
       let message = "";
@@ -833,6 +947,19 @@ async function analyzeWithAgent(
       }
     }
 
+    // With a persona in hand, go beyond the opened form: create a real
+    // test account so gated journeys can run against this brand's context.
+    if (journey === "signup" && signupVars) {
+      authenticated = await runRegistrationWalk(
+        stagehand,
+        page,
+        signupVars,
+        trail,
+        shots,
+        capture
+      );
+    }
+
     if (DEEP_SCROLL_JOURNEYS.has(journey)) {
       const scrollShots = await captureScrollSequence({
         capture,
@@ -863,6 +990,7 @@ async function analyzeWithAgent(
       analysedAt: new Date().toISOString(),
       screenshots,
       finalUrl,
+      ...(authenticated !== undefined ? { authenticated } : {}),
     };
   } finally {
     await stagehand.close().catch(() => {});

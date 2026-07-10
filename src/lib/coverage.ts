@@ -1,4 +1,9 @@
-import { agentCanReach, ANALYSIS_AREA_LABELS, LANDING } from "./constants";
+import {
+  agentCanReach,
+  agentCanReachLoggedIn,
+  ANALYSIS_AREA_LABELS,
+  LANDING,
+} from "./constants";
 import type { Brand, Project } from "./types";
 
 export type GapReason = "blocked" | "not_analysed";
@@ -60,9 +65,11 @@ export function getCoverage(project: Project): Coverage {
           title: `${brand.name} — ${ANALYSIS_AREA_LABELS[area] ?? area}`,
           detail: agentCanReach(area)
             ? "Public area — the agent can navigate there and score it on its own."
-            : "Post-login journey — needs a recorded live session to score.",
+            : agentCanReachLoggedIn(area)
+              ? "Post-login journey — the agent registers a test account during the signup run, then walks this logged in."
+              : "Post-login journey — needs a recorded live session to score.",
           reason: "not_analysed",
-          cta: agentCanReach(area) ? "Run agent" : "Launch site",
+          cta: agentCanReachLoggedIn(area) ? "Run agent" : "Launch site",
         });
       }
     }

@@ -31,7 +31,7 @@ import { RunAgentButton } from "@/components/run-agent-button";
 import { ScoreBar } from "@/components/score-bar";
 import { TierLegend } from "@/components/score-chip";
 import { getCoverage } from "@/lib/coverage";
-import { agentCanReach, LANDING } from "@/lib/constants";
+import { agentCanReachLoggedIn, LANDING } from "@/lib/constants";
 import {
   areaScore,
   overallScore,
@@ -274,7 +274,8 @@ function OverviewContent({ project }: { project: Project }) {
                       {gap.detail}
                     </span>
                   </div>
-                  {gap.reason === "not_analysed" && agentCanReach(gap.area) ? (
+                  {gap.reason === "not_analysed" &&
+                  agentCanReachLoggedIn(gap.area) ? (
                     <RunAgentButton
                       projectId={project.id}
                       brand={gap.brand}
