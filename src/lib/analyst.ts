@@ -39,6 +39,9 @@ export interface JourneyAnalysis extends AnalysisResult {
   /** Signup journeys only: true when the agent's registration ended in an
    * authenticated session — the saved context can now walk gated journeys. */
   authenticated?: boolean;
+  /** True when this visit was scored while logged in — what the agent
+   * actually observed, not what the journey type implies. */
+  loggedIn?: boolean;
 }
 
 interface PlaybookStep {
@@ -695,10 +698,12 @@ export async function analyzeJourney(
   opts?: {
     signupVars?: Record<string, string> | null;
     chainLoginJourneys?: string[];
+    loginVars?: Record<string, string> | null;
   }
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   const signupVars = opts?.signupVars ?? null;
   const chainLoginJourneys = opts?.chainLoginJourneys;
+  const loginVars = opts?.loginVars ?? null;
   const playbook = AGENT_PLAYBOOKS[journey];
   if (playbook) {
     return analyzeWithAgent(
@@ -713,9 +718,9 @@ export async function analyzeJourney(
   }
   const loginPlaybook = LOGIN_PLAYBOOKS[journey];
   if (loginPlaybook) {
-    if (!contextId) {
+    if (!contextId && !loginVars) {
       throw new Error(
-        `${journey} sits behind a login — save credentials and log the agent in first (Accounts page), or record a live session.`
+        `${journey} sits behind a login — run the Sign Up journey first so the agent registers a test account, or record a live session.`
       );
     }
     return analyzeWithAgent(
@@ -723,7 +728,10 @@ export async function analyzeJourney(
       journey,
       loginPlaybook,
       contextId,
-      proxyCountry
+      proxyCountry,
+      null,
+      undefined,
+      loginVars
     );
   }
   if (journey !== "landing") {
@@ -817,7 +825,7 @@ async function runRegistrationWalk(
     }
   }
 
-  if (await tryLoginAfterSignup(stagehand, page, vars, trail, shots, capture)) {
+  if (await tryAgentLogin(stagehand, page, vars, trail, shots, capture)) {
     return true;
   }
 
@@ -832,9 +840,10 @@ async function runRegistrationWalk(
   return false;
 }
 
-/** Account may exist after submit but the site routes to verify-first — log
- * in with the same test credentials before giving up. */
-async function tryLoginAfterSignup(
+/** Open the login form and sign in with the saved test credentials. Used
+ * after registration (verify-first sites) and to restore an expired session
+ * before a login-gated journey. */
+async function tryAgentLogin(
   stagehand: Stagehand,
   page: { waitForTimeout: (ms: number) => Promise<void> },
   vars: Record<string, string>,
@@ -881,7 +890,8 @@ async function analyzeWithAgent(
   contextId?: string | null,
   requestedProxyCountry?: string | null,
   signupVars?: Record<string, string> | null,
-  chainLoginJourneys?: string[]
+  chainLoginJourneys?: string[],
+  loginVars?: Record<string, string> | null
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
@@ -931,6 +941,45 @@ async function analyzeWithAgent(
     const trail: string[] = [];
     const shots: string[] = [];
     let authenticated: boolean | undefined;
+    const isLoginJourney = LOGIN_PLAYBOOKS[journey] != null;
+
+    // Login-gated journeys: first port of call is getting a real session.
+    // Reuse the persisted context if it's still authenticated, otherwise log
+    // in with the saved test credentials. Only when both fail do we report
+    // the area as needing manual takeover.
+    if (isLoginJourney) {
+      let sessionLoggedIn = await agentIsLoggedIn(stagehand);
+      if (!sessionLoggedIn && loginVars) {
+        sessionLoggedIn = await tryAgentLogin(
+          stagehand,
+          page,
+          loginVars,
+          trail,
+          shots,
+          capture
+        );
+        if (sessionLoggedIn) await page.waitForTimeout(3000);
+      }
+      if (!sessionLoggedIn) {
+        const screenshots = await persistShots([...shots, await capture()]);
+        return {
+          area: journey,
+          analysedAt: new Date().toISOString(),
+          score: 0,
+          blocked: true,
+          blockReason:
+            "The agent couldn't get a logged-in session on this site — the saved test account may need email/SMS verification or the session expired. Take control to walk this journey yourself.",
+          summary: "",
+          heuristics: [],
+          observations: [],
+          features: [],
+          screenshots,
+          finalUrl: page.url(),
+          loggedIn: false,
+        };
+      }
+      trail.push("agent confirmed a logged-in session before the walk");
+    }
 
     // A persisted context that's already authenticated has no register
     // button to walk — report the unlocked state instead of a bogus block.
@@ -950,6 +999,7 @@ async function analyzeWithAgent(
         screenshots,
         finalUrl: page.url(),
         authenticated: true,
+        loggedIn: true,
       };
     }
     for (const step of playbook) {
@@ -1063,6 +1113,9 @@ async function analyzeWithAgent(
       screenshots,
       finalUrl,
       ...(authenticated !== undefined ? { authenticated } : {}),
+      // What the session actually was — signup walks report the state they
+      // ended in, login journeys verified the session before walking.
+      loggedIn: isLoginJourney ? true : (authenticated ?? false),
     };
 
     // Signup created a session — walk deposit/account journeys in the same
@@ -1225,6 +1278,8 @@ async function walkPlaybookAndScore(
     analysedAt: new Date().toISOString(),
     screenshots,
     finalUrl,
+    // Chained walks only run inside the authenticated session from signup.
+    loggedIn: true,
   };
 }
 

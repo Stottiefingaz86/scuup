@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Globe,
   KeyRound,
+  LoaderCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -48,17 +49,27 @@ import {
   journeyRequiresLogin,
 } from "@/lib/constants";
 import { projectAreas } from "@/lib/coverage";
-import { runAgentBatch, useRunningAgents } from "@/lib/run-agent";
+import { agentKey, runAgentBatch, useRunningAgents } from "@/lib/run-agent";
 import { areaScore, type Brand, type Project } from "@/lib/types";
 
-/** Public journeys are walked logged out; the rest need a session. */
-function AccessBadge({ area, muted }: { area: string; muted?: boolean }) {
-  const loggedIn = journeyRequiresLogin(area);
+/** Session badge. `actual` reflects what a specific analysed visit really
+ * was (e.g. a signup walk that ended authenticated); without it the badge
+ * falls back to what the journey type requires. */
+function AccessBadge({
+  area,
+  actual,
+  muted,
+}: {
+  area: string;
+  actual?: boolean;
+  muted?: boolean;
+}) {
+  const loggedIn = actual ?? journeyRequiresLogin(area);
   return (
     <span
       title={
         loggedIn
-          ? "Scored from a logged-in session — needs a saved test account"
+          ? "Scored from a logged-in session with the agent's test account"
           : "Scored from the public site, logged out"
       }
       className={cn(
@@ -83,6 +94,7 @@ function JourneysContent({ project }: { project: Project }) {
   const [hoverCol, setHoverCol] = useState<string | null>(null);
   const [tabBrand, setTabBrand] = useState<string>(ownBrand.id);
   const [captureBrand, setCaptureBrand] = useState<Brand | null>(null);
+  const deepDiveRef = useRef<HTMLDivElement>(null);
 
   const detailBrand =
     project.brands.find((b) => b.id === tabBrand) ?? ownBrand;
@@ -104,7 +116,8 @@ function JourneysContent({ project }: { project: Project }) {
   const hasGaps = project.brands.some((b) =>
     areas.some((a) => areaScore(b, a) === null)
   );
-  const runningCount = useRunningAgents().length;
+  const running = useRunningAgents();
+  const runningCount = running.length;
   // Signup first (it registers a test account and unlocks the session),
   // login-gated journeys last so they reuse it. runAgentBatch keeps each
   // brand's jobs in this order.
@@ -117,51 +130,91 @@ function JourneysContent({ project }: { project: Project }) {
       .map((area) => ({ brand, area }))
   );
 
-  /** Action shown in an N/A cell: the agent if it can get there itself
-   * (or with a saved login), otherwise a manual launch. Blocked runs show
-   * why. Login-gated agent runs fail with a clear "set up Accounts" error
-   * when no session is saved. */
-  const naAction = (brand: Brand, area: string) => (
-    <span className="inline-flex items-center gap-1.5">
-      {brand.analyses[area]?.blocked ? (
-        <span
-          title={
-            brand.analyses[area].blockReason ??
-            "The agent was blocked before it could observe this area."
-          }
-          className="inline-flex cursor-help items-center gap-1 rounded-md bg-score-weak/10 px-1.5 py-0.5 text-[11px] font-medium text-score-weak"
-        >
-          <CircleAlert className="size-3" />
-          Blocked
-        </span>
-      ) : (
-        <ScoreChip score={null} />
-      )}
-      {agentCanReachLoggedIn(area) ? (
-        <RunAgentButton
-          projectId={project.id}
-          brand={brand}
-          area={area}
-          label="Agent"
-          variant="outline"
-          className="h-6 px-2 text-xs"
-        />
-      ) : (
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-6 gap-1 px-2 text-xs"
-          onClick={(e) => {
-            e.stopPropagation();
-            setCaptureBrand(brand);
-          }}
-        >
-          <ExternalLink className="size-3" />
-          Launch
-        </Button>
-      )}
-    </span>
+  // The agent fills gaps by itself — no buttons to click. Each brand+area
+  // is attempted once per visit; what fails lands in the failure panel with
+  // a Take control fallback instead of being retried in a loop.
+  const autoTried = useRef<Set<string>>(new Set());
+  const [failures, setFailures] = useState<
+    { brand: string; area: string; error: string }[]
+  >([]);
+  const autoJobs = agentJobs.filter(
+    ({ brand, area }) =>
+      !brand.analyses[area]?.blocked &&
+      !autoTried.current.has(agentKey(brand.id, area))
   );
+  const autoJobsKey = autoJobs
+    .map(({ brand, area }) => agentKey(brand.id, area))
+    .join(",");
+  useEffect(() => {
+    if (autoJobs.length === 0) return;
+    for (const { brand, area } of autoJobs) {
+      autoTried.current.add(agentKey(brand.id, area));
+    }
+    void runAgentBatch(project.id, autoJobs).then((fails) => {
+      if (fails.length > 0) {
+        setFailures((prev) => [...prev, ...fails]);
+      } else {
+        toast.success("Agent runs finished", {
+          description: "Every reachable area is now scored.",
+        });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- autoJobsKey captures the job set
+  }, [autoJobsKey, project.id]);
+
+  const retryFailures = async () => {
+    const jobs = failures.flatMap((f) => {
+      const brand = project.brands.find((b) => b.name === f.brand);
+      return brand ? [{ brand, area: f.area }] : [];
+    });
+    setFailures([]);
+    const fails = await runAgentBatch(project.id, jobs);
+    setFailures(fails);
+  };
+
+  /** What an unscored cell shows: a spinner while the agent works, the
+   * block reason with a Take control fallback when it was walled, or a
+   * plain N/A while the run is queued. */
+  const naAction = (brand: Brand, area: string) => {
+    if (running.includes(agentKey(brand.id, area))) {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+          <LoaderCircle className="size-3.5 animate-spin text-primary" />
+          Agent…
+        </span>
+      );
+    }
+    const analysis = brand.analyses[area];
+    if (analysis?.blocked) {
+      return (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            title={
+              analysis.blockReason ??
+              "The agent was blocked before it could observe this area."
+            }
+            className="inline-flex cursor-help items-center gap-1 rounded-md bg-score-weak/10 px-1.5 py-0.5 text-[11px] font-medium text-score-weak"
+          >
+            <CircleAlert className="size-3" />
+            Blocked
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 gap-1 px-2 text-xs"
+            onClick={(e) => {
+              e.stopPropagation();
+              setCaptureBrand(brand);
+            }}
+          >
+            <ExternalLink className="size-3" />
+            Take control
+          </Button>
+        </span>
+      );
+    }
+    return <ScoreChip score={null} />;
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -173,36 +226,15 @@ function JourneysContent({ project }: { project: Project }) {
               <CardTitle>Journey score matrix</CardTitle>
               <CardDescription>
                 Every score comes from a real analysed visit. Click a row for
-                the deep dive.
+                the deep dive below.
               </CardDescription>
             </div>
-            {agentJobs.length > 0 ? (
-              <Button
-                size="sm"
-                disabled={runningCount > 0}
-                className="gap-1.5"
-                onClick={async () => {
-                  const failures = await runAgentBatch(project.id, agentJobs);
-                  if (failures.length === 0) {
-                    toast.success("All agent runs finished", {
-                      description: "Every reachable area is now scored.",
-                    });
-                  } else {
-                    for (const f of failures) {
-                      toast.error(
-                        `${f.brand} — ${ANALYSIS_AREA_LABELS[f.area] ?? f.area} failed`,
-                        { description: f.error, duration: 10000 }
-                      );
-                    }
-                  }
-                }}
-              >
-                {runningCount > 0 ? (
-                  <>Agents running ({runningCount})…</>
-                ) : (
-                  <>Fill {agentJobs.length} gaps with the agent</>
-                )}
-              </Button>
+            {runningCount > 0 ? (
+              <span className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-2.5 py-1.5 text-xs font-medium text-primary">
+                <LoaderCircle className="size-3.5 animate-spin" />
+                Agent scoring {runningCount} area
+                {runningCount === 1 ? "" : "s"}…
+              </span>
             ) : null}
           </div>
           <TierLegend className="mt-1" />
@@ -244,7 +276,15 @@ function JourneysContent({ project }: { project: Project }) {
                 return (
                   <TableRow
                     key={area}
-                    onClick={() => setSelected(area)}
+                    onClick={() => {
+                      setSelected(area);
+                      // Bring the deep dive into view so the row → detail
+                      // relationship is obvious.
+                      deepDiveRef.current?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "nearest",
+                      });
+                    }}
                     className={cn(
                       "cursor-pointer",
                       selected === area &&
@@ -304,13 +344,60 @@ function JourneysContent({ project }: { project: Project }) {
               })}
             </TableBody>
           </Table>
+          {failures.length > 0 && runningCount === 0 ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-score-weak/30 bg-score-weak/5 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <CircleAlert className="size-4 text-score-weak" />
+                  The agent couldn&apos;t finish {failures.length} run
+                  {failures.length === 1 ? "" : "s"}
+                </p>
+                <Button size="sm" variant="outline" onClick={retryFailures}>
+                  Retry all
+                </Button>
+              </div>
+              <div className="flex flex-col gap-2">
+                {failures.map((f) => {
+                  const brand = project.brands.find((b) => b.name === f.brand);
+                  return (
+                    <div
+                      key={`${f.brand}-${f.area}`}
+                      className="flex flex-wrap items-start justify-between gap-2 rounded-lg border bg-background/40 p-3"
+                    >
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-sm font-medium">
+                          {f.brand} —{" "}
+                          {ANALYSIS_AREA_LABELS[f.area] ?? f.area}
+                        </span>
+                        <span className="text-xs leading-relaxed text-muted-foreground">
+                          {f.error}
+                        </span>
+                      </div>
+                      {brand ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          onClick={() => setCaptureBrand(brand)}
+                        >
+                          <ExternalLink data-icon="inline-start" />
+                          Take control
+                        </Button>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           {hasGaps ? (
             <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
               <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-              N/A — not observed yet. The agent walks public areas logged
-              out, then on Sign Up it fills the form, clicks Create Account,
-              and runs deposit / withdraw / account journeys in the same
-              session when authentication succeeds.
+              N/A areas are filled automatically — the agent walks public
+              areas logged out, registers a test account on Sign Up, then
+              runs deposit / withdraw / account logged in. Anything it
+              can&apos;t reach shows why, with a Take control button to walk
+              it yourself.
             </p>
           ) : null}
         </CardContent>
@@ -323,14 +410,17 @@ function JourneysContent({ project }: { project: Project }) {
       />
 
       {/* Deep dive */}
-      <Card>
+      <Card ref={deepDiveRef} className="scroll-mt-20">
         <CardHeader>
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2">
               <CardTitle className="font-heading text-xl">
                 {ANALYSIS_AREA_LABELS[selected] ?? selected} deep dive
               </CardTitle>
-              <AccessBadge area={selected} />
+              <AccessBadge
+                area={selected}
+                actual={detail?.loggedIn ?? detail?.authenticated}
+              />
               <div className="ms-auto flex items-center gap-1">
                 <span className="me-1 font-mono text-xs tabular-nums text-muted-foreground">
                   {areas.indexOf(selected) + 1}/{areas.length}

@@ -119,6 +119,9 @@ export interface JourneyAnalysis {
   /** Signup journeys only: the agent's registration ended in an
    * authenticated session, unlocking the brand's logged-in journeys. */
   authenticated?: boolean;
+  /** True when this specific visit was scored while logged in — set from
+   * what the agent actually observed, not the journey type. */
+  loggedIn?: boolean;
   finalUrl: string;
 }
 

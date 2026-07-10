@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { BrandMark } from "@/components/brand-mark";
 import { ProjectShell } from "@/components/project-shell";
+import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import type { Project } from "@/lib/types";
 
@@ -82,22 +83,14 @@ function EvidenceContent({ project }: { project: Project }) {
                       {analysis.finalUrl}
                     </a>
                     {analysis.screenshots?.length ? (
-                      <div className="mt-1 flex gap-2">
-                        {analysis.screenshots.map((src) => (
-                          <a
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {analysis.screenshots.map((src, i) => (
+                          <ScreenshotLightbox
                             key={src}
-                            href={src}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="block h-20 overflow-hidden rounded-md border transition-opacity hover:opacity-80"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
-                            <img
-                              src={src}
-                              alt="Captured screenshot"
-                              className="h-full w-auto"
-                            />
-                          </a>
+                            src={src}
+                            alt={`${brand.name} — ${ANALYSIS_AREA_LABELS[analysis.area] ?? analysis.area} screenshot ${i + 1}`}
+                            className="h-20 w-32"
+                          />
                         ))}
                       </div>
                     ) : null}

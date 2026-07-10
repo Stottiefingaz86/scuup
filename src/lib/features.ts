@@ -47,7 +47,9 @@ function extractedFeatures(analysis: JourneyAnalysis): FeatureWithEvidence[] {
         status: f.status,
         note: f.note,
         area,
-        loggedIn: journeyRequiresLogin(area),
+        // Prefer what the visit actually was; fall back to the journey type
+        // for analyses recorded before per-visit tracking existed.
+        loggedIn: analysis.loggedIn ?? journeyRequiresLogin(area),
         screenshot,
       },
     };
@@ -77,6 +79,20 @@ function derivePriority(
 
 const PRIORITY_ORDER: Priority[] = ["critical", "high", "medium", "low"];
 
+/** Product-specific feature categories, hidden unless the matching product
+ * is in the project's scope. Cross-cutting categories (Acquisition,
+ * Payments, Support, My Account) always show. */
+const CATEGORY_PRODUCT_GATE: Record<string, string[]> = {
+  Casino: ["Casino", "Live Casino"],
+  Sports: ["Sports"],
+  "Loyalty / Rewards": ["Rewards"],
+};
+
+function categoryInScope(category: string, products: string[]): boolean {
+  const gate = CATEGORY_PRODUCT_GATE[category];
+  return !gate || gate.some((p) => products.includes(p));
+}
+
 /** Build the side-by-side feature matrix from screenshot-detected features
  * only. */
 export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
@@ -91,6 +107,9 @@ export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
 
   for (const brand of project.brands) {
     for (const f of featuresForBrand(brand)) {
+      // Don't surface features from products outside the audit's scope —
+      // e.g. sportsbook features when the project only covers casino.
+      if (!categoryInScope(f.category, project.products)) continue;
       if (!featureMap.has(f.name)) {
         featureMap.set(f.name, { category: f.category, values: {}, evidence: {} });
       }

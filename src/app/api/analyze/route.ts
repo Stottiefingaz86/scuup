@@ -8,7 +8,7 @@ import {
 import { requireEmailVerified } from "@/lib/email-verification";
 import { analyzeJourney } from "@/lib/analyst";
 import { createContext } from "@/lib/browserbase";
-import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
+import { journeyRequiresLogin, MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { journeyAllowedOnPlan } from "@/lib/plan";
 import {
   getBrandContextId,
@@ -121,6 +121,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Login-gated journeys carry the saved test credentials so the agent can
+  // restore an expired session by logging in itself before giving up.
+  let loginVars: Record<string, string> | null = null;
+  if (journeyRequiresLogin(journey) && brandId) {
+    try {
+      const creds = await getCredentialsForLogin(brandId);
+      if (creds.persona && creds.password) {
+        loginVars = personaVariables(creds.persona, creds.password);
+      }
+    } catch {
+      // Without credentials the run still works while the context is live.
+    }
+  }
+
   // The project's market decides where the browser appears from, so
   // geo-gated offers and payment methods match what a local player sees.
   const proxyCountry = MARKET_PROXY_COUNTRY[market] ?? null;
@@ -130,6 +144,7 @@ export async function POST(request: NextRequest) {
       signupVars: journey === "signup" ? signupVars : null,
       chainLoginJourneys:
         journey === "signup" ? chainLoginJourneys : undefined,
+      loginVars,
     });
     const { chainedAnalyses, ...analysis } = result;
     if (journey === "signup" && brandId && analysis.authenticated) {

@@ -35,6 +35,7 @@ import {
 } from "@/components/ui/toggle-group";
 import { BrandMark } from "@/components/brand-mark";
 import { ProjectShell } from "@/components/project-shell";
+import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import {
   backfillFeatures,
   jobsNeedingFeatures,
@@ -146,21 +147,11 @@ function EvidenceStrip({
             </span>
           </div>
           {ev.screenshot ? (
-            <a
-              href={ev.screenshot}
-              target="_blank"
-              rel="noreferrer"
-              className="group relative block overflow-hidden rounded-md border"
-              title="Open full screenshot"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
-              <img
-                src={ev.screenshot}
-                alt={`${brand.name} — ${row.feature} evidence`}
-                loading="lazy"
-                className="h-28 w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.03]"
-              />
-            </a>
+            <ScreenshotLightbox
+              src={ev.screenshot}
+              alt={`${brand.name} — ${row.feature} evidence`}
+              className="h-28 w-full"
+            />
           ) : (
             <div className="flex h-28 items-center justify-center rounded-md border border-dashed text-xs text-muted-foreground/60">
               No screenshot saved for this detection
