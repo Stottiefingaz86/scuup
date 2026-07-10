@@ -224,6 +224,17 @@ function pickShots(shots: string[], max = 8): string[] {
   return picked;
 }
 
+/** The displayed score is always derived from heuristics — never an
+ * independent LLM guess that can drift 10+ points between identical visits. */
+function overallFromHeuristics(
+  heuristics: { score: number }[]
+): number | null {
+  if (!heuristics.length) return null;
+  const avg =
+    heuristics.reduce((sum, h) => sum + h.score, 0) / heuristics.length;
+  return Math.round(Math.max(0, Math.min(100, avg)));
+}
+
 const JOURNEY_GUIDANCE: Record<string, string> = {
   landing:
     "This is the brand's landing/home experience. Judge first impressions: value proposition clarity, trust signals (licence, responsible gambling), CTA prominence, visual hierarchy, perceived speed — and above all, focus.",
@@ -435,7 +446,7 @@ Scoring philosophy — judge DECISION EASE within the vertical's own conventions
 
 Score 0-100 calibrated to THIS vertical: 50 = an average licensed operator, 80+ = the Stake/Winna/Rainbet class of execution. If what you see matches how the category leaders do it, the score must reflect that — an analyst who marks the vertical's best practice as a failure has misread the market.
 
-Heuristics: score EXACTLY these, using these exact names (they are compared across brands): ${(JOURNEY_HEURISTICS[journey] ?? JOURNEY_HEURISTICS.landing).map((h) => `"${h}"`).join(", ")}. Each gets a 0-100 score and a one-line note naming the actual UI elements that earned it.
+Heuristics: score EXACTLY these, using these exact names (they are compared across brands): ${(JOURNEY_HEURISTICS[journey] ?? JOURNEY_HEURISTICS.landing).map((h) => `"${h}"`).join(", ")}. Each gets a 0-100 score and a one-line note naming the actual UI elements that earned it. Use these anchors: 90+ = best-in-class (Stake/Winna level), 75–89 = strong execution, 60–74 = average licensed operator, 40–59 = below category standard, below 40 = seriously broken. The overall journey score is computed from these heuristic scores — focus on scoring each heuristic accurately and consistently; do not invent a separate overall number.
 
 Summary: MAXIMUM 2 short sentences. Sentence 1 = the verdict — what drives this score, in plain product language. Sentence 2 = the single biggest gap (or standout) versus the category leaders. No hedging, no filler, no restating the score.
 
@@ -455,6 +466,7 @@ If the screenshots show a bot-verification wall, geo-block, error page, or a loa
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
@@ -506,8 +518,10 @@ If the screenshots show a bot-verification wall, geo-block, error page, or a loa
           parsed.retentionNotes ?? []
         )
       : parsed.retentionNotes;
+  const derivedScore = overallFromHeuristics(parsed.heuristics);
   return {
     ...parsed,
+    score: derivedScore ?? parsed.score,
     retention,
     retentionNotes,
     retentionContext: ctx,
@@ -557,6 +571,7 @@ export async function extractFeaturesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
@@ -644,6 +659,7 @@ export async function extractRetentionNotesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
+      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
