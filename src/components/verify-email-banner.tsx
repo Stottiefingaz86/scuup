@@ -2,9 +2,10 @@
 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Mail } from "lucide-react";
+import { Mail } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { VerifyEmailDialog } from "@/components/verify-email-dialog";
 
 /** Shown on dashboard when the user can browse but hasn't verified email yet. */
 export function VerifyEmailBanner() {
@@ -14,9 +15,7 @@ export function VerifyEmailBanner() {
   const [loading, setLoading] = useState(true);
   const [verified, setVerified] = useState(justVerified);
   const [email, setEmail] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const res = await fetch("/api/auth/verification");
@@ -34,48 +33,32 @@ export function VerifyEmailBanner() {
     refresh();
   }, [refresh]);
 
-  async function resend() {
-    setSending(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/auth/verification", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not send email.");
-      setSent(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not send email.");
-    } finally {
-      setSending(false);
-    }
-  }
-
   if (loading || verified) return null;
 
   return (
-    <Alert className="mb-8">
-      <Mail />
-      <AlertTitle>Verify your email to run analysis</AlertTitle>
-      <AlertDescription className="flex flex-col gap-3">
-        <p>
-          You can set up projects now. When you&apos;re ready to run an audit,
-          confirm your inbox{email ? ` (${email})` : ""} — we&apos;ll send a
-          one-click link.
-        </p>
-        {sent ? (
-          <p className="text-sm">Link sent. Check your inbox (and spam).</p>
-        ) : null}
-        {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={sending} onClick={resend}>
-            {sending ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
-            Send verification link
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => refresh()}>
-            I&apos;ve verified
-          </Button>
-        </div>
-      </AlertDescription>
-    </Alert>
+    <>
+      <Alert className="mb-8">
+        <Mail />
+        <AlertTitle>Verify your email to run analysis</AlertTitle>
+        <AlertDescription className="flex flex-col gap-3">
+          <p>
+            You can set up projects now. When you&apos;re ready to run an
+            audit, we&apos;ll email a 6-digit code
+            {email ? ` to ${email}` : ""} — enter it here and you&apos;re done.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => setDialogOpen(true)}>
+              Verify now
+            </Button>
+          </div>
+        </AlertDescription>
+      </Alert>
+      <VerifyEmailDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onVerified={() => setVerified(true)}
+      />
+    </>
   );
 }
 

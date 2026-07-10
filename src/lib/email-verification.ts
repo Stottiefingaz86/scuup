@@ -12,10 +12,15 @@ export async function isEmailVerified(userId: string): Promise<boolean> {
 }
 
 export async function markEmailVerified(userId: string): Promise<void> {
+  // Upsert, not update: if the signup trigger hasn't created the profile
+  // row yet, an update would silently no-op and the user would stay stuck
+  // in the "confirm your email" loop forever.
   await supabase()
     .from("ps_profiles")
-    .update({ email_verified_at: new Date().toISOString() })
-    .eq("user_id", userId);
+    .upsert(
+      { user_id: userId, email_verified_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
 }
 
 /** Supabase auth confirmed_at is set when we grant login after signup — we
