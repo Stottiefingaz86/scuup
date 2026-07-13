@@ -63,7 +63,7 @@ function HeroVisual() {
           </span>
           <span className="mx-auto flex items-center gap-1.5 rounded-md bg-white/[0.06] px-3 py-1 text-[11px] text-muted-foreground">
             <ShieldCheck className="size-3 text-brand" aria-hidden />
-            app.scuup.com — Winna vs Stake, Rainbet, FanDuel · Canada
+            app.scuup.com · Winna vs Stake, Rainbet, FanDuel · Canada
           </span>
         </div>
         <Image
@@ -89,19 +89,19 @@ const PILLARS = [
     icon: Route,
     title: "Journeys",
     description:
-      "Agents walk sign-up, casino, sportsbook, cashier, rewards and support in a real browser from your market — logged out and logged in — and score every screen on iGaming heuristics.",
+      "Agents walk sign-up, casino, sportsbook, cashier, rewards, and support in a real browser from your market (logged out and logged in) and score every screen on iGaming heuristics.",
   },
   {
     icon: Repeat,
     title: "Retention",
     description:
-      "What FTD players actually get: welcome structure, loyalty tiers, reward cadence and VIP mechanics, read from live pages and help centres — not marketing claims.",
+      "What FTD players actually get: welcome structure, loyalty tiers, reward cadence and VIP mechanics read from live pages and help centres, not marketing claims.",
   },
   {
     icon: MessagesSquare,
     title: "Voice of Customer",
     description:
-      "Real player reviews scraped and analysed — sentiment, themes, and where public complaints confirm or contradict what we measured on the site.",
+      "Real player reviews scraped and analysed: sentiment, themes, and where public complaints confirm or contradict what we measured on the site.",
   },
   {
     icon: Palette,
@@ -115,7 +115,7 @@ const COMPARISON = [
   {
     capability: "Evidence",
     old: "Opinion decks and screenshots someone remembered to take",
-    scuup: "A screenshot behind every number — nothing is estimated",
+    scuup: "A screenshot behind every number. Nothing is estimated.",
   },
   {
     capability: "Market view",
@@ -124,7 +124,7 @@ const COMPARISON = [
   },
   {
     capability: "Logged-in coverage",
-    old: "Rarely — nobody wants to register 5 accounts by hand",
+    old: "Rarely. Nobody wants to register 5 accounts by hand.",
     scuup: "Agents register real test accounts and walk deposit, rewards and account flows",
   },
   {
@@ -216,7 +216,7 @@ export function LandingShowcase() {
 
       <main>
         {/* Hero */}
-        <section className="landing-hero-glow relative overflow-hidden pb-20 pt-20 sm:pt-28">
+        <section className="landing-hero-glow landing-bg-dots landing-bg-grain relative overflow-hidden pb-20 pt-20 sm:pt-28">
           <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
             <Badge
               variant="outline"
@@ -226,14 +226,14 @@ export function LandingShowcase() {
               Quick competitor analysis for iGaming
             </Badge>
             <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.06] tracking-tight text-balance sm:text-6xl">
-              Know where you stand —{" "}
+              Know where you stand{" "}
               <span className="text-gradient">in an instant</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
               Deep dives into casino, sports, retention and what players are
-              really saying — you versus your competitors, from the market you
-              operate in. Scuup pinpoints where you&apos;re losing players and
-              shows you exactly how the leaders do it.
+              really saying. You versus your competitors, from the market you
+              operate in. Scuup (like “scoop”) pinpoints where you&apos;re
+              losing players and shows you exactly how the leaders do it.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Button
@@ -292,7 +292,7 @@ export function LandingShowcase() {
             <p className="mt-4 text-base leading-relaxed text-muted-foreground">
               How do we compete on loyalty? Why do players deposit there and
               not here? The Player CX Score answers it with four measured
-              pillars — each auditable down to the screen it was scored from,
+              pillars, each auditable down to the screen it was scored from,
               so the number holds up in front of a sceptical board.
             </p>
           </div>
@@ -463,7 +463,7 @@ export function LandingShowcase() {
               <br /> you&apos;re losing players
             </h2>
             <p className="max-w-lg text-muted-foreground">
-              You vs the rest of your market — scored, evidenced and ranked,
+              You vs the rest of your market. Scored, evidenced and ranked,
               with the fixes pinpointed. First read in under an hour.
             </p>
             <Button
@@ -491,7 +491,7 @@ export function LandingShowcase() {
           <p className="flex items-start gap-2 text-sm text-muted-foreground">
             <ShieldCheck className="mt-0.5 size-4 shrink-0" />
             Compliant market research. Scuup pauses at CAPTCHAs, KYC and
-            payment confirmation — no real money moves.
+            payment confirmation. No real money moves.
           </p>
         </div>
       </footer>

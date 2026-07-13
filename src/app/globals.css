@@ -200,6 +200,38 @@
       transparent
     );
   }
+
+  /* Dots + grain for landing sections (subtle, not “AI glow”). */
+  .landing-bg-dots {
+    position: relative;
+  }
+  .landing-bg-dots::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      oklch(1 0 0 / 9%) 1.1px,
+      transparent 0
+    );
+    background-size: 22px 22px;
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black 55%, transparent 100%);
+    opacity: 0.7;
+  }
+  .landing-bg-grain {
+    position: relative;
+  }
+  .landing-bg-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.08;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='.35'/%3E%3C/svg%3E");
+    background-size: 180px 180px;
+  }
   .animate-marquee {
     animation: marquee var(--marquee-duration, 32s) linear infinite;
   }
