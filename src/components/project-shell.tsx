@@ -53,7 +53,12 @@ import { AnalysisFailedBanner } from "@/components/analysis-failed-banner";
 import { unarchiveProject, useProject } from "@/lib/project-store";
 import { tierTextClass } from "@/lib/score";
 import { cn } from "@/lib/utils";
-import { scorePillars, type Project, type ScorePillar } from "@/lib/types";
+import {
+  overallScore,
+  scorePillars,
+  type Project,
+  type ScorePillar,
+} from "@/lib/types";
 
 function ArchivedBanner({ project }: { project: Project }) {
   return (
@@ -185,6 +190,7 @@ export function ProjectShell({
     ownBrand
       ? Object.fromEntries(scorePillars(ownBrand).map((p) => [p.key, p.score]))
       : {};
+  const cxScore = ownBrand ? overallScore(ownBrand) : null;
 
   return (
     <SidebarProvider>
@@ -225,6 +231,16 @@ export function ProjectShell({
                           <span className="group-data-[collapsible=icon]:hidden">
                             {item.label}
                           </span>
+                          {item.slug === "overview" && cxScore !== null ? (
+                            <span className="ms-auto font-heading text-xs font-semibold tabular-nums group-data-[collapsible=icon]:hidden">
+                              <span className={tierTextClass(cxScore)}>
+                                {cxScore}
+                              </span>
+                              <span className="font-normal text-sidebar-foreground/35">
+                                /100
+                              </span>
+                            </span>
+                          ) : null}
                           {score !== undefined ? (
                             <span
                               className={cn(

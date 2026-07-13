@@ -159,7 +159,24 @@ export async function countProjects(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-/** The account's live (non-archived) report, if any. Only one may exist. */
+/** Archive every live report for this account. Used when replacing the
+ * active report during onboarding so stale multi-active rows can't block
+ * creation. */
+export async function archiveAllActiveProjects(userId: string): Promise<number> {
+  const { data, error } = await supabase()
+    .from("ps_projects")
+    .select("id")
+    .eq("user_id", userId)
+    .neq("status", "archived");
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    await setProjectArchived(row.id as string, true);
+  }
+  return data?.length ?? 0;
+}
+
+/** The account's live (non-archived) report, if any. Only one may exist
+ * for normal accounts — admins may run several in parallel. */
 export async function activeProject(
   userId: string
 ): Promise<{ id: string; name: string } | null> {

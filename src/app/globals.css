@@ -107,8 +107,6 @@
 
 :root,
 .dark {
-  /* Navy-violet surface ramp sampled from the Rainbet reference:
-     hue ~275, chroma rising with elevation. */
   --background: oklch(0.185 0.04 277);
   --foreground: oklch(0.96 0.008 270);
   --card: oklch(0.225 0.046 275);
@@ -117,7 +115,6 @@
   --popover-foreground: oklch(0.96 0.008 270);
   --primary: oklch(0.551 0.153 258);
   --primary-foreground: oklch(0.99 0.005 258);
-  /* Your-brand / report data accent — kept green while CTAs stay blue. */
   --brand: oklch(0.85 0.18 162);
   --brand-foreground: oklch(0.16 0.04 165);
   --secondary: oklch(0.3 0.062 277);
@@ -160,12 +157,11 @@
   }
   body {
     @apply bg-background text-foreground;
-    background-image:
-      radial-gradient(
-        ellipse 80% 50% at 50% -20%,
-        oklch(0.42 0.09 265 / 16%),
-        transparent
-      );
+    background-image: radial-gradient(
+      ellipse 80% 50% at 50% -20%,
+      oklch(0.42 0.09 265 / 16%),
+      transparent
+    );
     background-attachment: fixed;
   }
   html {
@@ -179,7 +175,6 @@
 }
 
 @layer components {
-  /* Elevated card treatment: subtle top-edge light + depth. */
   [data-slot="card"] {
     background-image: linear-gradient(
       to bottom,
@@ -208,77 +203,20 @@
     box-shadow: 0 0 48px -8px oklch(0.551 0.153 258 / 35%);
   }
 
-  /* Marketing site — light surfaces, app-matched accent tokens. */
-  .scuup-landing {
-    color-scheme: light;
-    --background: oklch(0.995 0.002 270);
-    --foreground: oklch(0.17 0.02 270);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.17 0.02 270);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.17 0.02 270);
-    /* Same CTA blue as the app (:root/.dark --primary). */
-    --primary: oklch(0.551 0.153 258);
-    --primary-foreground: oklch(0.99 0.005 258);
-    --brand: oklch(0.85 0.18 162);
-    --brand-foreground: oklch(0.16 0.04 165);
-    --secondary: oklch(0.965 0.006 270);
-    --secondary-foreground: oklch(0.28 0.02 270);
-    --muted: oklch(0.965 0.006 270);
-    --muted-foreground: oklch(0.48 0.02 270);
-    --accent: oklch(0.965 0.006 270);
-    --accent-foreground: oklch(0.28 0.02 270);
-    --destructive: oklch(0.55 0.2 25);
-    --border: oklch(0.91 0.008 270);
-    --input: oklch(0.91 0.008 270);
-    --ring: oklch(0.62 0.14 258);
-  }
-
-  .scuup-landing [data-slot="card"] {
-    background-image: none;
-    box-shadow: none;
-  }
-
-  html.dark body:has(.scuup-landing) {
-    background-image: none;
-  }
-
-  .scuup-landing .landing-product-dark {
-    color-scheme: dark;
-    --background: oklch(0.185 0.04 277);
-    --foreground: oklch(0.96 0.008 270);
-    --card: oklch(0.225 0.046 275);
-    --card-foreground: oklch(0.96 0.008 270);
-    --popover: oklch(0.25 0.05 275);
-    --popover-foreground: oklch(0.96 0.008 270);
-    --primary: oklch(0.551 0.153 258);
-    --primary-foreground: oklch(0.99 0.005 258);
-    --brand: oklch(0.85 0.18 162);
-    --brand-foreground: oklch(0.16 0.04 165);
-    --secondary: oklch(0.3 0.062 277);
-    --secondary-foreground: oklch(0.96 0.008 270);
-    --muted: oklch(0.27 0.052 276);
-    --muted-foreground: oklch(0.7 0.028 273);
-    --accent: oklch(0.3 0.062 277);
-    --accent-foreground: oklch(0.96 0.008 270);
-    --border: oklch(0.95 0.035 275 / 10%);
-    --input: oklch(0.95 0.035 275 / 14%);
-    --ring: oklch(0.62 0.14 258);
-  }
-
-  .scuup-landing .landing-product-dark [data-slot="card"] {
-    background-image: linear-gradient(
-      to bottom,
-      oklch(1 0 0 / 3.5%),
-      transparent 45%
-    );
-    box-shadow:
-      0 0 0 1px oklch(0 0 0 / 20%),
-      0 8px 24px -12px oklch(0 0 0 / 50%);
-  }
-  /* Landing — minimal; rely on shadcn Card/Separator tokens. */
-  .landing-product-frame {
-    box-shadow: 0 1px 2px oklch(0 0 0 / 20%);
+  /* Marketing site now shares the app's dark navy theme — the landing IS
+   * the product. Only a soft hero glow is added on top. */
+  .landing-hero-glow {
+    background-image:
+      radial-gradient(
+        ellipse 60% 45% at 50% 0%,
+        oklch(0.551 0.153 258 / 14%),
+        transparent
+      ),
+      radial-gradient(
+        ellipse 40% 30% at 80% 10%,
+        oklch(0.85 0.18 162 / 7%),
+        transparent
+      );
   }
   .animate-marquee {
     animation: marquee 32s linear infinite;

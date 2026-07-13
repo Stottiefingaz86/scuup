@@ -41,7 +41,6 @@ import {
 } from "@/lib/plan";
 import {
   ActiveReportError,
-  archiveProject,
   createProject,
   LimitError,
 } from "@/lib/project-store";
@@ -469,6 +468,7 @@ export default function NewProjectPage() {
   const [verifyOpen, setVerifyOpen] = useState(false);
   const [launching, setLaunching] = useState(false);
   const pendingLaunchRef = useRef(false);
+  const pendingReplaceActiveRef = useRef(false);
 
   const [plan, setPlan] = useState<Plan>("free");
   const [limitReached, setLimitReached] = useState(false);
@@ -644,56 +644,76 @@ export default function NewProjectPage() {
     if (stepIndex > 0) setStepIndex((s) => s - 1);
   }, [stepIndex]);
 
-  const launch = useCallback(async () => {
-    for (let i = 0; i < steps.length; i++) {
-      const problem = validate(steps[i]);
-      if (problem) {
-        setError(problem);
-        setStepIndex(i);
-        return;
+  const launch = useCallback(
+    async (opts?: { replaceActive?: boolean }) => {
+      for (let i = 0; i < steps.length; i++) {
+        const problem = validate(steps[i]);
+        if (problem) {
+          setError(problem);
+          setStepIndex(i);
+          return;
+        }
       }
-    }
-    setLaunching(true);
-    try {
-      const verified = await ensureEmailVerified();
-      if (!verified) {
-        pendingLaunchRef.current = true;
-        setVerifyOpen(true);
-        return;
+      setLaunching(true);
+      try {
+        const verified = await ensureEmailVerified();
+        if (!verified) {
+          pendingLaunchRef.current = true;
+          pendingReplaceActiveRef.current = opts?.replaceActive === true;
+          setVerifyOpen(true);
+          return;
+        }
+        pendingLaunchRef.current = false;
+        pendingReplaceActiveRef.current = false;
+        const brandName = brandNameFromUrl(ownBrandUrl.trim());
+        const project = await createProject(
+          {
+            name: `${brandName} — ${market}`,
+            ownBrandName: brandName,
+            ownBrandUrl: ownBrandUrl.trim(),
+            competitors: validCompetitors.map((url) => ({
+              name: "",
+              url: url.trim(),
+            })),
+            market: market!,
+            products,
+            journeys: journeys.filter((j) => availableJourneys.includes(j)),
+            analysisMode: "Public Audit Mode",
+          },
+          { replaceActive: opts?.replaceActive === true }
+        );
+        setActiveConflict(null);
+        router.push(`/projects/${project.id}/analyzing`);
+      } catch (e) {
+        if (e instanceof ActiveReportError) {
+          setActiveConflict({
+            message: e.message,
+            projectId: e.activeProjectId,
+          });
+          return;
+        }
+        if (e instanceof LimitError) {
+          setLimitReached(true);
+          return;
+        }
+        setError(e instanceof Error ? e.message : "Failed to create project");
+      } finally {
+        setLaunching(false);
+        setArchiving(false);
       }
-      pendingLaunchRef.current = false;
-      const brandName = brandNameFromUrl(ownBrandUrl.trim());
-      const project = await createProject({
-        name: `${brandName} — ${market}`,
-        ownBrandName: brandName,
-        ownBrandUrl: ownBrandUrl.trim(),
-        competitors: validCompetitors.map((url) => ({
-          name: "",
-          url: url.trim(),
-        })),
-        market: market!,
-        products,
-        journeys: journeys.filter((j) => availableJourneys.includes(j)),
-        analysisMode: "Public Audit Mode",
-      });
-      router.push(`/projects/${project.id}/analyzing`);
-    } catch (e) {
-      if (e instanceof ActiveReportError) {
-        setActiveConflict({
-          message: e.message,
-          projectId: e.activeProjectId,
-        });
-        return;
-      }
-      if (e instanceof LimitError) {
-        setLimitReached(true);
-        return;
-      }
-      setError(e instanceof Error ? e.message : "Failed to create project");
-    } finally {
-      setLaunching(false);
-    }
-  }, [steps, validate, ownBrandUrl, market, plan, validCompetitors, products, journeys, availableJourneys, router]);
+    },
+    [
+      steps,
+      validate,
+      ownBrandUrl,
+      market,
+      validCompetitors,
+      products,
+      journeys,
+      availableJourneys,
+      router,
+    ]
+  );
 
   // Enter advances, except on the final step where it launches.
   const stepRef = useRef({ next, launch, stepId });
@@ -751,77 +771,93 @@ export default function NewProjectPage() {
 
   if (limitReached) {
     return (
-      <div className="flex min-h-screen flex-col">
-        <header className="flex items-center px-6 py-5">
-          <ScuupLogo href="/dashboard" />
-        </header>
-        <main className="flex flex-1 items-center justify-center px-6 pb-20">
-          <LimitReachedScreen />
-        </main>
-      </div>
+      <>
+        <div className="flex min-h-screen flex-col">
+          <header className="flex items-center px-6 py-5">
+            <ScuupLogo href="/dashboard" />
+          </header>
+          <main className="flex flex-1 items-center justify-center px-6 pb-20">
+            <LimitReachedScreen />
+          </main>
+        </div>
+        <VerifyEmailDialog
+          open={verifyOpen}
+          onOpenChange={setVerifyOpen}
+          onVerified={() => {
+            if (pendingLaunchRef.current) {
+              void launch({
+                replaceActive: pendingReplaceActiveRef.current,
+              });
+            }
+          }}
+        />
+      </>
     );
   }
 
   if (activeConflict) {
     return (
-      <div className="flex min-h-screen flex-col">
-        <header className="flex items-center px-6 py-5">
-          <ScuupLogo href="/dashboard" />
-        </header>
-        <main className="flex flex-1 items-center justify-center px-6 pb-20">
-          <div className="flex w-full max-w-lg flex-col gap-6 duration-500 animate-in fade-in slide-in-from-bottom-6">
-            <div className="flex flex-col gap-2">
-              <h1 className="font-heading text-3xl font-medium tracking-tight">
-                You already have an active report
-              </h1>
-              <p className="text-muted-foreground">
-                Plans currently include one active report at a time.
-                Archiving pauses your current report — no more agent runs or
-                score updates — but everything captured stays readable and
-                you can reactivate it later.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {activeConflict.projectId ? (
-                <Button
-                  className="glow-primary"
-                  disabled={archiving}
-                  onClick={async () => {
-                    setArchiving(true);
-                    try {
-                      await archiveProject(activeConflict.projectId!);
-                      setActiveConflict(null);
-                      await launch();
-                    } catch (e) {
-                      setError(
-                        e instanceof Error
-                          ? e.message
-                          : "Failed to archive report"
-                      );
-                      setActiveConflict(null);
-                    } finally {
-                      setArchiving(false);
-                    }
-                  }}
-                >
-                  <Sparkles data-icon="inline-start" />
-                  {archiving
-                    ? "Archiving…"
-                    : "Archive current report & start this one"}
-                </Button>
+      <>
+        <div className="flex min-h-screen flex-col">
+          <header className="flex items-center px-6 py-5">
+            <ScuupLogo href="/dashboard" />
+          </header>
+          <main className="flex flex-1 items-center justify-center px-6 pb-20">
+            <div className="flex w-full max-w-lg flex-col gap-6 duration-500 animate-in fade-in slide-in-from-bottom-6">
+              <div className="flex flex-col gap-2">
+                <h1 className="font-heading text-3xl font-medium tracking-tight">
+                  You already have an active report
+                </h1>
+                <p className="text-muted-foreground">
+                  Plans currently include one active report at a time.
+                  Archiving pauses your current report — no more agent runs or
+                  score updates — but everything captured stays readable and
+                  you can reactivate it later.
+                </p>
+              </div>
+              {error ? (
+                <p className="text-sm text-destructive">{error}</p>
               ) : null}
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={<Link href="/dashboard" />}
-              >
-                <ArrowLeft data-icon="inline-start" />
-                Keep my current report
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                {activeConflict.projectId ? (
+                  <Button
+                    className="glow-primary"
+                    disabled={archiving || launching}
+                    onClick={() => {
+                      setArchiving(true);
+                      void launch({ replaceActive: true });
+                    }}
+                  >
+                    <Sparkles data-icon="inline-start" />
+                    {archiving || launching
+                      ? "Archiving…"
+                      : "Archive current report & start this one"}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="outline"
+                  nativeButton={false}
+                  render={<Link href="/dashboard" />}
+                >
+                  <ArrowLeft data-icon="inline-start" />
+                  Keep my current report
+                </Button>
+              </div>
             </div>
-          </div>
-        </main>
-      </div>
+          </main>
+        </div>
+        <VerifyEmailDialog
+          open={verifyOpen}
+          onOpenChange={setVerifyOpen}
+          onVerified={() => {
+            if (pendingLaunchRef.current) {
+              void launch({
+                replaceActive: pendingReplaceActiveRef.current,
+              });
+            }
+          }}
+        />
+      </>
     );
   }
 
@@ -1063,7 +1099,7 @@ export default function NewProjectPage() {
                 size="lg"
                 className="mt-4 h-12 w-full text-base glow-primary"
                 disabled={launching}
-                onClick={launch}
+                onClick={() => void launch()}
               >
                 <Sparkles data-icon="inline-start" />
                 {launching
@@ -1123,7 +1159,11 @@ export default function NewProjectPage() {
         open={verifyOpen}
         onOpenChange={setVerifyOpen}
         onVerified={() => {
-          if (pendingLaunchRef.current) void launch();
+          if (pendingLaunchRef.current) {
+            void launch({
+              replaceActive: pendingReplaceActiveRef.current,
+            });
+          }
         }}
       />
     </div>

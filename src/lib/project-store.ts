@@ -2,6 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 import { faviconUrl } from "./constants";
+import {
+  LANDING_DEMO_PROJECT_ID,
+  landingDemoProject,
+} from "./landing-demo-project";
 import type {
   ActionPlan,
   Brand,
@@ -114,12 +118,14 @@ export function useProjectStoreError(): string | null {
 
 /** One project by id. undefined = still loading, null = not found. */
 export function useProject(id: string): Project | null | undefined {
+  if (id === LANDING_DEMO_PROJECT_ID) return landingDemoProject();
   const all = useProjects();
   if (all === undefined) return undefined;
   return all.find((p) => p.id === id) ?? null;
 }
 
 export function getProject(id: string): Project | undefined {
+  if (id === LANDING_DEMO_PROJECT_ID) return landingDemoProject();
   return projects?.find((p) => p.id === id);
 }
 
@@ -166,7 +172,10 @@ export class ActiveReportError extends Error {
   }
 }
 
-async function post(path: string, body: unknown): Promise<void> {
+async function post(
+  path: string,
+  body: unknown
+): Promise<void> {
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -191,7 +200,10 @@ function mutateLocal(id: string, mutate: (p: Project) => Project) {
   emit();
 }
 
-export async function createProject(input: NewProjectInput): Promise<Project> {
+export async function createProject(
+  input: NewProjectInput,
+  opts?: { replaceActive?: boolean }
+): Promise<Project> {
   const id = `proj-${Date.now().toString(36)}`;
 
   const makeBrand = (
@@ -231,7 +243,15 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
   };
 
   await ensureLoaded();
-  await post("/api/projects", { project });
+  await post("/api/projects", {
+    project,
+    replaceActive: opts?.replaceActive === true,
+  });
+  if (opts?.replaceActive) {
+    projects = (projects ?? []).map((p) =>
+      p.status !== "archived" ? { ...p, status: "archived" as const } : p
+    );
+  }
   projects = [project, ...(projects ?? [])];
   emit();
   return project;

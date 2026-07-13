@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth-server";
+import { requireUser, isAdminUser } from "@/lib/auth-server";
 import {
   activeProject,
   ownsProject,
@@ -25,7 +25,7 @@ export async function POST(
     const body = await request.json().catch(() => ({}));
     const archived = body.archived !== false;
 
-    if (!archived) {
+    if (!archived && !isAdminUser(user)) {
       const active = await activeProject(user.id);
       if (active && active.id !== id) {
         return NextResponse.json(

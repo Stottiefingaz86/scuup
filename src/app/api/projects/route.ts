@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   AuthError,
+  isAdminUser,
   PLAN_COMPETITOR_LIMIT,
   PLAN_PROJECT_LIMIT,
   planFor,
@@ -9,6 +10,7 @@ import {
 import { journeyAllowedOnPlan } from "@/lib/plan";
 import {
   activeProject,
+  archiveAllActiveProjects,
   countProjects,
   insertProject,
   listProjects,
@@ -42,14 +44,21 @@ export async function POST(request: NextRequest) {
     const user = await requireUser();
     const body = await request.json();
     const project = body.project as Project | undefined;
+    const replaceActive = body.replaceActive === true;
     if (!project?.id || !project.name || !Array.isArray(project.brands)) {
       return NextResponse.json({ error: "invalid project" }, { status: 400 });
+    }
+
+    const admin = isAdminUser(user);
+
+    if (replaceActive) {
+      await archiveAllActiveProjects(user.id);
     }
 
     const [plan, count, active] = await Promise.all([
       planFor(user.id),
       countProjects(user.id),
-      activeProject(user.id),
+      admin ? Promise.resolve(null) : activeProject(user.id),
     ]);
     if (count >= PLAN_PROJECT_LIMIT[plan]) {
       return NextResponse.json(

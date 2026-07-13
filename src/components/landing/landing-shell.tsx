@@ -1,6 +1,7 @@
 import { cn } from "@/lib/utils";
 
-/** Forces light marketing tokens while the app shell stays dark. */
+/** Marketing shell — same dark navy theme as the app, so the landing page
+ * looks like the product it's selling. */
 export function LandingShell({
   children,
   className,
@@ -9,7 +10,7 @@ export function LandingShell({
   className?: string;
 }) {
   return (
-    <div className={cn("scuup-landing min-h-screen bg-background text-foreground", className)}>
+    <div className={cn("min-h-screen bg-background text-foreground", className)}>
       {children}
     </div>
   );

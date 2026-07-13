@@ -96,19 +96,36 @@ function finishRun(
   }
 }
 
-function AreaChip({ area, state }: { area: string; state: JobState }) {
+function AreaChip({
+  area,
+  state,
+  waiting,
+}: {
+  area: string;
+  state: JobState;
+  waiting?: boolean;
+}) {
   const label = ANALYSIS_AREA_LABELS[area] ?? EXTRA_LABELS[area] ?? area;
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition-colors",
-        state.phase === "pending" && "border-border text-muted-foreground/60",
+        state.phase === "pending" &&
+          (waiting
+            ? "border-border/60 text-muted-foreground/45"
+            : "border-border text-muted-foreground/60"),
         state.phase === "running" && "border-primary/50 bg-primary/10 text-foreground",
         state.phase === "done" && "border-brand/40 bg-brand/[0.06] text-foreground",
         (state.phase === "blocked" || state.phase === "failed") &&
           "border-score-mid/40 bg-score-mid/[0.06] text-muted-foreground"
       )}
-      title={state.phase === "failed" ? state.reason : undefined}
+      title={
+        state.phase === "failed"
+          ? state.reason
+          : waiting
+            ? "Runs after this brand's journeys finish"
+            : undefined
+      }
     >
       {state.phase === "running" ? (
         <Loader2 className="size-3 animate-spin text-primary" />
@@ -265,21 +282,15 @@ export default function AnalyzingPage() {
         await Promise.all(workers);
       };
 
-      await runQueue(
-        brands.flatMap((brand) => publicAreas.map((area) => ({ brand, area })))
-      );
-      if (!abortRef.current && gatedAreas.length > 0) {
-        await runQueue(
-          brands.flatMap((brand) => gatedAreas.map((area) => ({ brand, area })))
-        );
-      }
-      // Final phase: the VoC and Design pillars, so a fresh report lands
-      // with all four score components instead of two.
-      if (!abortRef.current) {
-        await runQueue(
-          brands.flatMap((brand) => EXTRA_AREAS.map((area) => ({ brand, area })))
-        );
-      }
+      const buildBrandJobs = (brand: Brand) => [
+        ...publicAreas.map((area) => ({ brand, area })),
+        ...gatedAreas.map((area) => ({ brand, area })),
+        ...EXTRA_AREAS.map((area) => ({ brand, area })),
+      ];
+
+      // Per-brand pipeline: VoC and Design start as soon as *this* brand's
+      // journeys finish — not after every competitor clears the queue.
+      await runQueue(brands.flatMap(buildBrandJobs));
       if (cancelled || finishedRef.current || !getProject(projectId)) return;
       finishedRef.current = true;
 
@@ -307,19 +318,24 @@ export default function AnalyzingPage() {
     );
   }
 
-  const areas = project
+  const journeyAreas = project
     ? [
         LANDING,
         ...project.journeys.filter((j) => agentCanReach(j)),
-        // Second-phase gated journeys — the agent registers a test account
-        // during signup and walks these logged in.
         ...project.journeys.filter(
           (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
         ),
-        // Final phase: the VoC and Design score pillars.
-        ...EXTRA_AREAS,
       ]
     : [];
+
+  function brandJourneysSettled(brandId: string) {
+    return journeyAreas.every((area) => {
+      const state = states[jobKey(brandId, area)];
+      return state && state.phase !== "pending" && state.phase !== "running";
+    });
+  }
+
+  const areas = project ? [...journeyAreas, ...EXTRA_AREAS] : [];
   const gatedAreas = project
     ? project.journeys.filter((j) => !agentCanReachLoggedIn(j))
     : [];
@@ -359,7 +375,7 @@ export default function AnalyzingPage() {
             {project
               ? allSettled && !hasResults
                 ? `${project.name} — every journey visit failed. You'll be sent back to overview shortly.`
-                : `${project.name} — real browsers are walking every journey, then reading public reviews and the live code for the Voice of Customer and Design pillars.`
+                : `${project.name} — real browsers walk each brand's journeys, then scrape public reviews and measure the live code for Voice of Customer and Design as soon as that brand finishes.`
               : "Loading project…"}
           </CardDescription>
         </CardHeader>
@@ -416,6 +432,12 @@ export default function AnalyzingPage() {
                       key={area}
                       area={area}
                       state={states[jobKey(brand.id, area)] ?? { phase: "pending" }}
+                      waiting={
+                        EXTRA_AREAS.includes(area) &&
+                        !brandJourneysSettled(brand.id) &&
+                        (states[jobKey(brand.id, area)]?.phase ?? "pending") ===
+                          "pending"
+                      }
                     />
                   ))}
                 </div>

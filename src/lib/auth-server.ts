@@ -1,11 +1,22 @@
+import type { User } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase-server";
 import type { Plan } from "./plan";
 
 export { EmailNotVerifiedError, isEmailVerified, markEmailVerified, requireEmailVerified } from "./email-verification";
 export { PLAN_COMPETITOR_LIMIT, PLAN_PROJECT_LIMIT, type Plan } from "./plan";
+
+const ADMIN_EMAILS = (process.env.SCUUP_ADMIN_EMAILS ?? "admin@scuup.app")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+/** Internal accounts that bypass the one-active-report cap. */
+export function isAdminUser(user: Pick<User, "email">): boolean {
+  const email = user.email?.toLowerCase();
+  return !!email && ADMIN_EMAILS.includes(email);
+}
 
 /** The signed-in user for the current request (API route / server
  * component), read from the Supabase auth cookies. Null when logged out. */

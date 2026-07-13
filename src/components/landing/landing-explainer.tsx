@@ -115,7 +115,7 @@ function SectionIntro({
 }) {
   return (
     <div id={id} className={cn("flex max-w-2xl flex-col gap-3", className)}>
-      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
+      <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
         {kicker}
       </p>
       <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance sm:text-[2.125rem] sm:leading-tight">
@@ -199,7 +199,7 @@ export function WhatWeMeasure() {
 
 export function HowItWorks() {
   return (
-    <section id="how" className="border-y border-border bg-muted/40 py-20 sm:py-28">
+    <section id="how" className="border-y border-border bg-card/40 py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
         <SectionIntro
           kicker="How it works"
@@ -292,7 +292,7 @@ export function ScoringScale() {
   const tierWidths = [46, 15, 15, 15, 10];
 
   return (
-    <section id="scoring" className="border-t border-border bg-muted/40 py-16 sm:py-20">
+    <section id="scoring" className="border-t border-border bg-card/40 py-16 sm:py-20">
       <div className="mx-auto w-full max-w-7xl px-6">
         <SectionIntro
           kicker="Scoring"
