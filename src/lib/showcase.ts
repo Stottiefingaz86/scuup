@@ -103,6 +103,24 @@ export function matchesSort(entry: ShowcaseEntry, sort: ShowcaseSort): boolean {
   return true;
 }
 
+/** One public card per brand when the carousel spans all markets. */
+export function dedupeShowcaseByBrand(
+  entries: ShowcaseEntry[]
+): ShowcaseEntry[] {
+  const bySlug = new Map<string, ShowcaseEntry>();
+  for (const entry of entries) {
+    const kept = bySlug.get(entry.brandSlug);
+    if (
+      !kept ||
+      entry.cxScore > kept.cxScore ||
+      (entry.cxScore === kept.cxScore && entry.id > kept.id)
+    ) {
+      bySlug.set(entry.brandSlug, entry);
+    }
+  }
+  return [...bySlug.values()].sort((a, b) => b.cxScore - a.cxScore);
+}
+
 export function rowToEntry(
   row: ShowcaseSnapshotRow,
   prevScore: number | null

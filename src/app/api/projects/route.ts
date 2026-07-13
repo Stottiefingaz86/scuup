@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import {
   AuthError,
   isAdminUser,
+  PLAN_ACTIVE_PROJECT_LIMIT,
   PLAN_COMPETITOR_LIMIT,
   PLAN_PROJECT_LIMIT,
   planFor,
@@ -11,6 +12,7 @@ import { journeyAllowedOnPlan } from "@/lib/plan";
 import {
   activeProject,
   archiveAllActiveProjects,
+  countActiveProjects,
   countProjects,
   insertProject,
   listProjects,
@@ -55,27 +57,34 @@ export async function POST(request: NextRequest) {
       await archiveAllActiveProjects(user.id);
     }
 
-    const [plan, count, active] = await Promise.all([
+    const [plan, count, activeCount, active] = await Promise.all([
       planFor(user.id),
       countProjects(user.id),
+      countActiveProjects(user.id),
       admin ? Promise.resolve(null) : activeProject(user.id),
     ]);
     if (count >= PLAN_PROJECT_LIMIT[plan]) {
       return NextResponse.json(
         {
           error:
-            "Free accounts include one report. Delete your current report to start over, or upgrade for more.",
+            plan === "free"
+              ? "Free accounts include one report with no updates. Upgrade to run competitive audits."
+              : "You've reached the report limit on your plan. Archive a report or upgrade.",
           code: "limit_reached",
         },
         { status: 402 }
       );
     }
-    if (active) {
+    if (!admin && activeCount >= PLAN_ACTIVE_PROJECT_LIMIT[plan]) {
+      const activeLimit = PLAN_ACTIVE_PROJECT_LIMIT[plan];
       return NextResponse.json(
         {
-          error: `"${active.name}" is still active. Archive it to start a new report — plans currently include one active report.`,
+          error:
+            activeLimit === 1
+              ? `"${active?.name ?? "Your report"}" is still active. Archive it to start a new one — your plan includes one live report.`
+              : `You have ${activeCount} active reports (limit ${activeLimit}). Archive one to start another.`,
           code: "active_report_exists",
-          activeProjectId: active.id,
+          activeProjectId: active?.id ?? null,
         },
         { status: 409 }
       );
@@ -89,8 +98,8 @@ export async function POST(request: NextRequest) {
         {
           error:
             plan === "free"
-              ? "Free reports benchmark one competitor. Upgrade to compare up to 4."
-              : "Pro reports benchmark up to 4 competitors.",
+              ? "Free reports score your brand only. Upgrade to Pro to add up to 4 competitors."
+              : "Each report supports up to 4 competitors.",
           code: "limit_reached",
         },
         { status: 402 }

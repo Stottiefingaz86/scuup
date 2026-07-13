@@ -5,7 +5,7 @@ import { supabase } from "./supabase-server";
 import type { Plan } from "./plan";
 
 export { EmailNotVerifiedError, isEmailVerified, markEmailVerified, requireEmailVerified } from "./email-verification";
-export { PLAN_COMPETITOR_LIMIT, PLAN_PROJECT_LIMIT, type Plan } from "./plan";
+export { PLAN_ACTIVE_PROJECT_LIMIT, PLAN_COMPETITOR_LIMIT, PLAN_PROJECT_LIMIT, type Plan } from "./plan";
 
 const ADMIN_EMAILS = (process.env.SCUUP_ADMIN_EMAILS ?? "admin@scuup.app")
   .split(",")
@@ -65,5 +65,7 @@ export async function planFor(userId: string): Promise<Plan> {
     .select("plan")
     .eq("user_id", userId)
     .maybeSingle();
-  return data?.plan === "pro" ? "pro" : "free";
+  const p = data?.plan;
+  if (p === "pro" || p === "pro_plus") return p;
+  return "free";
 }

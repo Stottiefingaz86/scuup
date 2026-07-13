@@ -9,37 +9,64 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PRO_PRICE_MONTHLY, PRO_SELLING_POINTS } from "@/lib/plan";
-
-const FREE_FEATURES = [
-  "One active report — your brand + 1 competitor",
-  "First impression audit",
-  "Casino lobby + sports betslip journeys",
-  "Full heuristic scoring and evidence",
-];
+import {
+  FREE_PLAN_FEATURES,
+  PRO_PLUS_PRICE_MONTHLY,
+  PRO_PLUS_SELLING_POINTS,
+  PRO_PRICE_MONTHLY,
+  PRO_SELLING_POINTS,
+} from "@/lib/plan";
 
 const HEADLINES: Record<string, { title: string; description: string }> = {
   new: {
     title: "Benchmark against the brands taking your players",
     description:
-      "Your free audit covers your brand plus one competitor. Pro puts up to 4 competitors next to it and walks every journey — including the logged-in ones.",
+      "Free scores your brand once. Pro adds four competitors and every journey on one live report. Pro Plus runs five reports in parallel.",
   },
   limit: {
     title: "You've used your free report",
     description:
-      "Free accounts include one audit of your own brand. Pro unlocks unlimited reports, competitors and every player journey.",
+      "Free is one-and-done — your brand only, no re-runs. Upgrade for competitive benchmarks, logged-in journeys and monthly refreshes.",
   },
   competitors: {
     title: "See who's actually taking your players",
     description:
-      "Pro benchmarks up to 4 competitors next to your brand — same journeys, same heuristics, ranked side by side.",
+      "Pro puts up to four competitors next to your brand on the same heuristics. Pro Plus gives you five reports for multiple markets or lines.",
   },
   default: {
     title: "Go beyond your own brand",
     description:
-      "Pro puts your competitors side by side with you and walks the journeys that decide where players deposit.",
+      "Pro and Pro Plus walk the journeys that decide where players deposit — with evidence your whole team can review.",
   },
 };
+
+function PlanPrice({
+  amount,
+  period,
+  taxNote,
+}: {
+  amount: number;
+  period: string;
+  taxNote?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-heading text-3xl font-semibold tabular-nums">
+          €{amount}
+        </span>
+        {period ? (
+          <span className="text-sm text-muted-foreground">{period}</span>
+        ) : (
+          <span className="text-sm text-muted-foreground">forever</span>
+        )}
+      </div>
+      {taxNote ? (
+        <span className="text-xs text-muted-foreground">{taxNote}</span>
+      ) : null}
+    </div>
+  );
+}
 
 export default async function UpgradePage({
   searchParams,
@@ -60,19 +87,16 @@ export default async function UpgradePage({
         <p className="text-muted-foreground">{heading.description}</p>
       </div>
 
-      <div className="grid w-full max-w-3xl gap-4 sm:grid-cols-2">
+      <div className="grid w-full max-w-5xl gap-4 lg:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle>Free</CardTitle>
-            <CardDescription>See how Scuup scores your brand.</CardDescription>
+            <CardDescription>Score your brand once.</CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-heading text-3xl font-semibold">$0</span>
-              <span className="text-sm text-muted-foreground">forever</span>
-            </div>
+            <PlanPrice amount={0} period="" />
             <ul className="flex flex-col gap-2.5">
-              {FREE_FEATURES.map((f) => (
+              {FREE_PLAN_FEATURES.map((f) => (
                 <li
                   key={f}
                   className="flex items-start gap-2 text-sm text-muted-foreground"
@@ -83,7 +107,7 @@ export default async function UpgradePage({
               ))}
               <li className="flex items-start gap-2 text-sm text-muted-foreground/60">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                No competitors or login journeys
+                No competitors
               </li>
             </ul>
           </CardContent>
@@ -96,16 +120,15 @@ export default async function UpgradePage({
               Pro
             </CardTitle>
             <CardDescription>
-              The full competitive picture, every cycle.
+              One competitive report, refreshed monthly.
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-heading text-3xl font-semibold">
-                ${PRO_PRICE_MONTHLY}
-              </span>
-              <span className="text-sm text-muted-foreground">/ month</span>
-            </div>
+            <PlanPrice
+              amount={PRO_PRICE_MONTHLY}
+              period="/ month"
+              taxNote="exc. tax"
+            />
             <ul className="flex flex-col gap-2.5">
               {PRO_SELLING_POINTS.map((f) => (
                 <li key={f} className="flex items-start gap-2 text-sm">
@@ -118,12 +141,41 @@ export default async function UpgradePage({
               <Sparkles data-icon="inline-start" />
               Upgrade to Pro — coming soon
             </Button>
-            <p className="text-center text-xs text-muted-foreground">
-              Payments aren&apos;t live yet. Contact us for early Pro access.
-            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Pro Plus</CardTitle>
+            <CardDescription>
+              Five reports for teams tracking multiple sets.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-5">
+            <PlanPrice
+              amount={PRO_PLUS_PRICE_MONTHLY}
+              period="/ month"
+              taxNote="exc. tax"
+            />
+            <ul className="flex flex-col gap-2.5">
+              {PRO_PLUS_SELLING_POINTS.map((f) => (
+                <li key={f} className="flex items-start gap-2 text-sm">
+                  <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <Button size="lg" className="w-full" variant="outline" disabled>
+              Pro Plus — coming soon
+            </Button>
           </CardContent>
         </Card>
       </div>
+
+      <p className="max-w-md text-center text-xs text-muted-foreground">
+        Payments aren&apos;t live yet. Contact us for early Pro or Pro Plus
+        access.
+      </p>
 
       <Button
         variant="ghost"

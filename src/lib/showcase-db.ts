@@ -1,6 +1,7 @@
 import { supabase } from "./supabase-server";
 import {
   brandSlugFromUrl,
+  dedupeShowcaseByBrand,
   isShowcaseExcludedBrand,
   monthKey,
   prevMonthKey,
@@ -145,7 +146,9 @@ export async function buildShowcaseEntries(opts?: {
     return rowToEntry(row, prev);
   });
 
-  return { entries, markets: meta.markets, months: meta.months };
+  const visible = opts?.market ? entries : dedupeShowcaseByBrand(entries);
+
+  return { entries: visible, markets: meta.markets, months: meta.months };
 }
 
 /** Backfill showcase from every completed project (one-time / cron). */

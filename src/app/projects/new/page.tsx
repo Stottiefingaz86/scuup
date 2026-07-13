@@ -36,6 +36,7 @@ import {
 } from "@/lib/constants";
 import {
   FREE_JOURNEYS,
+  isPaidPlan,
   PLAN_COMPETITOR_LIMIT,
   PRO_SELLING_POINTS,
   type Plan,
@@ -79,13 +80,7 @@ type StepId =
   | "journeys"
   | "launch";
 
-const FREE_STEPS: StepId[] = [
-  "brand",
-  "competitors",
-  "market",
-  "products",
-  "launch",
-];
+const FREE_STEPS: StepId[] = ["brand", "market", "products", "launch"];
 const PRO_STEPS: StepId[] = [
   "brand",
   "competitors",
@@ -427,9 +422,9 @@ function LimitReachedScreen() {
           You&apos;ve used your free audit
         </h1>
         <p className="text-muted-foreground">
-          Free accounts include one report so you can see how Scuup scores
-          your brand. Delete your current report to start a fresh one, or go
-          Pro for logged-in journeys, more competitors and unlimited reports.
+          Free accounts score your brand once — no competitors and no re-runs.
+          Upgrade to Pro for four competitors and logged-in journeys, or Pro
+          Plus for five parallel reports.
         </p>
       </div>
       <ul className="flex flex-col gap-2">
@@ -499,8 +494,9 @@ export default function NewProjectPage() {
           projectLimit?: number | null;
         } | null) => {
           if (!data) return;
-          if (data.plan) setPlan(data.plan);
-          if (data.plan === "pro" && !proDefaultsApplied.current) {
+          const accountPlan = data.plan;
+          if (accountPlan) setPlan(accountPlan);
+          if (accountPlan && isPaidPlan(accountPlan) && !proDefaultsApplied.current) {
             proDefaultsApplied.current = true;
             setProducts(["Casino", "Sports", "Payments", "Rewards"]);
           }
@@ -514,14 +510,14 @@ export default function NewProjectPage() {
       );
   }, []);
 
-  const steps = plan === "pro" ? PRO_STEPS : FREE_STEPS;
+  const steps = isPaidPlan(plan) ? PRO_STEPS : FREE_STEPS;
   const stepId = steps[Math.min(stepIndex, steps.length - 1)];
   const totalSteps = steps.length;
 
   /** Pro: journeys follow the picked products. Free: casino/sports only. */
   const availableJourneys = useMemo(
     () =>
-      plan === "pro"
+      isPaidPlan(plan)
         ? journeysForProducts(products)
         : FREE_JOURNEYS.filter((j) =>
             journeysForProducts(products).includes(j)
@@ -536,9 +532,9 @@ export default function NewProjectPage() {
     });
   }, [availableJourneys]);
 
-  /** Pro audits include signup + logged-in journeys by default. */
+  /** Paid audits include signup + logged-in journeys by default. */
   useEffect(() => {
-    if (plan !== "pro" || !proDefaultsApplied.current) return;
+    if (!isPaidPlan(plan) || !proDefaultsApplied.current) return;
     setJourneys((prev) => {
       const merged = [
         ...new Set([...prev, ...availableJourneys]),
@@ -748,14 +744,14 @@ export default function NewProjectPage() {
       // Deselecting a product removes its journeys; selecting one offers
       // them again (pre-ticked, since the user just said they matter).
       const available =
-        plan === "pro"
+        isPaidPlan(plan)
           ? journeysForProducts(nextProducts)
           : FREE_JOURNEYS.filter((j) =>
               journeysForProducts(nextProducts).includes(j)
             );
       setJourneys((prevJourneys) => {
         const wasAvailable =
-          plan === "pro"
+          isPaidPlan(plan)
             ? journeysForProducts(prev)
             : FREE_JOURNEYS.filter((j) => journeysForProducts(prev).includes(j));
         const kept = prevJourneys.filter((j) => available.includes(j));
@@ -768,7 +764,7 @@ export default function NewProjectPage() {
 
   const progress = ((stepIndex + 1) / totalSteps) * 100;
   const freeProducts = ["Casino", "Sports"];
-  const productChoices = plan === "pro" ? PRODUCTS : freeProducts;
+  const productChoices = isPaidPlan(plan) ? PRODUCTS : freeProducts;
 
   if (limitReached) {
     return (
@@ -885,9 +881,9 @@ export default function NewProjectPage() {
             index={stepIndex}
             question="Where do your players play?"
             hint={
-              plan === "pro"
+              isPaidPlan(plan)
                 ? "Your brand's URL — the experience everything gets benchmarked against."
-                : "Your brand's URL. Your free audit scores its first impression, casino and sports experience."
+                : "Your brand's URL. Free scores first impression, casino and sports — your brand only, one time."
             }
           >
             <BigInput
@@ -904,11 +900,7 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question="Who's taking your players?"
-            hint={
-              plan === "pro"
-                ? "Up to four competitors, benchmarked side by side. Leave blank to audit solo."
-                : "Free audits benchmark one competitor. Pro compares up to four side by side. Leave blank to audit solo."
-            }
+            hint="Up to four competitors, benchmarked side by side. Leave blank to audit solo."
           >
             <div className="flex flex-col gap-6">
               {competitors.slice(0, competitorLimit).map((url, i) => (
@@ -965,12 +957,12 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question={
-              plan === "pro"
+              isPaidPlan(plan)
                 ? "Which products matter to you?"
                 : "What does your brand offer?"
             }
             hint={
-              plan === "pro"
+              isPaidPlan(plan)
                 ? "We'll weight the analysis toward the products you actually compete on."
                 : "Your free audit walks the casino lobby and the sports betslip — pick what applies."
             }
@@ -1068,7 +1060,7 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question={
-              plan === "pro" ? "Ready to see the gaps?" : "Ready for your free audit?"
+              isPaidPlan(plan) ? "Ready to see the gaps?" : "Ready for your free audit?"
             }
             hint="Real browsers visit your site and walk each journey — a vision model scores what they see. Public pages only, no credentials needed."
           >
@@ -1105,7 +1097,7 @@ export default function NewProjectPage() {
                 <Sparkles data-icon="inline-start" />
                 {launching
                   ? "Starting your audit…"
-                  : plan === "pro"
+                  : isPaidPlan(plan)
                     ? "Run the analysis"
                     : "Run my free audit"}
               </Button>

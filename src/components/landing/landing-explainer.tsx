@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { Lock, ShieldCheck } from "lucide-react";
 import { TierLegend } from "@/components/score-chip";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { TIERS, TIER_BG } from "@/lib/score";
@@ -138,59 +137,90 @@ export function WhatWeMeasure() {
         description="Scuup scores acquisition, play, money, retention, and support on a fixed heuristic set — so every site in your audit is measured on the same axes."
       />
 
-      <div className="mt-14 grid gap-12 lg:grid-cols-[220px_1fr] lg:gap-16">
-        <nav className="flex flex-col">
-          {MEASURE_AREAS.map((area) => {
-            const loginGated =
-              area === "deposit" || area === "withdraw" || area === "my_account";
-            const isActive = active === area;
-            return (
-              <button
-                key={area}
-                type="button"
-                onClick={() => setActive(area)}
-                className={cn(
-                  "flex items-center justify-between gap-2 border-s-2 py-2.5 ps-4 text-start text-sm transition-colors",
-                  isActive
-                    ? "border-foreground font-medium text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <span>{ANALYSIS_AREA_LABELS[area] ?? area}</span>
-                {loginGated ? (
-                  <Badge variant="outline" className="shrink-0 text-[10px] font-normal">
-                    Logged-in
-                  </Badge>
-                ) : null}
-              </button>
-            );
-          })}
-        </nav>
+      <div className="mt-14 overflow-hidden rounded-xl border bg-card/50">
+        <div className="grid lg:grid-cols-[minmax(260px,300px)_1fr]">
+          <nav
+            className="flex flex-col gap-0.5 border-b border-border bg-muted/15 p-2 lg:border-b-0 lg:border-r"
+            aria-label="Journey areas"
+          >
+            {MEASURE_AREAS.map((area) => {
+              const loginGated =
+                area === "deposit" || area === "withdraw" || area === "my_account";
+              const isActive = active === area;
+              const count = JOURNEY_HEURISTICS[area]?.length ?? 0;
+              return (
+                <button
+                  key={area}
+                  type="button"
+                  onClick={() => setActive(area)}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg px-3 py-3 text-start transition-colors",
+                    isActive
+                      ? "bg-background shadow-sm ring-1 ring-border"
+                      : "hover:bg-background/60"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-md font-mono text-xs font-medium tabular-nums",
+                      isActive
+                        ? "bg-primary/12 text-primary"
+                        : "bg-muted text-muted-foreground"
+                    )}
+                  >
+                    {count}
+                  </span>
+                  <span className="min-w-0 flex-1 pt-0.5">
+                    <span
+                      className={cn(
+                        "block text-sm leading-snug",
+                        isActive ? "font-medium text-foreground" : "text-muted-foreground"
+                      )}
+                    >
+                      {ANALYSIS_AREA_LABELS[area] ?? area}
+                    </span>
+                    {loginGated ? (
+                      <span className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Lock className="size-3 shrink-0 opacity-70" />
+                        Logged-in session
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
 
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline justify-between gap-3 border-b pb-4">
-            <h3 className="font-heading text-xl font-semibold">
-              {ANALYSIS_AREA_LABELS[active] ?? active}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {heuristics.length} heuristics · scored 0–100
+          <div className="min-w-0 p-5 sm:p-6 lg:p-8">
+            <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-4">
+              <h3 className="font-heading text-xl font-semibold">
+                {ANALYSIS_AREA_LABELS[active] ?? active}
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                {heuristics.length} heuristics · scored 0–100
+              </p>
+            </div>
+
+            <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+              {heuristics.map((h, i) => (
+                <li
+                  key={h}
+                  className="flex items-start gap-3 rounded-lg border border-border/80 bg-background/40 px-3.5 py-3"
+                >
+                  <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span className="text-sm leading-snug text-foreground/90">{h}</span>
+                </li>
+              ))}
+            </ul>
+
+            <p className="mt-6 rounded-lg border border-dashed border-border/80 bg-muted/10 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
+              Loyalty journeys also score retention loop mechanics — reward visibility,
+              progress meters, value-back, frequency cadence — with explicit rules for
+              logged-in or tracked-play sessions.
             </p>
           </div>
-          <ul className="mt-6 columns-1 gap-x-10 sm:columns-2">
-            {heuristics.map((h) => (
-              <li
-                key={h}
-                className="mb-3 break-inside-avoid text-sm leading-relaxed text-muted-foreground"
-              >
-                {h}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-8 text-sm text-muted-foreground">
-            Loyalty journeys also score retention loop mechanics — reward visibility,
-            progress meters, value-back, frequency cadence — with explicit rules for
-            logged-in or tracked-play sessions.
-          </p>
         </div>
       </div>
     </section>

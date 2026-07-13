@@ -21,6 +21,13 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
+  FREE_PLAN_FEATURES,
+  PRO_PLUS_PRICE_MONTHLY,
+  PRO_PLUS_SELLING_POINTS,
+  PRO_PRICE_MONTHLY,
+  PRO_SELLING_POINTS,
+} from "@/lib/plan";
+import {
   HEURISTIC_COUNT,
   HowItWorks,
   MEASURE_AREAS,
@@ -32,6 +39,7 @@ import { LandingHeaderActions } from "@/components/landing/landing-header-action
 import { ShowcaseCarousel } from "@/components/landing/showcase-carousel";
 import { LandingFaq } from "@/components/landing/landing-faq";
 import { MarketsMarquee } from "@/components/landing/markets-marquee";
+import { SharedReportReview } from "@/components/landing/shared-report-review";
 
 /* ------------------------------------------------------------------ */
 /* Hero visual: a real screenshot of the live workspace in a browser   */
@@ -59,7 +67,7 @@ function HeroVisual() {
           </span>
         </div>
         <Image
-          src="/landing/app-overview.png?v=3"
+          src="/landing/app-overview.png"
           alt="The Scuup workspace: Player CX ranking with journey, retention, voice of customer and design scores"
           width={1520}
           height={940}
@@ -134,34 +142,37 @@ const COMPARISON = [
 const PRICING = [
   {
     name: "Free",
-    price: "$0",
+    price: "€0",
     period: "",
-    description: "Your first market read",
-    features: [
-      "1 full audit report",
-      "You + 1 competitor",
-      "All public journeys scored",
-      "Evidence library & scorecard",
-    ],
+    taxNote: "",
+    description: "Your brand, scored once",
+    features: FREE_PLAN_FEATURES,
     cta: "Start free audit",
     href: "/projects/new",
     variant: "outline" as const,
   },
   {
     name: "Pro",
-    price: "$249",
+    price: `€${PRO_PRICE_MONTHLY}`,
     period: "/ month",
-    description: "Ongoing competitive tracking",
-    features: [
-      "You + up to 4 competitors",
-      "Logged-in journeys — signup, deposit, rewards",
-      "Action plan synthesis",
-      "Priority analysis queue",
-    ],
+    taxNote: "exc. tax",
+    description: "One competitive report",
+    features: PRO_SELLING_POINTS,
     cta: "Upgrade to Pro",
     href: "/upgrade",
     variant: "default" as const,
     highlight: true,
+  },
+  {
+    name: "Pro Plus",
+    price: `€${PRO_PLUS_PRICE_MONTHLY}`,
+    period: "/ month",
+    taxNote: "exc. tax",
+    description: "Five reports in parallel",
+    features: PRO_PLUS_SELLING_POINTS,
+    cta: "Upgrade to Pro Plus",
+    href: "/upgrade",
+    variant: "outline" as const,
   },
 ];
 
@@ -358,6 +369,7 @@ export function LandingShowcase() {
         </section>
 
         <WhatYouGet />
+        <SharedReportReview />
         <ScoringScale />
 
         <MarketsMarquee />
@@ -370,15 +382,15 @@ export function LandingShowcase() {
                 Pricing
               </p>
               <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-                Start free, go deeper on Pro
+                Start free, benchmark on Pro
               </h2>
               <p className="mt-4 text-muted-foreground">
-                One full audit on us — logged-in journeys and a bigger
-                competitive set on Pro.
+                Free scores your brand once with no updates. Pro adds four
+                competitors on one live report. Pro Plus runs five.
               </p>
             </div>
 
-            <div className="mx-auto mt-12 grid max-w-4xl gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2">
+            <div className="mx-auto mt-12 grid max-w-6xl gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-3">
               {PRICING.map((plan) => (
                 <div
                   key={plan.name}
@@ -408,6 +420,11 @@ export function LandingShowcase() {
                       </span>
                     ) : null}
                   </p>
+                  {plan.taxNote ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {plan.taxNote}
+                    </p>
+                  ) : null}
                   <ul className="mt-8 flex flex-1 flex-col gap-2.5 text-sm">
                     {plan.features.map((f) => (
                       <li

@@ -12,12 +12,22 @@ import {
 import { cn } from "@/lib/utils";
 
 const GEO_MARKETS = MARKET_OPTIONS.filter((m) => m.geo);
-const ROW_COUNT = 4;
+const ROW_COUNT = 3;
+/** Enough circles to cover ultra-wide viewports in one marquee loop half. */
+const MIN_FLAGS_PER_ROW = 28;
 
 function splitIntoRows<T>(items: T[], rows: number): T[][] {
-  const buckets = Array.from({ length: rows }, () => [] as T[]);
-  items.forEach((item, i) => buckets[i % rows].push(item));
-  return buckets;
+  const perRow = Math.ceil(items.length / rows);
+  return Array.from({ length: rows }, (_, i) =>
+    items.slice(i * perRow, (i + 1) * perRow)
+  ).filter((row) => row.length > 0);
+}
+
+function repeatToMinLength<T>(items: T[], minLength: number): T[] {
+  if (items.length === 0) return [];
+  const out: T[] = [];
+  while (out.length < minLength) out.push(...items);
+  return out;
 }
 
 function MarketCircle({
@@ -30,7 +40,7 @@ function MarketCircle({
       <TooltipTrigger
         className="block shrink-0 overflow-hidden rounded-full shadow-[0_2px_12px_-4px_rgba(0,0,0,0.55)] ring-1 ring-white/10 transition-[transform,box-shadow] duration-300 hover:scale-110 hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.65)] hover:ring-white/25 sm:hover:scale-[1.08]"
       >
-        <CircleMarketFlag market={market} size={56} />
+        <CircleMarketFlag market={market} size={80} />
         <span className="sr-only">{market.label}</span>
       </TooltipTrigger>
       <TooltipContent side="top">{market.label}</TooltipContent>
@@ -53,14 +63,15 @@ function MarqueeRow({
   visible: boolean;
   rowIndex: number;
 }) {
-  const loop = [...markets, ...markets];
+  const padded = repeatToMinLength(markets, MIN_FLAGS_PER_ROW);
+  const loop = [...padded, ...padded];
 
   return (
     <div
       className={cn(
-        "marquee-edge-fade overflow-hidden py-2 transition-all duration-700 ease-out",
-        visible ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
-      )}
+        "marquee-edge-fade overflow-hidden py-1.5 transition-all duration-700 ease-out motion-reduce:hidden sm:py-2",
+          visible ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+        )}
       style={{ transitionDelay: `${rowIndex * 100}ms` }}
     >
       <div
@@ -69,9 +80,9 @@ function MarqueeRow({
       >
         <div
           className={cn(
-            "flex w-max items-center gap-3 px-1 sm:gap-4",
+            "flex w-max items-center gap-2 px-1 sm:gap-3",
             reverse ? "animate-marquee-reverse" : "animate-marquee",
-            "motion-reduce:flex-wrap motion-reduce:justify-center motion-reduce:gap-2"
+            "motion-reduce:hidden"
           )}
           style={
             {
@@ -126,7 +137,6 @@ export function MarketsMarquee() {
     { reverse: false, duration: 52, parallaxMult: -48 },
     { reverse: true, duration: 62, parallaxMult: 64 },
     { reverse: false, duration: 46, parallaxMult: -72 },
-    { reverse: true, duration: 58, parallaxMult: 56 },
   ] as const;
 
   return (
@@ -163,7 +173,7 @@ export function MarketsMarquee() {
           </div>
         </div>
 
-        <div className="relative mt-12 flex flex-col gap-1 sm:mt-14 sm:gap-2">
+        <div className="relative mt-12 flex flex-col gap-0.5 sm:mt-14 sm:gap-1">
           {rows.map((rowMarkets, i) => {
             const cfg = rowConfigs[i];
             const parallax = (scrollShift - 0.5) * cfg.parallaxMult;
@@ -179,6 +189,11 @@ export function MarketsMarquee() {
               />
             );
           })}
+          <div className="hidden grid-cols-[repeat(auto-fill,minmax(4.75rem,1fr))] gap-3 px-6 py-4 motion-reduce:grid">
+            {GEO_MARKETS.map((market) => (
+              <MarketCircle key={market.geo} market={market} />
+            ))}
+          </div>
         </div>
       </section>
     </TooltipProvider>
