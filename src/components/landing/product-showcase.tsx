@@ -59,7 +59,7 @@ function HeroVisual() {
           </span>
         </div>
         <Image
-          src="/landing/app-overview.png"
+          src="/landing/app-overview.png?v=3"
           alt="The Scuup workspace: Player CX ranking with journey, retention, voice of customer and design scores"
           width={1520}
           height={940}
