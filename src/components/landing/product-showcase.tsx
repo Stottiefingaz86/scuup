@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { MARKET_OPTIONS } from "@/lib/constants";
 import {
   HEURISTIC_COUNT,
   HowItWorks,
@@ -30,6 +29,9 @@ import {
   WhatYouGet,
 } from "@/components/landing/landing-explainer";
 import { LandingHeaderActions } from "@/components/landing/landing-header-actions";
+import { ShowcaseCarousel } from "@/components/landing/showcase-carousel";
+import { LandingFaq } from "@/components/landing/landing-faq";
+import { MarketsMarquee } from "@/components/landing/markets-marquee";
 
 /* ------------------------------------------------------------------ */
 /* Hero visual: a real screenshot of the live workspace in a browser   */
@@ -191,6 +193,9 @@ export function LandingShowcase() {
             <a href="#pricing" className="transition-colors hover:text-foreground">
               Pricing
             </a>
+            <a href="#faq" className="transition-colors hover:text-foreground">
+              FAQ
+            </a>
           </nav>
           <div className="ms-auto flex items-center gap-2">
             <LandingHeaderActions />
@@ -298,6 +303,8 @@ export function LandingShowcase() {
           </div>
         </section>
 
+        <ShowcaseCarousel />
+
         <HowItWorks />
         <WhatWeMeasure />
 
@@ -353,34 +360,7 @@ export function LandingShowcase() {
         <WhatYouGet />
         <ScoringScale />
 
-        {/* Markets */}
-        <section className="mx-auto w-full max-w-7xl border-t border-border px-6 py-20 sm:py-24">
-          <div className="max-w-2xl">
-            <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-              Markets
-            </p>
-            <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-              Audit from the market your players are in
-            </h2>
-            <p className="mt-4 text-muted-foreground">
-              Sessions browse through local residential connections — so
-              geo-gated offers, payment rails and licensing walls match exactly
-              what a local player sees.
-            </p>
-          </div>
-          <div className="mt-8 flex flex-wrap gap-2">
-            {MARKET_OPTIONS.filter((m) => m.geo).map((m) => (
-              <Badge
-                key={m.label}
-                variant="outline"
-                className="gap-1.5 px-3 py-1 font-normal text-muted-foreground"
-              >
-                <span aria-hidden>{m.flag}</span>
-                {m.label}
-              </Badge>
-            ))}
-          </div>
-        </section>
+        <MarketsMarquee />
 
         {/* Pricing */}
         <section id="pricing" className="border-t border-border bg-card/40 py-20 sm:py-28">
@@ -455,6 +435,8 @@ export function LandingShowcase() {
             </div>
           </div>
         </section>
+
+        <LandingFaq />
 
         {/* Final CTA */}
         <section className="landing-hero-glow border-t border-border">

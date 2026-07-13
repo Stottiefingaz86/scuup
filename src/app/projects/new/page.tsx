@@ -23,6 +23,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { CircleMarketFlag } from "@/components/circle-market-flag";
 import { ScuupLogo } from "@/components/scuup-logo";
 import { cn } from "@/lib/utils";
 import {
@@ -251,7 +252,7 @@ function MarketPicker({
               : "border-border bg-card/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
         )}
       >
-        <span className="text-base leading-none">{m.flag}</span>
+        <CircleMarketFlag market={m} size={22} className="shadow-sm ring-1 ring-black/10" />
         <span className="min-w-0 truncate">{m.label}</span>
         <span className="ms-auto flex shrink-0 items-center gap-1">
           {blocked.length > 0 ? (

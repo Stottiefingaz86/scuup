@@ -149,6 +149,61 @@ export async function listProjects(userId: string): Promise<Project[]> {
   );
 }
 
+/** Load one project with full brand data — server-side only. */
+export async function getProjectById(id: string): Promise<Project | null> {
+  const db = supabase();
+  const { data: row, error } = await db
+    .from("ps_projects")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!row) return null;
+
+  const { data: brandRows, error: brandErr } = await db
+    .from("ps_brands")
+    .select("*")
+    .eq("project_id", id);
+  if (brandErr) throw new Error(brandErr.message);
+
+  const brands = (brandRows ?? []) as BrandRow[];
+  const brandIds = brands.map((b) => b.id);
+
+  if (brandIds.length === 0) {
+    return assemble(row as ProjectRow, [], [], [], undefined, [], []);
+  }
+
+  const [analyses, sessions, plan, vocs, designs] = await Promise.all([
+    db.from("ps_analyses").select("brand_id, area, data").in("brand_id", brandIds),
+    db
+      .from("ps_sessions")
+      .select("id, project_id, data")
+      .eq("project_id", id)
+      .order("created_at", { ascending: false }),
+    db
+      .from("ps_action_plans")
+      .select("project_id, data")
+      .eq("project_id", id)
+      .maybeSingle(),
+    db.from("ps_voc").select("brand_id, data").in("brand_id", brandIds),
+    db.from("ps_design").select("brand_id, data").in("brand_id", brandIds),
+  ]);
+
+  for (const res of [analyses, sessions, plan, vocs, designs]) {
+    if (res.error) throw new Error(res.error.message);
+  }
+
+  return assemble(
+    row as ProjectRow,
+    brands,
+    (analyses.data ?? []) as AnalysisRow[],
+    (sessions.data ?? []) as SessionRow[],
+    plan.data as ActionPlanRow | undefined,
+    (vocs.data ?? []) as VocRow[],
+    (designs.data ?? []) as DesignRow[]
+  );
+}
+
 /** How many reports this account has created (any status). */
 export async function countProjects(userId: string): Promise<number> {
   const { count, error } = await supabase()
@@ -371,6 +426,12 @@ export async function setProjectComplete(id: string): Promise<void> {
     .update({ status: "complete", analysed_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  try {
+    const { syncShowcaseFromProject } = await import("./showcase-db");
+    await syncShowcaseFromProject(id);
+  } catch (e) {
+    console.error("[showcase] sync on complete failed:", e);
+  }
 }
 
 export async function setProjectDraft(id: string): Promise<void> {

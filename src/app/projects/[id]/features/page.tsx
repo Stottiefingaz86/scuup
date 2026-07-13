@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import {
@@ -129,7 +129,7 @@ function EvidenceStrip({
       {withEvidence.map(({ brand, ev }) => (
         <div
           key={brand.id}
-          className="flex flex-col gap-2 rounded-lg border bg-background/40 p-3"
+          className="flex min-w-0 flex-col gap-2 rounded-lg border bg-background/40 p-3"
         >
           <div className="flex items-center gap-2">
             <BrandMark brand={brand} className="size-4" />
@@ -164,7 +164,7 @@ function EvidenceStrip({
             </span>
           </div>
           {ev.note ? (
-            <p className="text-xs leading-relaxed text-muted-foreground">
+            <p className="min-w-0 break-words text-xs leading-relaxed text-muted-foreground">
               {ev.note}
             </p>
           ) : null}
@@ -217,6 +217,11 @@ function FeaturesContent({ project }: { project: Project }) {
         PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority)
     );
   }, [matrix, category]);
+
+  const selectedRow = useMemo(
+    () => rows.find((r) => r.feature === expanded) ?? null,
+    [rows, expanded]
+  );
 
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
   const competitors = project.brands.filter((b) => b.role === "competitor");
@@ -300,6 +305,7 @@ function FeaturesContent({ project }: { project: Project }) {
             </div>
           ) : null}
           {!backfilling && matrix.length > 0 ? (
+            <>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -315,9 +321,6 @@ function FeaturesContent({ project }: { project: Project }) {
               <TableBody>
                 {rows.map((row) => {
                   const isOpen = expanded === row.feature;
-                  const hasShots = Object.values(row.evidence).some(
-                    (ev) => ev?.screenshot
-                  );
                   const loggedInOnly = Object.values(row.evidence).every(
                     (ev) => !ev || ev.loggedIn
                   );
@@ -341,53 +344,70 @@ function FeaturesContent({ project }: { project: Project }) {
                     );
                   };
                   return (
-                    <React.Fragment key={row.feature}>
-                      <TableRow
-                        onClick={() =>
-                          setExpanded(isOpen ? null : row.feature)
-                        }
-                        className={cn("cursor-pointer", isOpen && "bg-accent/40")}
-                      >
-                        <TableCell className="font-medium">
-                          <span className="inline-flex items-center gap-1.5">
-                            <ChevronDown
-                              className={cn(
-                                "size-3.5 text-muted-foreground/50 transition-transform",
-                                isOpen && "rotate-180"
-                              )}
+                    <TableRow
+                      key={row.feature}
+                      onClick={() =>
+                        setExpanded(isOpen ? null : row.feature)
+                      }
+                      className={cn("cursor-pointer", isOpen && "bg-accent/40")}
+                    >
+                      <TableCell className="font-medium">
+                        <span className="inline-flex items-center gap-1.5">
+                          <ChevronDown
+                            className={cn(
+                              "size-3.5 text-muted-foreground/50 transition-transform",
+                              isOpen && "rotate-180"
+                            )}
+                          />
+                          {row.feature}
+                          {loggedInOnly && Object.values(row.evidence).some(Boolean) ? (
+                            <KeyRound
+                              className="size-3 text-primary/70"
+                              aria-label="Seen in logged-in sessions only"
                             />
-                            {row.feature}
-                            {loggedInOnly && Object.values(row.evidence).some(Boolean) ? (
-                              <KeyRound
-                                className="size-3 text-primary/70"
-                                aria-label="Seen in logged-in sessions only"
-                              />
-                            ) : null}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {row.category}
-                        </TableCell>
-                        <TableCell>{cellFor(ownBrand.id)}</TableCell>
-                        {competitors.map((c) => (
-                          <TableCell key={c.id}>{cellFor(c.id)}</TableCell>
-                        ))}
-                        <TableCell>
-                          <PriorityBadge priority={row.priority} />
-                        </TableCell>
-                      </TableRow>
-                      {isOpen ? (
-                        <TableRow className="hover:bg-transparent">
-                          <TableCell colSpan={4 + competitors.length}>
-                            <EvidenceStrip row={row} brands={project.brands} />
-                          </TableCell>
-                        </TableRow>
-                      ) : null}
-                    </React.Fragment>
+                          ) : null}
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {row.category}
+                      </TableCell>
+                      <TableCell>{cellFor(ownBrand.id)}</TableCell>
+                      {competitors.map((c) => (
+                        <TableCell key={c.id}>{cellFor(c.id)}</TableCell>
+                      ))}
+                      <TableCell>
+                        <PriorityBadge priority={row.priority} />
+                      </TableCell>
+                    </TableRow>
                   );
                 })}
               </TableBody>
             </Table>
+
+            {selectedRow ? (
+              <div className="rounded-xl border border-primary/20 bg-muted/10 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-heading text-sm font-semibold">
+                      {selectedRow.feature}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedRow.category}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setExpanded(null)}
+                  >
+                    Close
+                  </Button>
+                </div>
+                <EvidenceStrip row={selectedRow} brands={project.brands} />
+              </div>
+            ) : null}
+            </>
           ) : null}
           {!backfilling && matrix.length > 0 ? (
             <p className="flex items-start gap-1.5 text-xs text-muted-foreground">

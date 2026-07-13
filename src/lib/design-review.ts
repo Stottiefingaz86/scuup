@@ -8,6 +8,14 @@ import {
   MARKET_PROXY_COUNTRY,
 } from "./constants";
 import { isRemoteEvidenceUrl, localEvidencePath } from "./evidence-storage";
+import {
+  alignJourneyNotes,
+  collectDesignReviewShots,
+  DESIGN_REVIEW_AREA_ORDER,
+  isLoginGateAnalysis,
+  pickDesignScreenshot,
+  type DesignReviewShot,
+} from "./design-shots";
 import type { Brand, DesignReview, Project } from "./types";
 
 /**
@@ -478,17 +486,15 @@ async function shotToBase64(url: string): Promise<string | null> {
   }
 }
 
-/** One representative screenshot per captured journey area, so the review
- * judges consistency ACROSS journeys, not just the landing page. */
+/** Load base64 for the canonical design-review screenshot set. */
 async function journeyShots(
   brand: Brand
-): Promise<{ area: string; b64: string }[]> {
-  const out: { area: string; b64: string }[] = [];
-  for (const [area, a] of Object.entries(brand.analyses)) {
-    if (a.blocked || !a.screenshots?.length) continue;
-    const b64 = await shotToBase64(a.screenshots[0]);
-    if (b64) out.push({ area, b64 });
-    if (out.length >= 7) break;
+): Promise<(DesignReviewShot & { b64: string })[]> {
+  const picked = collectDesignReviewShots(brand);
+  const out: (DesignReviewShot & { b64: string })[] = [];
+  for (const shot of picked) {
+    const b64 = await shotToBase64(shot.screenshot);
+    if (b64) out.push({ ...shot, b64 });
   }
   return out;
 }
@@ -533,8 +539,19 @@ export async function buildDesignReview(
   signals: DesignSignals
 ): Promise<DesignReview> {
   const shots = await journeyShots(brand);
+  const skippedLoginGates = DESIGN_REVIEW_AREA_ORDER.filter((area) => {
+    const a = brand.analyses[area];
+    return a && !a.blocked && isLoginGateAnalysis(a) && !pickDesignScreenshot(area, a);
+  }).map((area) => ANALYSIS_AREA_LABELS[area] ?? area);
 
-  const prompt = `You are PlayerScope's design lead reviewing ${brand.name} (an iGaming site audited for the ${project.market} market). You have (a) HARD CODE SIGNALS measured from the live rendered page, and (b) one screenshot per captured journey area, in the order listed. Write an in-depth but plain-language design review a product team and a CEO can both read.
+  const prompt = `You are PlayerScope's design lead reviewing ${brand.name} (an iGaming site audited for the ${project.market} market). You have (a) HARD CODE SIGNALS measured from the live rendered homepage, and (b) one screenshot per captured journey area listed below — in that exact order. Write an in-depth but plain-language design review a product team and a CEO can both read.
+
+CRITICAL — WHAT TO JUDGE:
+- Visual craft and consistency must be scored primarily from PRODUCT surfaces: homepage/first impression, casino lobby, sportsbook, promo banners, rewards hubs — NOT from login forms.
+- If a journey screenshot is a login/sign-in wall, do NOT treat it as that journey's design. Login gates are excluded from the images you receive; when a product screen was unavailable, say so in journeyNotes instead of critiquing a login form as if it were the casino.
+- Weight the homepage and main product lobbies heaviest for craft. Signup/login templates are secondary.
+- Compare like-for-like: a promo-led homepage with structured nav and branded chrome is stronger craft than a bare Bootstrap login template, even if both are "dated".
+${skippedLoginGates.length ? `\nJourneys where only a login wall was captured (excluded from images): ${skippedLoginGates.join(", ")}. Mention the gap — do not score casino/loyalty craft from login screens.` : ""}
 
 RULES:
 - Never contradict the measured signals — interpret them. If signals say the background is #0d1117, the theme is dark; don't claim light.
@@ -545,7 +562,7 @@ RULES:
 - stack.health + stack.verdict: judge the engineering foundation like a principal engineer, and CALL OUT bad practice by name. "solid" = one modern framework with a coherent component/token system. "mixed" = mismatched pieces stitched together (e.g. SvelteKit shell + Bootstrap CSS + bits of React, or thousands of ad-hoc :root variables with no naming discipline). "fragile" = legacy foundations (jQuery, old Bootstrap, no framework, no token system). verdict = 2-3 sentences naming the specific problem AND its practical cost for THIS site: mixing frameworks/UI kits ships duplicate CSS and JS (slower loads on the pages players deposit from), produces the visual drift you can see between their screens, makes every component exist in two styles, and slows any redesign; Bootstrap-era CSS fights custom theming and tends to leak the dated look; no token system means colours/spacing drift page by page. Tie it to what the screenshots actually show (e.g. the signup screen looking like a different product). If the foundation is genuinely good, say what it enables instead — don't invent problems.
 - accessibility: score 0-100 from the measured checks (weight: missing alt on many images, unlabelled inputs and zoom-blocking are heavy; skip link absent is minor). findings = one entry per measured check with pass true/false (null when unreadable), each note one plain sentence with the number. Add one finding judged from screenshots: text contrast at small sizes (pass null if unsure).
 - consistency: compare the journey screenshots — does branding (logo placement, accent colour, tone, component style) carry through signup, casino, cashier, rewards? Cite the specific screens that break.
-- journeyNotes: for each screenshot provided (by its area label), 1-2 sentences of UI-practice critique: hierarchy, spacing, tap targets, form design, information density. Concrete, no fluff.
+- journeyNotes: one entry per screenshot provided, using the EXACT area key from the list below (${shots.map((s) => s.area).join(", ") || "none"}). 1-2 sentences of UI-practice critique per screen.
 - strengths / improvements: 3-4 each, most impactful first. Improvements must be actionable ("Raise body text from ~12px to 14px in the bet slip"), not generic ("improve UX").
 - craft: visual craft judged from the SCREENSHOTS ALONE, scored like a demanding design director reviewing a portfolio — not like a polite consultant. You grade against the whole web, not just iGaming. Anchored bands, pick the band FIRST then the number:
   * 85-100: world-class product design (Stripe, Linear, Apple). Almost no gambling site belongs here.
@@ -560,7 +577,7 @@ RULES:
 MEASURED CODE SIGNALS:
 ${signalsBlock(signals)}
 
-JOURNEY SCREENSHOTS (in order): ${shots.map((s, i) => `[${i}] ${ANALYSIS_AREA_LABELS[s.area] ?? s.area}`).join(", ") || "none captured yet — judge visuals from the code signals only and say so in the summary"}`;
+JOURNEY SCREENSHOTS (exact order, area key → label): ${shots.map((s, i) => `[${i}] ${s.area} (${ANALYSIS_AREA_LABELS[s.area] ?? s.area})`).join(", ") || "none captured yet — judge visual craft from the live homepage signals only and say so in the summary"}`;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -604,7 +621,20 @@ JOURNEY SCREENSHOTS (in order): ${shots.map((s, i) => `[${i}] ${ANALYSIS_AREA_LA
     (c: { type: string }) => c.type === "output_text"
   )?.text;
   if (!text) throw new Error("OpenAI returned no output text");
-  const parsed = JSON.parse(text) as Omit<DesignReview, "fetchedAt">;
+  const parsed = JSON.parse(text) as Omit<
+    DesignReview,
+    "fetchedAt" | "reviewedScreens"
+  >;
+
+  const reviewedScreens = shots.map(({ area, screenshot }) => ({
+    area,
+    screenshot,
+  }));
+  const journeyNotes = alignJourneyNotes(
+    reviewedScreens,
+    parsed.journeyNotes,
+    ANALYSIS_AREA_LABELS
+  );
 
   // The overall score is arithmetic, not vibes: visual craft carries the
   // most weight, consistency and measured accessibility the rest. This is
@@ -616,5 +646,11 @@ JOURNEY SCREENSHOTS (in order): ${shots.map((s, i) => `[${i}] ${ANALYSIS_AREA_LA
       0.3 * parsed.accessibility.score
   );
 
-  return { ...parsed, score, fetchedAt: new Date().toISOString() };
+  return {
+    ...parsed,
+    journeyNotes,
+    reviewedScreens,
+    score,
+    fetchedAt: new Date().toISOString(),
+  };
 }

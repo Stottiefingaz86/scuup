@@ -38,6 +38,7 @@ import { ScoreGauge } from "@/components/score-gauge";
 import { Verdict } from "@/components/verdict";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import { runDesignReview } from "@/lib/project-store";
+import { collectDesignReviewShots } from "@/lib/design-shots";
 import type { Brand, DesignReview, Project } from "@/lib/types";
 
 const THEME_META = {
@@ -115,34 +116,32 @@ function PaletteSwatches({ palette }: { palette: DesignReview["palette"] }) {
  * critique underneath — the branding story told visually. */
 function JourneyMoodBoard({
   brand,
-  notes,
+  design,
 }: {
   brand: Brand;
-  notes: DesignReview["journeyNotes"];
+  design: DesignReview;
 }) {
-  // The review may name areas by key ("landing") or label ("First
-  // Impression") — resolve either to the brand's captured analysis.
-  const byLabel = new Map(
-    Object.entries(ANALYSIS_AREA_LABELS).map(([key, label]) => [
-      label.toLowerCase(),
-      key,
-    ])
+  const notesByArea = new Map(
+    design.journeyNotes.map((n) => [n.area, n.note])
   );
-  const cards = notes
-    .map((n) => {
-      const key = brand.analyses[n.area]
-        ? n.area
-        : (byLabel.get(n.area.toLowerCase()) ?? n.area);
-      const analysis = brand.analyses[key];
-      const shot =
-        analysis && !analysis.blocked ? analysis.screenshots?.[0] : undefined;
-      return { ...n, area: key, shot };
-    })
-    .filter((c) => c.note);
-  if (cards.length === 0) return null;
+  const cards =
+    design.reviewedScreens && design.reviewedScreens.length > 0
+      ? design.reviewedScreens.map((s) => ({
+          area: s.area,
+          shot: s.screenshot,
+          note: notesByArea.get(s.area) ?? "",
+        }))
+      : collectDesignReviewShots(brand).map((s) => ({
+          area: s.area,
+          shot: s.screenshot,
+          note: notesByArea.get(s.area) ?? "",
+        }));
+
+  const visible = cards.filter((c) => c.note || c.shot);
+  if (visible.length === 0) return null;
   return (
     <div className="flex w-full min-w-0 gap-3 overflow-x-auto pb-2">
-      {cards.map((c) => (
+      {visible.map((c) => (
         <div
           key={c.area}
           className="flex w-60 shrink-0 flex-col overflow-hidden rounded-xl border"
@@ -155,17 +154,19 @@ function JourneyMoodBoard({
               className="aspect-[8/5] w-full rounded-none border-0"
             />
           ) : (
-            <div className="flex aspect-[8/5] items-center justify-center bg-muted/40 text-xs text-muted-foreground">
-              No screen captured
+            <div className="flex aspect-[8/5] items-center justify-center bg-muted/40 px-3 text-center text-xs text-muted-foreground">
+              Login wall only — product screen not captured
             </div>
           )}
           <div className="flex flex-col gap-1 px-3 py-2.5">
             <span className="text-xs font-medium">
               {ANALYSIS_AREA_LABELS[c.area] ?? c.area}
             </span>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {c.note}
-            </p>
+            {c.note ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {c.note}
+              </p>
+            ) : null}
           </div>
         </div>
       ))}
@@ -340,7 +341,7 @@ function BrandDesign({
               — click a screen to inspect it
             </span>
           </h3>
-          <JourneyMoodBoard brand={brand} notes={design.journeyNotes} />
+          <JourneyMoodBoard brand={brand} design={design} />
         </div>
       ) : null}
 

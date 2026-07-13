@@ -230,6 +230,8 @@ export interface DesignReview {
   consistency: { score: number; note: string };
   /** UI-practice critique per captured journey area. */
   journeyNotes: { area: string; note: string }[];
+  /** Exact screens the reviewer saw — keeps mood board in sync with the score. */
+  reviewedScreens?: { area: string; screenshot: string }[];
   strengths: string[];
   improvements: string[];
 }

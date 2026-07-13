@@ -149,6 +149,7 @@ export {
 
 export interface MarketOption {
   label: string;
+  /** Legacy emoji — prefer CircleMarketFlag for UI. */
   flag: string;
   /** Browserbase proxy geolocation code: "GB", "US-NJ", "CA-ON".
    * Undefined = session runs without regional routing. */
@@ -157,6 +158,15 @@ export interface MarketOption {
   popular?: boolean;
   /** Good pick for crypto casinos — most geo-block the UK, US and much of the EU. */
   cryptoFriendly?: boolean;
+}
+
+/** ISO code for HatScripts/circle-flags SVGs (geo prefix, with global override). */
+export function marketCircleFlagCode(
+  market: Pick<MarketOption, "geo" | "label">
+): string {
+  if (!market.geo) return "xx";
+  if (market.label === "Global (US routing)") return "un";
+  return market.geo.split("-")[0].toLowerCase();
 }
 
 /** Every market a session can browse from, NordVPN-style. Each maps to a

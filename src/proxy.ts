@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { appHomePathForUser } from "@/lib/app-home";
 
 /** Paths anyone can reach logged out. Everything else needs an account. */
-const PUBLIC_PATHS = [/^\/$/, /^\/login(\/|$)/, /^\/auth(\/|$)/];
+const PUBLIC_PATHS = [/^\/$/, /^\/login(\/|$)/, /^\/auth(\/|$)/, /^\/api\/showcase(\/|$)/];
 
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });

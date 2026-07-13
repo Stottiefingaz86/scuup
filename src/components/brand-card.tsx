@@ -39,9 +39,8 @@ const PILLAR_ICONS: Record<ScorePillar["key"], typeof Route> = {
   design: Palette,
 };
 
-/** One slim pillar row: icon + label, score, thin tier-coloured bar.
- * The provenance detail lives in the tooltip to keep the card tight. */
-function PillarRow({ pillar, muted }: { pillar: ScorePillar; muted: boolean }) {
+/** One slim pillar row: icon + label, score, thin tier-coloured bar. */
+export function PillarRow({ pillar, muted }: { pillar: ScorePillar; muted: boolean }) {
   const Icon = PILLAR_ICONS[pillar.key];
   const scored = pillar.score !== null;
   return (
