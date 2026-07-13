@@ -230,7 +230,10 @@ function FeaturesContent({ project }: { project: Project }) {
             Feature matrix
           </CardTitle>
           <CardDescription>
-            Screenshot-detected features only — click a row to see the proof.
+            A deep dive, not a score pillar — this matrix shows what each
+            brand ships so you can see the gaps, but it never moves the
+            Player CX Score. Screenshot-detected features only — click a row
+            to see the proof.
             Most cells come from public (logged-out) visits; a &quot;—&quot;
             means not seen in captured screenshots, so it may still exist
             behind login.{" "}

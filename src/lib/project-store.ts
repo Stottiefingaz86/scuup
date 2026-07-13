@@ -9,6 +9,8 @@ import type {
   JourneyAnalysis,
   JourneyType,
   Project,
+  DesignReview,
+  VocAnalysis,
 } from "./types";
 
 /** Legacy localStorage key — read once for the one-time server migration. */
@@ -154,6 +156,16 @@ export class LimitError extends Error {
   }
 }
 
+/** Thrown when another report is still active — archive it first. */
+export class ActiveReportError extends Error {
+  activeProjectId: string | null;
+  constructor(message: string, activeProjectId: string | null) {
+    super(message);
+    this.name = "ActiveReportError";
+    this.activeProjectId = activeProjectId;
+  }
+}
+
 async function post(path: string, body: unknown): Promise<void> {
   const res = await fetch(path, {
     method: "POST",
@@ -163,6 +175,9 @@ async function post(path: string, body: unknown): Promise<void> {
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     const message = data.error ?? `request failed (${res.status})`;
+    if (data.code === "active_report_exists") {
+      throw new ActiveReportError(message, data.activeProjectId ?? null);
+    }
     if (res.status === 402 || data.code === "limit_reached") {
       throw new LimitError(message);
     }
@@ -196,7 +211,7 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
   const brands: Brand[] = [
     makeBrand(`${id}-own`, input.ownBrandName, input.ownBrandUrl, "own_brand"),
     ...input.competitors
-      .slice(0, 3)
+      .slice(0, 4)
       .map((c, i) =>
         makeBrand(`${id}-comp-${i}`, c.name, c.url, "competitor")
       ),
@@ -222,6 +237,33 @@ export async function createProject(input: NewProjectInput): Promise<Project> {
   return project;
 }
 
+/** Pause a report: it stays readable but nothing runs or updates. */
+export async function archiveProject(id: string): Promise<void> {
+  await post(`/api/projects/${id}/archive`, { archived: true });
+  mutateLocal(id, (p) => ({ ...p, status: "archived" }));
+}
+
+/** Reactivate an archived report. Fails with ActiveReportError when
+ * another report is still active — only one may run at a time. */
+export async function unarchiveProject(id: string): Promise<void> {
+  await post(`/api/projects/${id}/archive`, { archived: false });
+  mutateLocal(id, (p) => ({
+    ...p,
+    status: p.analysedAt ? "complete" : "draft",
+  }));
+}
+
+/** Permanently delete a report and all of its evidence. */
+export async function deleteProject(id: string): Promise<void> {
+  const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error ?? `request failed (${res.status})`);
+  }
+  projects = (projects ?? []).filter((p) => p.id !== id);
+  emit();
+}
+
 /** Store the result of a real analysis run against a brand. */
 export function saveAnalysis(
   projectId: string,
@@ -239,6 +281,52 @@ export function saveAnalysis(
   post(`/api/projects/${projectId}/analysis`, { brandId, analysis }).catch(
     (e) => console.error("[store] analysis sync failed:", e.message)
   );
+}
+
+/** Scrape + analyse a brand's public reviews server-side, then reflect the
+ * result locally. Throws with a readable message on failure. */
+export async function runVoc(
+  projectId: string,
+  brandId: string
+): Promise<VocAnalysis> {
+  const res = await fetch("/api/voc", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, brandId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? `request failed (${res.status})`);
+  }
+  const voc = data.voc as VocAnalysis;
+  mutateLocal(projectId, (p) => ({
+    ...p,
+    brands: p.brands.map((b) => (b.id === brandId ? { ...b, voc } : b)),
+  }));
+  return voc;
+}
+
+/** Measure a brand's live rendered code + build the design review
+ * server-side, then reflect the result locally. */
+export async function runDesignReview(
+  projectId: string,
+  brandId: string
+): Promise<DesignReview> {
+  const res = await fetch("/api/design", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId, brandId }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(data.error ?? `request failed (${res.status})`);
+  }
+  const design = data.design as DesignReview;
+  mutateLocal(projectId, (p) => ({
+    ...p,
+    brands: p.brands.map((b) => (b.id === brandId ? { ...b, design } : b)),
+  }));
+  return design;
 }
 
 /** Store a saved live capture session. */

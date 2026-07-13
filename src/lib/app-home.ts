@@ -6,13 +6,16 @@ export function appHomePath(
   projects: Pick<Project, "id" | "status">[],
   search?: string
 ): string {
+  // Land on the live report when one exists; archived ones only count
+  // when nothing is active.
+  const home = projects.find((p) => p.status !== "archived") ?? projects[0];
   let path: string;
-  if (projects.length === 0) {
+  if (!home) {
     path = "/projects/new";
-  } else if (projects[0].status === "analyzing") {
-    path = `/projects/${projects[0].id}/analyzing`;
+  } else if (home.status === "analyzing") {
+    path = `/projects/${home.id}/analyzing`;
   } else {
-    path = `/projects/${projects[0].id}/overview`;
+    path = `/projects/${home.id}/overview`;
   }
   return search ? `${path}?${search}` : path;
 }

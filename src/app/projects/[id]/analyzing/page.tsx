@@ -30,7 +30,14 @@ import {
   ANALYSIS_AREA_LABELS,
   LANDING,
 } from "@/lib/constants";
-import { getProject, markProjectComplete, markProjectDraft, useProject } from "@/lib/project-store";
+import {
+  getProject,
+  markProjectComplete,
+  markProjectDraft,
+  runDesignReview,
+  runVoc,
+  useProject,
+} from "@/lib/project-store";
 import { friendlyAgentError, isBrowserbaseQuotaError, runAgent } from "@/lib/run-agent";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
 import type { Brand } from "@/lib/types";
@@ -50,6 +57,17 @@ const MAX_CONCURRENT = 3;
 const MIN_START_GAP_MS = 14000;
 
 const jobKey = (brandId: string, area: string) => `${brandId}:${area}`;
+
+/** The two non-journey score pillars, run as a final phase once the
+ * journey walks are done: VoC scrapes public reviews, Design measures the
+ * live rendered code. Each needs a browser session, so they go through
+ * the same paced queue as journeys. */
+const EXTRA_AREAS = ["voc", "design"];
+
+const EXTRA_LABELS: Record<string, string> = {
+  voc: "Voice of Customer",
+  design: "Design Review",
+};
 
 function countScored(
   states: Record<string, JobState>,
@@ -79,7 +97,7 @@ function finishRun(
 }
 
 function AreaChip({ area, state }: { area: string; state: JobState }) {
-  const label = ANALYSIS_AREA_LABELS[area] ?? area;
+  const label = ANALYSIS_AREA_LABELS[area] ?? EXTRA_LABELS[area] ?? area;
   return (
     <span
       className={cn(
@@ -212,14 +230,25 @@ export default function AnalyzingPage() {
               if (abortRef.current) return;
               setJob(key, { phase: "running" });
               try {
-                const analysis = await runAgent(projectId, job.brand, job.area);
-                if (!analysis.blocked) successCount += 1;
-                setJob(
-                  key,
-                  analysis.blocked
-                    ? { phase: "blocked" }
-                    : { phase: "done", score: analysis.score }
-                );
+                if (job.area === "voc") {
+                  const voc = await runVoc(projectId, job.brand.id);
+                  setJob(key, {
+                    phase: "done",
+                    score: Math.round((voc.trustScore ?? 0) * 20),
+                  });
+                } else if (job.area === "design") {
+                  const design = await runDesignReview(projectId, job.brand.id);
+                  setJob(key, { phase: "done", score: design.score });
+                } else {
+                  const analysis = await runAgent(projectId, job.brand, job.area);
+                  if (!analysis.blocked) successCount += 1;
+                  setJob(
+                    key,
+                    analysis.blocked
+                      ? { phase: "blocked" }
+                      : { phase: "done", score: analysis.score }
+                  );
+                }
               } catch (e) {
                 const reason = friendlyAgentError(
                   e instanceof Error ? e : new Error("analysis failed")
@@ -244,11 +273,19 @@ export default function AnalyzingPage() {
           brands.flatMap((brand) => gatedAreas.map((area) => ({ brand, area })))
         );
       }
+      // Final phase: the VoC and Design pillars, so a fresh report lands
+      // with all four score components instead of two.
+      if (!abortRef.current) {
+        await runQueue(
+          brands.flatMap((brand) => EXTRA_AREAS.map((area) => ({ brand, area })))
+        );
+      }
       if (cancelled || finishedRef.current || !getProject(projectId)) return;
       finishedRef.current = true;
 
       const totalRunJobs =
-        brands.length * (publicAreas.length + gatedAreas.length);
+        brands.length *
+        (publicAreas.length + gatedAreas.length + EXTRA_AREAS.length);
       setRunFinished({
         scored: successCount,
         failed: totalRunJobs - successCount,
@@ -279,6 +316,8 @@ export default function AnalyzingPage() {
         ...project.journeys.filter(
           (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
         ),
+        // Final phase: the VoC and Design score pillars.
+        ...EXTRA_AREAS,
       ]
     : [];
   const gatedAreas = project
@@ -320,7 +359,7 @@ export default function AnalyzingPage() {
             {project
               ? allSettled && !hasResults
                 ? `${project.name} — every journey visit failed. You'll be sent back to overview shortly.`
-                : `${project.name} — real browsers are visiting each brand and walking every selected journey. A vision model scores what they see.`
+                : `${project.name} — real browsers are walking every journey, then reading public reviews and the live code for the Voice of Customer and Design pillars.`
               : "Loading project…"}
           </CardDescription>
         </CardHeader>
@@ -352,7 +391,7 @@ export default function AnalyzingPage() {
           <div className="flex flex-col gap-2">
             <Progress value={progress} />
             <span className="text-sm text-muted-foreground tabular-nums">
-              {settled} of {totalJobs} journey visits scored — {progress}%
+              {settled} of {totalJobs} checks complete — {progress}%
             </span>
           </div>
 

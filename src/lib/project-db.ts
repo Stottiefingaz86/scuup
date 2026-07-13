@@ -3,8 +3,10 @@ import type {
   ActionPlan,
   Brand,
   CaptureRecord,
+  DesignReview,
   JourneyAnalysis,
   Project,
+  VocAnalysis,
 } from "./types";
 
 /* Row shapes as stored in Postgres. Analyses and sessions keep the full
@@ -50,12 +52,24 @@ interface ActionPlanRow {
   data: ActionPlan;
 }
 
+interface VocRow {
+  brand_id: string;
+  data: VocAnalysis;
+}
+
+interface DesignRow {
+  brand_id: string;
+  data: DesignReview;
+}
+
 function assemble(
   row: ProjectRow,
   brandRows: BrandRow[],
   analysisRows: AnalysisRow[],
   sessionRows: SessionRow[],
-  planRow?: ActionPlanRow
+  planRow?: ActionPlanRow,
+  vocRows: VocRow[] = [],
+  designRows: DesignRow[] = []
 ): Project {
   const analysesByBrand = new Map<string, Record<string, JourneyAnalysis>>();
   for (const a of analysisRows) {
@@ -72,6 +86,8 @@ function assemble(
       favicon: b.favicon,
       role: b.role as Brand["role"],
       analyses: analysesByBrand.get(b.id) ?? {},
+      voc: vocRows.find((v) => v.brand_id === b.id)?.data,
+      design: designRows.find((d) => d.brand_id === b.id)?.data,
     }));
   return {
     id: row.id,
@@ -91,24 +107,29 @@ function assemble(
 
 export async function listProjects(userId: string): Promise<Project[]> {
   const db = supabase();
-  const [projects, brands, analyses, sessions, plans] = await Promise.all([
-    db
-      .from("ps_projects")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false }),
-    db.from("ps_brands").select("*"),
-    db.from("ps_analyses").select("brand_id, area, data"),
-    db.from("ps_sessions").select("id, project_id, data").order("created_at", { ascending: false }),
-    db.from("ps_action_plans").select("project_id, data"),
-  ]);
-  for (const res of [projects, brands, analyses, sessions, plans]) {
+  const [projects, brands, analyses, sessions, plans, vocs, designs] =
+    await Promise.all([
+      db
+        .from("ps_projects")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
+      db.from("ps_brands").select("*"),
+      db.from("ps_analyses").select("brand_id, area, data"),
+      db.from("ps_sessions").select("id, project_id, data").order("created_at", { ascending: false }),
+      db.from("ps_action_plans").select("project_id, data"),
+      db.from("ps_voc").select("brand_id, data"),
+      db.from("ps_design").select("brand_id, data"),
+    ]);
+  for (const res of [projects, brands, analyses, sessions, plans, vocs, designs]) {
     if (res.error) throw new Error(res.error.message);
   }
   const brandRows = (brands.data ?? []) as BrandRow[];
   const analysisRows = (analyses.data ?? []) as AnalysisRow[];
   const sessionRows = (sessions.data ?? []) as SessionRow[];
   const planRows = (plans.data ?? []) as ActionPlanRow[];
+  const vocRows = (vocs.data ?? []) as VocRow[];
+  const designRows = (designs.data ?? []) as DesignRow[];
   return ((projects.data ?? []) as ProjectRow[]).map((p) =>
     assemble(
       p,
@@ -117,7 +138,13 @@ export async function listProjects(userId: string): Promise<Project[]> {
         brandRows.some((b) => b.id === a.brand_id && b.project_id === p.id)
       ),
       sessionRows.filter((s) => s.project_id === p.id),
-      planRows.find((pl) => pl.project_id === p.id)
+      planRows.find((pl) => pl.project_id === p.id),
+      vocRows.filter((v) =>
+        brandRows.some((b) => b.id === v.brand_id && b.project_id === p.id)
+      ),
+      designRows.filter((d) =>
+        brandRows.some((b) => b.id === d.brand_id && b.project_id === p.id)
+      )
     )
   );
 }
@@ -130,6 +157,21 @@ export async function countProjects(userId: string): Promise<number> {
     .eq("user_id", userId);
   if (error) throw new Error(error.message);
   return count ?? 0;
+}
+
+/** The account's live (non-archived) report, if any. Only one may exist. */
+export async function activeProject(
+  userId: string
+): Promise<{ id: string; name: string } | null> {
+  const { data, error } = await supabase()
+    .from("ps_projects")
+    .select("id, name")
+    .eq("user_id", userId)
+    .neq("status", "archived")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? { id: data.id as string, name: data.name as string } : null;
 }
 
 /** True when the project belongs to this account. */
@@ -145,6 +187,25 @@ export async function ownsProject(
     .maybeSingle();
   if (error) throw new Error(error.message);
   return data !== null;
+}
+
+/** True when the brand's parent report is archived (paused). */
+export async function brandProjectArchived(brandId: string): Promise<boolean> {
+  const db = supabase();
+  const { data, error } = await db
+    .from("ps_brands")
+    .select("project_id")
+    .eq("id", brandId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return false;
+  const { data: proj, error: projErr } = await db
+    .from("ps_projects")
+    .select("status")
+    .eq("id", data.project_id as string)
+    .maybeSingle();
+  if (projErr) throw new Error(projErr.message);
+  return proj?.status === "archived";
 }
 
 /** True when the brand belongs to one of this account's projects. */
@@ -236,6 +297,31 @@ export async function upsertAnalysis(
   if (error) throw new Error(error.message);
 }
 
+export async function upsertVoc(
+  brandId: string,
+  voc: VocAnalysis
+): Promise<void> {
+  const { error } = await supabase().from("ps_voc").upsert({
+    brand_id: brandId,
+    source: voc.source,
+    fetched_at: voc.fetchedAt,
+    data: voc,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function upsertDesign(
+  brandId: string,
+  design: DesignReview
+): Promise<void> {
+  const { error } = await supabase().from("ps_design").upsert({
+    brand_id: brandId,
+    fetched_at: design.fetchedAt,
+    data: design,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function insertSession(
   projectId: string,
   record: CaptureRecord
@@ -275,6 +361,41 @@ export async function setProjectDraft(id: string): Promise<void> {
     .from("ps_projects")
     .update({ status: "draft", analysed_at: null })
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Archive pauses a report (kept readable, nothing runs); unarchiving
+ * restores it to complete/draft depending on whether it was analysed. */
+export async function setProjectArchived(
+  id: string,
+  archived: boolean
+): Promise<void> {
+  const db = supabase();
+  if (archived) {
+    const { error } = await db
+      .from("ps_projects")
+      .update({ status: "archived" })
+      .eq("id", id);
+    if (error) throw new Error(error.message);
+    return;
+  }
+  const { data, error: readErr } = await db
+    .from("ps_projects")
+    .select("analysed_at")
+    .eq("id", id)
+    .maybeSingle();
+  if (readErr) throw new Error(readErr.message);
+  const { error } = await db
+    .from("ps_projects")
+    .update({ status: data?.analysed_at ? "complete" : "draft" })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Permanent removal — brands, analyses, sessions, VoC, design reviews
+ * and action plans all cascade with the project row. */
+export async function deleteProject(id: string): Promise<void> {
+  const { error } = await supabase().from("ps_projects").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 

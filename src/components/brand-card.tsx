@@ -1,5 +1,11 @@
 import Link from "next/link";
-import { ArrowRight, ShieldAlert } from "lucide-react";
+import {
+  ArrowRight,
+  MessagesSquare,
+  Palette,
+  Repeat,
+  Route,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,10 +17,75 @@ import {
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
-import { ScoreBar } from "@/components/score-bar";
 import { ScoreGauge } from "@/components/score-gauge";
-import { LANDING } from "@/lib/constants";
-import { areaScore, overallScore, type Brand } from "@/lib/types";
+import {
+  TIER_BG_GROUP_HOVER,
+  TIER_TEXT_GROUP_HOVER,
+  tierBgClass,
+  tierOf,
+  tierTextClass,
+} from "@/lib/score";
+import {
+  overallScore,
+  scorePillars,
+  type Brand,
+  type ScorePillar,
+} from "@/lib/types";
+
+const PILLAR_ICONS: Record<ScorePillar["key"], typeof Route> = {
+  journeys: Route,
+  retention: Repeat,
+  voc: MessagesSquare,
+  design: Palette,
+};
+
+/** One slim pillar row: icon + label, score, thin tier-coloured bar.
+ * The provenance detail lives in the tooltip to keep the card tight. */
+function PillarRow({ pillar, muted }: { pillar: ScorePillar; muted: boolean }) {
+  const Icon = PILLAR_ICONS[pillar.key];
+  const scored = pillar.score !== null;
+  return (
+    <div className="flex flex-col gap-1" title={pillar.detail}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="size-3.5 shrink-0 text-muted-foreground/60" />
+        <span className="truncate text-xs text-muted-foreground">
+          {pillar.label}
+        </span>
+        <span
+          className={cn(
+            "ms-auto font-heading text-xs font-semibold tabular-nums transition-colors duration-200",
+            !scored
+              ? "font-normal text-muted-foreground/50"
+              : muted
+                ? cn(
+                    "text-muted-foreground",
+                    TIER_TEXT_GROUP_HOVER[tierOf(pillar.score!)]
+                  )
+                : tierTextClass(pillar.score!)
+          )}
+        >
+          {scored ? pillar.score : "—"}
+        </span>
+      </div>
+      <div className="h-1 w-full overflow-hidden rounded-full bg-muted/60">
+        {scored ? (
+          <div
+            className={cn(
+              "h-full rounded-full transition-colors duration-200",
+              muted
+                ? cn(
+                    "bg-foreground/30",
+                    TIER_BG_GROUP_HOVER[tierOf(pillar.score!)]
+                  )
+                : cn(tierBgClass(pillar.score!), "opacity-90")
+            )}
+            style={{ width: `${pillar.score}%` }}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 export function BrandCard({
   brand,
@@ -27,15 +98,13 @@ export function BrandCard({
 }) {
   const own = brand.role === "own_brand";
   const overall = overallScore(brand);
-  const landing = brand.analyses[LANDING];
-  const analysedAreas = Object.values(brand.analyses).filter(
-    (a) => !a.blocked
-  ).length;
+  const pillars = scorePillars(brand);
+  const scoredPillars = pillars.filter((p) => p.score !== null);
 
   return (
     <Card
       className={cn(
-        "group/score relative flex flex-col overflow-hidden",
+        "group/score relative flex flex-col gap-4 overflow-hidden py-4",
         own && "ring-1 ring-brand/40"
       )}
     >
@@ -45,12 +114,14 @@ export function BrandCard({
           className="pointer-events-none absolute -top-20 left-1/2 h-36 w-4/5 -translate-x-1/2 rounded-full bg-brand/15 blur-3xl"
         />
       ) : null}
-      <CardHeader>
-        <div className="flex items-center gap-3">
-          <BrandMark brand={brand} className="size-10 text-base" />
+      <CardHeader className="px-4">
+        <div className="flex items-center gap-2.5">
+          <BrandMark brand={brand} className="size-8 text-sm" />
           <div className="flex min-w-0 flex-col">
-            <CardTitle className="truncate font-heading">{brand.name}</CardTitle>
-            <span className="truncate text-xs text-muted-foreground">
+            <CardTitle className="truncate font-heading text-sm">
+              {brand.name}
+            </CardTitle>
+            <span className="truncate text-[11px] text-muted-foreground">
               {brand.url.replace(/^https?:\/\//, "")}
             </span>
           </div>
@@ -65,18 +136,18 @@ export function BrandCard({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex flex-1 flex-col gap-5">
+      <CardContent className="flex flex-1 flex-col gap-4 px-4">
         {overall !== null ? (
           <ScoreGauge
             score={overall}
-            size={150}
+            size={116}
             caption="Player CX Score"
             muted={!own}
             className="mx-auto"
           />
         ) : (
-          <div className="mx-auto flex h-[100px] flex-col items-center justify-center gap-1.5">
-            <span className="font-heading text-3xl font-semibold text-muted-foreground/40">
+          <div className="mx-auto flex h-[80px] flex-col items-center justify-center gap-1">
+            <span className="font-heading text-2xl font-semibold text-muted-foreground/40">
               N/A
             </span>
             <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -85,35 +156,19 @@ export function BrandCard({
           </div>
         )}
 
-        <div className="flex flex-col gap-3 border-t pt-4">
-          {areaScore(brand, LANDING) !== null ? (
-            <ScoreBar
-              label="First Impression"
-              score={areaScore(brand, LANDING)!}
-              muted={!own}
-            />
-          ) : (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <ShieldAlert className="size-3.5 shrink-0 text-score-mid" />
-              First impression{" "}
-              {landing?.blocked ? "blocked by a bot wall" : "not analysed"}
-            </div>
-          )}
-          <span className="text-xs text-muted-foreground">
-            {analysedAreas} area{analysedAreas === 1 ? "" : "s"} scored so far
-            — deeper journeys fill in from live sessions.
+        {/* The score's recipe: overall = average of the scored pillars. */}
+        <div className="flex flex-col gap-2.5 border-t pt-3.5">
+          {pillars.map((p) => (
+            <PillarRow key={p.key} pillar={p} muted={!own} />
+          ))}
+          <span className="text-[10px] leading-snug text-muted-foreground/70">
+            {overall !== null
+              ? `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}.`
+              : "Scores appear as the agent completes its first visits."}
           </span>
         </div>
-
-        {landing?.summary ? (
-          <div className="flex items-start gap-2 rounded-lg bg-muted/40 px-3 py-2.5">
-            <p className="line-clamp-4 text-xs leading-snug text-muted-foreground">
-              {landing.summary}
-            </p>
-          </div>
-        ) : null}
       </CardContent>
-      <CardFooter>
+      <CardFooter className="px-4">
         <Button
           variant={own ? "default" : "secondary"}
           size="sm"

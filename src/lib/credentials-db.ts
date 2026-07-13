@@ -25,6 +25,9 @@ export interface BrandCredentials {
   password: string | null;
   contextId: string | null;
   persona: SignupPersona | null;
+  /** When the agent last had an authenticated session — an account
+   * definitely exists on this brand, so log in instead of registering. */
+  loggedInAt: string | null;
 }
 
 interface Row {
@@ -160,6 +163,7 @@ export async function getCredentialsForLogin(
     password: row?.password_enc ? decryptSecret(row.password_enc) : null,
     contextId: row?.browserbase_context_id ?? null,
     persona: decryptPersona(row?.persona_enc ?? null),
+    loggedInAt: row?.logged_in_at ?? null,
   };
 }
 

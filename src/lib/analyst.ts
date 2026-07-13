@@ -9,12 +9,18 @@ import {
 import { JOURNEY_HEURISTICS, RETENTION_MECHANICS } from "./constants";
 import { persistShots } from "./evidence-storage";
 import { expertiseFor } from "./igaming-expertise";
+import { knowledgeFor } from "./igaming-knowledge";
 import {
   applyRetentionGates,
   fillGatedRetentionNotes,
   type RetentionContext,
 } from "./retention-scoring";
-import type { DetectedFeature, Observation, RetentionMechanicNote } from "./types";
+import type {
+  DetectedFeature,
+  LoyaltySnapshot,
+  Observation,
+  RetentionMechanicNote,
+} from "./types";
 
 interface AnalysisResult {
   score: number;
@@ -29,6 +35,7 @@ interface AnalysisResult {
   retentionNotes?: RetentionMechanicNote[];
   retentionContext?: RetentionContext;
   retentionType?: string;
+  loyaltySnapshot?: LoyaltySnapshot;
 }
 
 export interface JourneyAnalysis extends AnalysisResult {
@@ -119,16 +126,27 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
       instruction:
         "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — it may be a nav item, a footer link, an icon-only menu entry, or open as a modal",
       required: true,
+      fallbackPaths: ["/vip", "/rewards", "/loyalty", "/vip-rewards", "/rakeback"],
     },
     {
       instruction:
-        "click the second tab inside the rewards or bonus hub (such as 'Level Up', 'Tiers', or similar) to reveal its content",
+        "click the tab or link that shows the tier levels and their benefits (such as 'Levels', 'Tiers', 'All Levels', or 'Benefits') so every level's perks are visible",
       required: false,
+      alternatives: [
+        "expand or scroll the tier/level table so the perks at each VIP level are readable",
+      ],
     },
     {
       instruction:
-        "click the next unexplored tab inside the rewards or bonus hub (such as 'All Levels', 'Benefits', or similar) to reveal its content",
+        "open the promotions or bonuses page to see the current welcome offer for a first-time depositor",
       required: false,
+      fallbackPaths: ["/promotions", "/promos", "/offers", "/bonuses"],
+    },
+    {
+      instruction:
+        "open the help centre or FAQ article that explains the loyalty or VIP program — search for 'VIP', 'loyalty', or 'rakeback' in the help centre if there is a search box",
+      required: false,
+      fallbackPaths: ["/help", "/faq", "/support"],
     },
   ],
   support: [
@@ -150,17 +168,44 @@ async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/** Interstitial fingerprints: loading splashes, geo walls and bot
+ * challenges are wordy enough to pass a character count, so they must be
+ * recognised by content. Only trusted on short pages — real product pages
+ * bury phrases like "not available in your region" in fine print. */
+const INTERSTITIAL_RE =
+  /is loading the page|please click refresh|not available in your (region|country)|restricted in your (region|country|jurisdiction)|access denied|attention required|checking your browser|verify you are human|pardon our interruption/i;
+
+function looksLikeInterstitial(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length < 2500 && INTERSTITIAL_RE.test(trimmed);
+}
+
 /** Detect geo-restriction walls from the final URL — stake.com from a
- * Mexico IP lands on `modal=restrictedRegion`, for example. */
-function geoBlockReason(finalUrl: string): string | null {
+ * Mexico IP lands on `modal=restrictedRegion`, for example — or from the
+ * rendered page text, for sites that block without changing the URL
+ * (Mybookie shows a "not available in your region yet" splash on the
+ * same address). */
+function geoBlockReason(finalUrl: string, pageText = ""): string | null {
   if (/restrictedRegion|regionKey=|not.?available.?in.?your/i.test(finalUrl)) {
     return "This brand geo-blocked the agent at the main domain for this market — the site detected the proxy location and showed a restricted-region wall instead of the product.";
+  }
+  const text = pageText.trim();
+  if (
+    text.length < 2500 &&
+    /not available in your (region|country)|restricted in your (region|country|jurisdiction)/i.test(
+      text
+    )
+  ) {
+    return "This brand geo-blocked the agent for this market — the page never loaded past a 'not available in your region' wall, so there was no real product to score.";
+  }
+  if (looksLikeInterstitial(text)) {
+    return "The page never finished loading — the agent only ever saw the site's loading/challenge interstitial, so there was no real product to score.";
   }
   return null;
 }
 
-/** Poll until a heavy SPA has rendered real content, not just a splash
- * screen or blank shell. */
+/** Poll until a heavy SPA has rendered real content — not just a splash
+ * screen, blank shell or wordy loading interstitial. */
 async function waitForPageContent(
   page: { evaluate: (expr: string) => Promise<unknown>; waitForTimeout: (ms: number) => Promise<void> },
   minChars = 400,
@@ -171,9 +216,18 @@ async function waitForPageContent(
     const text = String(
       await page.evaluate("document.body?.innerText ?? ''").catch(() => "")
     );
-    if (text.trim().length > minChars) return;
+    if (text.trim().length > minChars && !looksLikeInterstitial(text)) return;
     await page.waitForTimeout(2500);
   }
+}
+
+/** Body text at scoring time — feeds the text-based geo/interstitial check. */
+async function readBodyText(page: {
+  evaluate: (expr: string) => Promise<unknown>;
+}): Promise<string> {
+  return String(
+    await page.evaluate("document.body?.innerText ?? ''").catch(() => "")
+  );
 }
 
 interface ScrollCapture {
@@ -249,7 +303,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   sports_betslip:
     "This is the sportsbook/betslip experience, captured while the agent walked a real betting flow: sportsbook → match view → adding a selection → the betslip with a stake entered. Judge usability across that flow: market depth visibility (how many markets per match and how discoverable), odds presentation, how clearly the slip shows the selection, stake input and potential returns, single/multi/bet-builder access, and cash-out cues. If the agent's trail shows a selection was added, score the betslip UX from the screenshots that show it; if no selection could be added, judge what that friction says about the product and note it.",
   loyalty_rewards:
-    "This is the loyalty/VIP/rewards area. Judge retention craft by this vertical's standards: layered reward cadence (rakeback, weekly/monthly boosts, reloads, level-ups), aspiration mechanics (lifetime tiers, visible locked rewards), whether the next reward moment feels near, and whether earning rules are discoverable. A modal-based bonus center that keeps the player in their game session is best practice. Compare mentally against Stake's VIP club — the category benchmark.",
+    "This is the loyalty/VIP/rewards area, walked across the rewards hub, tier pages, promotions page, and help centre articles. The review must answer two concrete player questions above all: (1) What does a FIRST-TIME DEPOSITOR actually get — welcome bonus, free spins, cashback, and on what terms? (2) What does each loyalty level actually offer — daily spins, rakeback %, weekly/monthly bonuses, VIP host, withdrawal perks? Extract the real numbers and perk names you can read in the screenshots (including help centre text). Then judge the craft: is this value easy to find and understand, does the next reward feel near, are earning rules documented? Compare mentally against Stake's VIP club — the category benchmark.",
   support:
     "This is the support experience. Judge access: live chat availability, response time promises, help content quality for money issues, contact channel breadth.",
   my_account:
@@ -376,6 +430,27 @@ const RETENTION_SCHEMA = {
         required: ["key", "note", "shot", "improve"],
       },
     },
+    loyaltySnapshot: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        ftdOffer: { type: ["string", "null"] },
+        tiers: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              name: { type: "string" },
+              perks: { type: "string" },
+            },
+            required: ["name", "perks"],
+          },
+        },
+        cadence: { type: ["string", "null"] },
+      },
+      required: ["ftdOffer", "tiers", "cadence"],
+    },
   },
   required: [
     ...SCHEMA.required,
@@ -383,6 +458,7 @@ const RETENTION_SCHEMA = {
     "retentionType",
     "retentionContext",
     "retentionNotes",
+    "loyaltySnapshot",
   ],
 };
 
@@ -413,7 +489,12 @@ For every mechanic with a non-null score, add a retentionNotes entry with:
 
 For null mechanics, omit from retentionNotes unless explaining missing evidence (login / tracked play). Do not give product improvement advice for mechanics scored null due to missing login.
 
-Set retentionType to ONE of: "Crypto loop-led" | "Loyalty-led (weaker loop)" | "Hybrid — promo + loyalty" | "Promo page only (no loop)" — plus a 3-5 word tag (e.g. "Loyalty-led — VIP points, thin cadence"). BetOnline-class regulated books usually belong in Loyalty-led or Hybrid, NOT Promo page only. This answers "how deep is the retention loop vs Stake-class?" not "does loyalty exist at all?"`;
+Set retentionType to ONE of: "Crypto loop-led" | "Loyalty-led (weaker loop)" | "Hybrid — promo + loyalty" | "Promo page only (no loop)" — plus a 3-5 word tag (e.g. "Loyalty-led — VIP points, thin cadence"). BetOnline-class regulated books usually belong in Loyalty-led or Hybrid, NOT Promo page only. This answers "how deep is the retention loop vs Stake-class?" not "does loyalty exist at all?"
+
+Also fill loyaltySnapshot — the plain-language answer a player wants, READ from the screenshots (promo pages, tier tables, help centre articles), never invented:
+- ftdOffer: exactly what a first-time depositor gets, with the real numbers you can read ("100% up to $1,000 + 50 free spins, 10x rollover"). null if no welcome offer is visible.
+- tiers: one entry per documented loyalty level, name + its concrete perks ("Gold — 10% rakeback, weekly bonus, birthday bonus"). Empty array if no tier structure is documented.
+- cadence: the recurring reward rhythm documented on the site ("daily spins for VIPs, weekly cashback Mondays, monthly reload"). null if nothing recurring is documented.`;
 
 export async function scoreScreenshots(
   journey: string,
@@ -432,7 +513,7 @@ export async function scoreScreenshots(
         : "Screenshot 0 = top of page, screenshot 1 = scrolled down.";
   const prompt = `You are PlayerScope, an elite iGaming CX analyst with deep operator-side experience in crypto casinos and sportsbooks. You are scoring one journey of a casino/sportsbook site from screenshots. ${sourceNote}
 
-${expertiseFor(journey)}
+${expertiseFor(journey)}${knowledgeFor(journey)}
 
 Journey: ${journey}. ${guidance}
 
@@ -466,7 +547,6 @@ If the screenshots show a bot-verification wall, geo-block, error page, or a loa
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
@@ -571,7 +651,6 @@ export async function extractFeaturesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
@@ -622,8 +701,9 @@ const RETENTION_NOTES_SCHEMA = {
   additionalProperties: false,
   properties: {
     retentionNotes: RETENTION_SCHEMA.properties.retentionNotes,
+    loyaltySnapshot: RETENTION_SCHEMA.properties.loyaltySnapshot,
   },
-  required: ["retentionNotes"],
+  required: ["retentionNotes", "loyaltySnapshot"],
 } as const;
 
 const RETENTION_NOTES_PROMPT = `You are PlayerScope. Retention scores were already assigned — do NOT change them. Write retentionNotes explaining WHY each score was given, citing specific UI evidence from the screenshots.
@@ -635,20 +715,29 @@ For every mechanic with a non-null score in the provided scores object:
 - improve: one actionable sentence for the product team — what would lift this toward Stake/Winna class
 
 Do not invent scores. Only write notes for mechanics listed with a number. Omit mechanics that are null.
-If loggedIn is false, do NOT write notes or improvement advice for progress_mechanics, personalisation, or account_integration — those require login. Never suggest adding progress meters or tier UI that may already exist behind login.`;
+If loggedIn is false, do NOT write notes or improvement advice for progress_mechanics, personalisation, or account_integration — those require login. Never suggest adding progress meters or tier UI that may already exist behind login.
 
-/** Backfill per-mechanic evidence notes from existing loyalty screenshots. */
+Also fill loyaltySnapshot — the plain-language answer a player wants, READ from the screenshots (promo pages, tier tables, help centre articles), never invented:
+- ftdOffer: exactly what a first-time depositor gets, with the real numbers you can read ("100% up to $1,000 + 50 free spins, 10x rollover"). null if no welcome offer is visible.
+- tiers: one entry per documented loyalty level, name + its concrete perks ("Gold — 10% rakeback, weekly bonus, birthday bonus"). Empty array if no tier structure is documented.
+- cadence: the recurring reward rhythm documented on the site ("daily spins for VIPs, weekly cashback Mondays, monthly reload"). null if nothing recurring is documented.`;
+
+export interface RetentionNotesExtract {
+  retentionNotes: RetentionMechanicNote[];
+  loyaltySnapshot: LoyaltySnapshot | null;
+}
+
+/** Backfill per-mechanic evidence notes and the plain-language loyalty
+ * snapshot from existing loyalty screenshots. */
 export async function extractRetentionNotesFromShots(
   retention: Record<string, number | null>,
   ctx: RetentionContext,
   screenshots: string[]
-): Promise<RetentionMechanicNote[]> {
-  if (screenshots.length === 0) return [];
-  const gated = applyRetentionGates(retention, ctx) ?? retention;
-  const scored = Object.entries(gated).filter(([, v]) => v !== null);
-  if (scored.length === 0) {
-    return fillGatedRetentionNotes(gated, ctx, []);
+): Promise<RetentionNotesExtract> {
+  if (screenshots.length === 0) {
+    return { retentionNotes: [], loyaltySnapshot: null };
   }
+  const gated = applyRetentionGates(retention, ctx) ?? retention;
 
   const visionShots = pickShots(screenshots, 8);
   const res = await fetch("https://api.openai.com/v1/responses", {
@@ -659,7 +748,6 @@ export async function extractRetentionNotesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      temperature: 0,
       reasoning: { effort: "low" },
       input: [
         {
@@ -697,8 +785,22 @@ export async function extractRetentionNotesFromShots(
     (c: { type: string }) => c.type === "output_text"
   )?.text;
   if (!text) throw new Error("OpenAI returned no output text");
-  const parsed = JSON.parse(text) as { retentionNotes: RetentionMechanicNote[] };
-  return fillGatedRetentionNotes(gated, ctx, parsed.retentionNotes ?? []);
+  const parsed = JSON.parse(text) as {
+    retentionNotes: RetentionMechanicNote[];
+    loyaltySnapshot: LoyaltySnapshot | null;
+  };
+  const snapshot = parsed.loyaltySnapshot;
+  return {
+    retentionNotes: fillGatedRetentionNotes(
+      gated,
+      ctx,
+      parsed.retentionNotes ?? []
+    ),
+    loyaltySnapshot:
+      snapshot && (snapshot.ftdOffer || snapshot.tiers.length || snapshot.cadence)
+        ? snapshot
+        : null,
+  };
 }
 
 /** Journeys that only make sense with an authenticated session. They run
@@ -741,11 +843,15 @@ export async function analyzeJourney(
     signupVars?: Record<string, string> | null;
     chainLoginJourneys?: string[];
     loginVars?: Record<string, string> | null;
+    /** A previous run confirmed an authenticated session — an account
+     * exists, so login is the first port of call everywhere. */
+    accountExists?: boolean;
   }
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   const signupVars = opts?.signupVars ?? null;
   const chainLoginJourneys = opts?.chainLoginJourneys;
   const loginVars = opts?.loginVars ?? null;
+  const accountExists = opts?.accountExists ?? false;
   const playbook = AGENT_PLAYBOOKS[journey];
   if (playbook) {
     return analyzeWithAgent(
@@ -755,7 +861,9 @@ export async function analyzeJourney(
       contextId,
       proxyCountry,
       journey === "signup" ? signupVars : null,
-      journey === "signup" ? chainLoginJourneys : undefined
+      journey === "signup" ? chainLoginJourneys : undefined,
+      loginVars,
+      accountExists
     );
   }
   const loginPlaybook = LOGIN_PLAYBOOKS[journey];
@@ -773,7 +881,8 @@ export async function analyzeJourney(
       proxyCountry,
       null,
       undefined,
-      loginVars
+      loginVars,
+      accountExists
     );
   }
   if (journey !== "landing") {
@@ -933,7 +1042,8 @@ async function analyzeWithAgent(
   requestedProxyCountry?: string | null,
   signupVars?: Record<string, string> | null,
   chainLoginJourneys?: string[],
-  loginVars?: Record<string, string> | null
+  loginVars?: Record<string, string> | null,
+  accountExists?: boolean
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
@@ -984,48 +1094,66 @@ async function analyzeWithAgent(
     const shots: string[] = [];
     let authenticated: boolean | undefined;
     const isLoginJourney = LOGIN_PLAYBOOKS[journey] != null;
+    const isSignup = journey === "signup";
 
-    // Login-gated journeys: first port of call is getting a real session.
-    // Reuse the persisted context if it's still authenticated, otherwise log
-    // in with the saved test credentials. Only when both fail do we report
-    // the area as needing manual takeover.
-    if (isLoginJourney) {
-      let sessionLoggedIn = await agentIsLoggedIn(stagehand);
-      if (!sessionLoggedIn && loginVars) {
+    // First port of call for EVERY journey: a logged-in session. Reuse the
+    // persisted context if it's still authenticated; otherwise log in with
+    // the brand's saved test account. Public walks continue logged out when
+    // login isn't possible — only login-gated journeys hard-fail.
+    let sessionLoggedIn = false;
+    if (contextId || loginVars) {
+      sessionLoggedIn = await agentIsLoggedIn(stagehand);
+      // Signup only pre-logs-in when an account is known to exist —
+      // otherwise its whole job is registering one.
+      const shouldLogin =
+        !sessionLoggedIn && loginVars != null && (!isSignup || accountExists);
+      if (shouldLogin) {
         sessionLoggedIn = await tryAgentLogin(
           stagehand,
           page,
-          loginVars,
+          loginVars!,
           trail,
           shots,
           capture
         );
-        if (sessionLoggedIn) await page.waitForTimeout(3000);
+        if (sessionLoggedIn) {
+          await page.waitForTimeout(3000);
+          // Restart from the homepage so the playbook walks the product
+          // the way a player would, not from wherever login dropped us.
+          await page
+            .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+            .catch(() => {});
+          await page.waitForTimeout(3000);
+        }
       }
-      if (!sessionLoggedIn) {
-        const screenshots = await persistShots([...shots, await capture()]);
-        return {
-          area: journey,
-          analysedAt: new Date().toISOString(),
-          score: 0,
-          blocked: true,
-          blockReason:
-            "The agent couldn't get a logged-in session on this site — the saved test account may need email/SMS verification or the session expired. Take control to walk this journey yourself.",
-          summary: "",
-          heuristics: [],
-          observations: [],
-          features: [],
-          screenshots,
-          finalUrl: page.url(),
-          loggedIn: false,
-        };
+      if (sessionLoggedIn) {
+        trail.push("logged in with the brand's test account before the walk");
       }
-      trail.push("agent confirmed a logged-in session before the walk");
     }
 
-    // A persisted context that's already authenticated has no register
-    // button to walk — report the unlocked state instead of a bogus block.
-    if (journey === "signup" && signupVars && (await agentIsLoggedIn(stagehand))) {
+    if (isLoginJourney && !sessionLoggedIn) {
+      const screenshots = await persistShots([...shots, await capture()]);
+      return {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason:
+          "The agent couldn't get a logged-in session on this site — the saved test account may need email/SMS verification or the session expired. Take control to walk this journey yourself.",
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots,
+        finalUrl: page.url(),
+        loggedIn: false,
+      };
+    }
+
+    // Signup with an authenticated session (persisted context or an account
+    // that already exists): there is no register button to walk — report the
+    // unlocked state instead of a bogus block.
+    if (isSignup && signupVars && sessionLoggedIn) {
       const screenshots = await persistShots([await capture()]);
       return {
         area: journey,
@@ -1033,7 +1161,7 @@ async function analyzeWithAgent(
         score: 0,
         blocked: true,
         blockReason:
-          "This brand already has an authenticated test session from an earlier registration — the signup form can't be re-walked while logged in. Logged-in journeys (deposit, withdraw, account) are unlocked.",
+          "This brand already has an authenticated test session — the signup form can't be re-walked while logged in. Logged-in journeys (deposit, withdraw, account) are unlocked.",
         summary: "",
         heuristics: [],
         observations: [],
@@ -1148,7 +1276,7 @@ async function analyzeWithAgent(
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
 
-    const geoReason = geoBlockReason(finalUrl);
+    const geoReason = geoBlockReason(finalUrl, await readBodyText(page));
     if (geoReason) {
       const screenshots = await persistShots(shots.length ? shots : [await capture()]);
       return {
@@ -1178,9 +1306,9 @@ async function analyzeWithAgent(
       screenshots,
       finalUrl,
       ...(authenticated !== undefined ? { authenticated } : {}),
-      // What the session actually was — signup walks report the state they
-      // ended in, login journeys verified the session before walking.
-      loggedIn: isLoginJourney ? true : (authenticated ?? false),
+      // What the session actually was: pre-walk login, a registration that
+      // ended authenticated, or a verified gated-journey session.
+      loggedIn: isLoginJourney || sessionLoggedIn || (authenticated ?? false),
     };
 
     // Signup created a session — walk deposit/account journeys in the same
@@ -1396,9 +1524,12 @@ async function analyzeLanding(
 
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
+    const bodyText = await readBodyText({
+      evaluate: (expr) => page.evaluate(expr),
+    });
     await browser.close().catch(() => {});
 
-    const geoReason = geoBlockReason(finalUrl);
+    const geoReason = geoBlockReason(finalUrl, bodyText);
     if (geoReason) {
       const screenshots = await persistShots(shots);
       return {

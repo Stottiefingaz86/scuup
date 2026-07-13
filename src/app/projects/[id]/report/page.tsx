@@ -10,6 +10,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Star,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,15 +31,18 @@ import { cn } from "@/lib/utils";
 import { ActionPlanView } from "@/components/action-plan-view";
 import { BrandMark } from "@/components/brand-mark";
 import { ProjectShell } from "@/components/project-shell";
+import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import { ScoreGauge } from "@/components/score-gauge";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import { getCoverage, projectAreas } from "@/lib/coverage";
+import { buildFeatureMatrix } from "@/lib/features";
 import {
   areaScore,
   overallScore,
   toObservation,
   type Brand,
+  type FeatureStatus,
   type Project,
 } from "@/lib/types";
 
@@ -46,9 +50,38 @@ const SECTIONS = [
   { id: "summary", title: "Executive summary" },
   { id: "ranking", title: "Competitor ranking" },
   { id: "findings", title: "Findings by area" },
+  { id: "features", title: "Feature matrix" },
+  { id: "voc", title: "Voice of customer" },
+  { id: "design", title: "Design review" },
   { id: "action-plan", title: "Action plan" },
   { id: "coverage", title: "Data coverage & next steps" },
 ];
+
+const FEATURE_STATUS_LABEL: Record<FeatureStatus, string> = {
+  strong: "Strong",
+  yes: "Yes",
+  medium: "Medium",
+  partial: "Partial",
+  promo_led: "Promo-led",
+  weak: "Weak",
+  hidden: "Hidden",
+  no: "No",
+};
+
+const FEATURE_STATUS_CLASS: Record<FeatureStatus, string> = {
+  strong: "text-score-strong",
+  yes: "text-score-strong",
+  medium: "text-score-mid",
+  partial: "text-score-mid",
+  promo_led: "text-score-mid",
+  weak: "text-score-weak",
+  no: "text-score-weak",
+  hidden: "text-score-weak",
+};
+
+/** How many matrix rows the printed report shows before deferring to the
+ * app — priority order means the gaps that matter always make the cut. */
+const REPORT_FEATURE_ROWS = 25;
 
 function SectionHeading({
   index,
@@ -106,6 +139,8 @@ function ReportContent({ project }: { project: Project }) {
   const analysedAreas = areas.filter((area) =>
     project.brands.some((b) => areaScore(b, area) !== null)
   );
+
+  const featureRows = buildFeatureMatrix(project);
 
   return (
     <div className="report-document mx-auto flex w-full max-w-4xl flex-col gap-10">
@@ -275,7 +310,7 @@ function ReportContent({ project }: { project: Project }) {
         <SectionHeading
           index={2}
           title="Competitor ranking"
-          description="Overall score is the average of each brand's successfully analysed areas. N/A means not observed — never estimated."
+          description="Overall score is the average of four pillars: journey scores, the retention read, voice of customer (Trustpilot, rescaled to 100), and the design review. N/A means not observed — never estimated."
         />
         <Card>
           <CardContent>
@@ -288,6 +323,10 @@ function ReportContent({ project }: { project: Project }) {
                       {ANALYSIS_AREA_LABELS[area] ?? area}
                     </TableHead>
                   ))}
+                  <TableHead className="text-center">
+                    Voice of customer
+                  </TableHead>
+                  <TableHead className="text-center">Design</TableHead>
                   <TableHead className="text-right">Overall</TableHead>
                 </TableRow>
               </TableHeader>
@@ -310,6 +349,22 @@ function ReportContent({ project }: { project: Project }) {
                         />
                       </TableCell>
                     ))}
+                    <TableCell className="text-center">
+                      <ScoreChip
+                        score={
+                          brand.voc?.trustScore != null
+                            ? Math.round(brand.voc.trustScore * 20)
+                            : null
+                        }
+                        muted={brand.role !== "own_brand"}
+                      />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <ScoreChip
+                        score={brand.design?.score ?? null}
+                        muted={brand.role !== "own_brand"}
+                      />
+                    </TableCell>
                     <TableCell className="text-right">
                       {score !== null ? (
                         <span className="font-heading text-base font-semibold tabular-nums">
@@ -390,6 +445,29 @@ function ReportContent({ project }: { project: Project }) {
                             ))}
                           </ul>
                         ) : null}
+                        {!analysis.blocked &&
+                        (analysis.screenshots?.length ?? 0) > 0 ? (
+                          <div className="flex flex-col gap-1.5 border-t pt-3">
+                            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Evidence — {analysis.screenshots!.length} screen
+                              {analysis.screenshots!.length === 1
+                                ? ""
+                                : "s"}{" "}
+                              captured on this visit
+                            </span>
+                            <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1">
+                              {analysis.screenshots!.map((src, i) => (
+                                <ScreenshotLightbox
+                                  key={`${src}-${i}`}
+                                  src={src}
+                                  alt={`${brand.name} — ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1}`}
+                                  caption={`${brand.name} — ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${analysis.screenshots!.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
+                                  className="aspect-[8/5] w-24 shrink-0"
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -400,10 +478,297 @@ function ReportContent({ project }: { project: Project }) {
         )}
       </section>
 
-      {/* 04 — Action plan */}
+      {/* 04 — Feature matrix */}
+      {featureRows.length > 0 ? (
+        <section id="features" className="flex flex-col gap-6">
+          <SectionHeading
+            index={4}
+            title="Feature matrix"
+            description="Every feature the analyst saw on screen, side by side. Each cell is backed by a screenshot in the app — nothing here is inferred from marketing pages."
+          />
+          <Card>
+            <CardContent className="pt-6">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Feature</TableHead>
+                    {project.brands.map((brand) => (
+                      <TableHead key={brand.id} className="text-center">
+                        <span className="inline-flex items-center gap-1.5">
+                          <BrandMark brand={brand} className="size-4" />
+                          {brand.name}
+                          {brand.role === "own_brand" ? (
+                            <span className="text-[10px] text-brand">(you)</span>
+                          ) : null}
+                        </span>
+                      </TableHead>
+                    ))}
+                    <TableHead className="text-end">Priority</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {featureRows.slice(0, REPORT_FEATURE_ROWS).map((row) => (
+                    <TableRow key={row.feature}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{row.feature}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {row.category}
+                          </span>
+                        </div>
+                      </TableCell>
+                      {project.brands.map((brand) => {
+                        const status = row.values[brand.id] ?? null;
+                        return (
+                          <TableCell key={brand.id} className="text-center">
+                            {status ? (
+                              <span
+                                className={cn(
+                                  "text-sm font-medium",
+                                  FEATURE_STATUS_CLASS[status]
+                                )}
+                              >
+                                {FEATURE_STATUS_LABEL[status]}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground/60">
+                                —
+                              </span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="text-end">
+                        <Badge
+                          variant={
+                            row.priority === "critical"
+                              ? "destructive"
+                              : row.priority === "high"
+                                ? "default"
+                                : row.priority === "medium"
+                                  ? "secondary"
+                                  : "outline"
+                          }
+                        >
+                          {row.priority}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {featureRows.length > REPORT_FEATURE_ROWS ? (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Showing the {REPORT_FEATURE_ROWS} highest-priority features of{" "}
+                  {featureRows.length} detected — the full matrix with
+                  screenshot evidence lives in the Features tab.
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  A dash means the feature was never observed for that brand —
+                  it may exist behind a login the agent couldn&apos;t reach.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
+
+      {/* 05 — Voice of customer */}
+      {project.brands.some((b) => b.voc) ? (
+        <section id="voc" className="flex flex-col gap-6">
+          <SectionHeading
+            index={5}
+            title="Voice of customer"
+            description="What real players say in public reviews — and where that confirms or contradicts what we measured on the site."
+          />
+          {project.brands
+            .filter((b) => b.voc)
+            .map((brand) => {
+              const voc = brand.voc!;
+              const total =
+                voc.ratingSplit.positive +
+                voc.ratingSplit.neutral +
+                voc.ratingSplit.negative;
+              return (
+                <Card key={brand.id}>
+                  <CardContent className="flex flex-col gap-4 py-6">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <BrandLabel brand={brand} />
+                      <span className="inline-flex items-center gap-1 font-heading text-base font-semibold">
+                        <Star className="size-4 fill-amber-400 text-amber-400" />
+                        {voc.trustScore?.toFixed(1) ?? "—"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {voc.sampled} recent of{" "}
+                        {voc.totalReviews?.toLocaleString() ?? "?"} reviews ·{" "}
+                        {total > 0
+                          ? `${Math.round((voc.ratingSplit.positive / total) * 100)}% positive`
+                          : ""}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {voc.summary}
+                    </p>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs font-medium uppercase tracking-wide text-emerald-500">
+                          Customers praise
+                        </span>
+                        <ul className="flex flex-col gap-1">
+                          {voc.positives.slice(0, 3).map((t) => (
+                            <li
+                              key={t.theme}
+                              className="text-xs leading-relaxed text-muted-foreground"
+                            >
+                              {t.theme}{" "}
+                              <span className="text-muted-foreground/50">
+                                ({t.mentions})
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-xs font-medium uppercase tracking-wide text-rose-500">
+                          Needs attention
+                        </span>
+                        <ul className="flex flex-col gap-1">
+                          {voc.negatives.slice(0, 3).map((t) => (
+                            <li
+                              key={t.theme}
+                              className="text-xs leading-relaxed text-muted-foreground"
+                            >
+                              {t.theme}{" "}
+                              <span className="text-muted-foreground/50">
+                                ({t.mentions})
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                    {voc.alignment.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5 border-t pt-3">
+                        {voc.alignment.slice(0, 3).map((a, i) => (
+                          <li
+                            key={i}
+                            className="flex gap-2 text-xs leading-relaxed text-muted-foreground"
+                          >
+                            <span
+                              className={cn(
+                                "mt-1.5 size-1 shrink-0 rounded-full",
+                                a.verdict === "confirms"
+                                  ? "bg-emerald-500"
+                                  : a.verdict === "contradicts"
+                                    ? "bg-rose-500"
+                                    : "bg-amber-500"
+                              )}
+                            />
+                            {a.note}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              );
+            })}
+        </section>
+      ) : null}
+
+      {/* 06 — Design review */}
+      {project.brands.some((b) => b.design) ? (
+        <section id="design" className="flex flex-col gap-6">
+          <SectionHeading
+            index={6}
+            title="Design review"
+            description="What each site is built with, its real colour palette, and whether the design craft holds up — measured from the live rendered code."
+          />
+          {project.brands
+            .filter((b) => b.design)
+            .map((brand) => {
+              const design = brand.design!;
+              return (
+                <Card key={brand.id}>
+                  <CardContent className="flex flex-col gap-4 py-6">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <BrandLabel brand={brand} />
+                      <span className="font-heading text-base font-semibold tabular-nums">
+                        {design.score}/100
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {[
+                          design.theme === "dark"
+                            ? "Dark mode"
+                            : design.theme === "light"
+                              ? "Light mode"
+                              : "Mixed themes",
+                          design.stack.framework,
+                          design.stack.designSystem,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </span>
+                    </div>
+                    <div className="flex h-8 w-full max-w-md overflow-hidden rounded-md border">
+                      {design.palette.map((s, i) => (
+                        <div
+                          key={`${s.hex}-${i}`}
+                          className="min-w-0 flex-1"
+                          style={{ backgroundColor: s.hex }}
+                          title={`${s.role} — ${s.hex}`}
+                        />
+                      ))}
+                    </div>
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {design.summary}
+                    </p>
+                    {design.stack.verdict &&
+                    design.stack.health &&
+                    design.stack.health !== "solid" ? (
+                      <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-600 dark:text-amber-500/90">
+                        {design.stack.health === "mixed"
+                          ? "Mixed foundation — "
+                          : "Fragile foundation — "}
+                        {design.stack.verdict}
+                      </p>
+                    ) : null}
+                    <div className="grid gap-x-6 gap-y-1 text-xs leading-relaxed text-muted-foreground md:grid-cols-2">
+                      <span>
+                        Accessibility {design.accessibility.score}/100 —{" "}
+                        {design.accessibility.findings.find((f) => f.pass === false)
+                          ?.note ?? "no measured failures"}
+                      </span>
+                      <span>
+                        Consistency {design.consistency.score}/100 —{" "}
+                        {design.consistency.note}
+                      </span>
+                    </div>
+                    {design.improvements.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5 border-t pt-3">
+                        {design.improvements.slice(0, 3).map((s, i) => (
+                          <li
+                            key={i}
+                            className="flex gap-2 text-xs leading-relaxed text-muted-foreground"
+                          >
+                            <span className="mt-1.5 size-1 shrink-0 rounded-full bg-brand/60" />
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              );
+            })}
+        </section>
+      ) : null}
+
+      {/* 07 — Action plan */}
       <section id="action-plan" className="flex flex-col gap-6">
         <SectionHeading
-          index={4}
+          index={7}
           title="Action plan"
           description="Prioritised roadmap synthesised from every finding in this report — each action cites the evidence behind it."
         />
@@ -430,10 +795,10 @@ function ReportContent({ project }: { project: Project }) {
         )}
       </section>
 
-      {/* 05 — Coverage */}
+      {/* 08 — Coverage */}
       <section id="coverage" className="flex flex-col gap-6">
         <SectionHeading
-          index={5}
+          index={8}
           title="Data coverage & next steps"
           description="What this edition could and couldn't observe, and exactly how the next edition gets sharper."
         />

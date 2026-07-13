@@ -6,7 +6,12 @@ import {
   RETENTION_MECHANIC_META,
 } from "./retention-scoring";
 import { saveAnalysis } from "./project-store";
-import type { JourneyAnalysis, Project, RetentionMechanicNote } from "./types";
+import type {
+  JourneyAnalysis,
+  LoyaltySnapshot,
+  Project,
+  RetentionMechanicNote,
+} from "./types";
 
 const LOYALTY = "loyalty_rewards";
 
@@ -46,6 +51,8 @@ function needsRetentionNotes(analysis: JourneyAnalysis): boolean {
   if (analysis.blocked || !analysis.retention || !analysis.screenshots?.length) {
     return false;
   }
+  // Older analyses predate loyaltySnapshot — extract it from saved shots.
+  if (analysis.loyaltySnapshot === undefined) return true;
   if (hasStaleLoginAdvice(analysis)) return true;
   const ctx = retentionContext(analysis);
   const gated = applyRetentionGates(analysis.retention, ctx);
@@ -86,16 +93,23 @@ async function shotUrlToBase64(url: string): Promise<string | null> {
   }
 }
 
+interface NotesExtract {
+  retentionNotes: RetentionMechanicNote[];
+  loyaltySnapshot: LoyaltySnapshot | null;
+}
+
 async function extractNotesForAnalysis(
   analysis: JourneyAnalysis
-): Promise<RetentionMechanicNote[]> {
+): Promise<NotesExtract> {
   const urls = analysis.screenshots ?? [];
   const shots: string[] = [];
   for (const url of urls) {
     const b64 = await shotUrlToBase64(url);
     if (b64) shots.push(b64);
   }
-  if (shots.length === 0 || !analysis.retention) return [];
+  if (shots.length === 0 || !analysis.retention) {
+    return { retentionNotes: [], loyaltySnapshot: null };
+  }
 
   const ctx = retentionContext(analysis);
   const res = await fetch("/api/retention/notes", {
@@ -114,8 +128,7 @@ async function extractNotesForAnalysis(
       typeof err.error === "string" ? err.error : "Retention notes extract failed"
     );
   }
-  const data = (await res.json()) as { retentionNotes: RetentionMechanicNote[] };
-  return data.retentionNotes;
+  return (await res.json()) as NotesExtract;
 }
 
 /** Generate per-mechanic evidence notes from saved loyalty screenshots. */
@@ -136,13 +149,21 @@ export async function backfillRetentionNotes(
     if (!analysis) continue;
 
     try {
+      // The extract reads the saved screenshots once and returns both the
+      // per-mechanic evidence notes and the plain-language loyalty snapshot
+      // (FTD offer, tiers, cadence) older analyses are missing.
+      const { retentionNotes, loyaltySnapshot } =
+        await extractNotesForAnalysis(analysis);
       const ctx = retentionContext(analysis);
       const gated =
         applyRetentionGates(analysis.retention, ctx) ?? analysis.retention;
-      const retentionNotes = ctx.loggedIn
-        ? await extractNotesForAnalysis(analysis)
-        : fillGatedRetentionNotes(gated, ctx, []);
-      saveAnalysis(projectId, job.brandId, { ...analysis, retentionNotes });
+      saveAnalysis(projectId, job.brandId, {
+        ...analysis,
+        retentionNotes: ctx.loggedIn
+          ? retentionNotes
+          : fillGatedRetentionNotes(gated, ctx, retentionNotes),
+        loyaltySnapshot,
+      });
       ok += 1;
     } catch (e) {
       failed.push({

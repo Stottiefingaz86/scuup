@@ -1,0 +1,835 @@
+{
+  "updatedAt": "2026-07-13",
+  "sources": [
+    {
+      "id": "igb-egba-revenue-2025",
+      "title": "EGBA members collective gaming revenue up 34% in 2025, RTP drops as margin grows",
+      "url": "https://igamingbusiness.com/finance/egba-members-collective-gaming-revenue-up-34-year-on-year-2025/",
+      "publisher": "iGaming Business",
+      "date": "2026-07-11",
+      "topics": [
+        "casino",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "European online gambling revenue grew 34% in 2025 while average RTP dropped as operators grew margin — players are increasingly value-sensitive, making transparent value-back (rakeback, cashback, visible RTP) a sharper differentiator."
+      ]
+    },
+    {
+      "id": "igb-aggregators-report-2026",
+      "title": "Aggregator report 2026: The state of play",
+      "url": "https://igamingbusiness.com/casino-games/aggregators-market-report-2026-alea/",
+      "publisher": "iGaming Business / Alea",
+      "date": "2026-03-12",
+      "topics": [
+        "casino"
+      ],
+      "insights": [
+        "Casino content breadth increasingly comes via aggregators (regulatory expertise, API reliability, promotional tooling, cross-industry data) — a lobby's provider breadth and how well provider content is merchandised reflects the operator's aggregation strategy.",
+        "Aggregator-provided promotional tooling (network jackpots, tournaments, free rounds) is a growing part of casino retention — leaders integrate these into the lobby rather than burying them on promo pages."
+      ]
+    },
+    {
+      "id": "igb-mexico-report-2026",
+      "title": "Mexico market intelligence report (with Gamingsoft)",
+      "url": "https://igamingbusiness.com/legal-compliance/regulation/mexico-market-report-2026/",
+      "publisher": "iGaming Business / Gamingsoft / H2 Gambling Capital",
+      "date": "2026-01-15",
+      "topics": [
+        "market:Mexico"
+      ],
+      "insights": [
+        "Mexico is on the verge of regulatory reform and could cement itself as a key LatAm jurisdiction — operators face a period of upheaval and licensing uncertainty, so visible local licensing and compliance cues carry extra trust weight for Mexican players.",
+        "Brands serving Mexico often do so through locally licensed domains and localized product (language, payments like OXXO/SPEI) — localization depth is a competitive differentiator in this market."
+      ]
+    },
+    {
+      "id": "igb-french-open-2025",
+      "title": "French Open trading review: Bet365 leads on uptime and lowest lost turnover",
+      "url": "https://igamingbusiness.com/sports-betting/2025-french-open-trading-review-top-operators-by-uptime-amp-lost-turnover/",
+      "publisher": "iGaming Business / Bettormetrics",
+      "date": "2025-06-27",
+      "topics": [
+        "sports_betslip"
+      ],
+      "insights": [
+        "In-play availability is a measurable differentiator: Bet365 led Grand Slam tennis with 96.1% uptime and only 4.5% lost turnover — the best books stay open through volatile five-set swings.",
+        "Pricing sharpness and availability trade off: Pinnacle ran the sharpest pricing (2.3% overround) but the lowest uptime (77.9%) and bet-acceptance (62.8%) — sharp odds are worthless to a player who can't get a bet on.",
+        "Uptime alone doesn't equal a good betting experience: Unibet posted 94.4% uptime yet the highest lost turnover (17%) because its pricing rejected bets — acceptance matters as much as availability.",
+        "FanDuel showed the most efficient pricing at the French Open: 4.8% overround with the lowest exchange-arbitrage exposure (5.2%) — competitive odds executed with discipline."
+      ]
+    },
+    {
+      "id": "brazil-betting-market-report-2025",
+      "title": "Brazil betting market report 2025, produced by iGB in partnership with OKTO",
+      "url": "https://igamingbusiness.com/legal-compliance/regulation/brazil-betting-market-report-2025/",
+      "publisher": "iGaming Business",
+      "date": "2025-05-28",
+      "topics": [
+        "market:Brazil"
+      ],
+      "insights": [
+        "The Brazilian online betting market is projected to reach BRL31 billion in gross gaming revenue (GGR) by 2025, with forecasts estimating growth to BRL64 billion by 2030, according to H2 Gambling Capital.",
+        "The transition to a fully regulated online betting environment in Brazil is underway as of 2025, affecting licensed operators such as Betano, Sportingbet, EstrelaBet, and Superbet.",
+        "Ongoing illegal market activity and evolving KYC requirements are identified as key structural challenges that may impact growth in Brazil's regulated betting sector.",
+        "Licensed operators in Brazil are actively collaborating with regulators (including ANJL and Loterj) to strengthen responsible gambling and player protection in response to increased scrutiny and regulatory requirements."
+      ]
+    },
+    {
+      "id": "igb-march-madness-2025",
+      "title": "Sportsbook performance during March Madness: Who led the charge?",
+      "url": "https://igamingbusiness.com/sports-betting/sportsbook-performance-during-march-madness-who-led/",
+      "publisher": "iGaming Business / Bettormetrics",
+      "date": "2025-04-28",
+      "topics": [
+        "sports_betslip"
+      ],
+      "insights": [
+        "\"Green time\" (online AND accepting bets) is the metric that matches player experience: Hard Rock led March Madness at 86.2%, combining second-best uptime with the lowest off-market time (2.1%).",
+        "DraftKings' balanced profile — ~5% overround, 93.8% uptime, low off-market time — shows availability plus competitive pricing with controlled risk is achievable at scale.",
+        "Frequent market suspension destroys fast-sport betting UX: Bet365 spent 19.7% of NCAA fixture time off-market with only 59.4% green time — sharp prices at the cost of being unavailable when players want to bet.",
+        "Weak availability erodes trust in crunch moments: ESPN Bet (74%) and Caesars (74.6%) had the worst uptime during the tournament's most volatile games."
+      ]
+    },
+    {
+      "id": "how-top-betting-sites-handled-champions-league-matches-data-amp-insights",
+      "title": "Betting platform showdown: Champions League data reveals when risk pays off – and when it doesn't",
+      "url": "https://igamingbusiness.com/sports-betting/how-top-betting-sites-handled-champions-league-matches-data-amp-insights/",
+      "publisher": "iGaming Business (iGB)",
+      "date": "2025-03-12",
+      "topics": [
+        "sports_betslip",
+        "market:Europe",
+        "market:UK & Ireland"
+      ],
+      "insights": [
+        "SkyBet achieved the highest uptime among operators during the UEFA Champions League group stages, recording 93.8%.",
+        "Bet365, despite having weaker overall uptime, posted the lowest lost wagering in the market and was the only operator in the sample to accept wagers during penalty shootouts.",
+        "Unibet and Bet365 offered the most competitive overrounds in this cohort, at 5.9% and 6.0% respectively, while 888Sport and SkyBet had overrounds above 8%.",
+        "PaddyPower's high price sensitivity led to frequent price changes and low acceptance uptime, impacting the ability of bettors to place wagers effectively.",
+        "888Sport outperformed William Hill in all examined metrics except overround, where 888Sport's pricing was the least competitive in the group."
+      ]
+    },
+    {
+      "id": "igb-esports-report-2024",
+      "title": "Esports Betting Report 2024",
+      "url": "https://igamingbusiness.com/esports/esports-betting-report/",
+      "publisher": "iGaming Business / Loadout / GWI / Oddin.gg",
+      "date": "2025-01-19",
+      "topics": [
+        "sports_betslip",
+        "landing"
+      ],
+      "insights": [
+        "The largest esports betting survey to date (6,000+ fans) found esports fans hesitant to bet — esports bettors are a distinct audience whose trust must be earned with authentic esports coverage, not a copy-pasted sportsbook UX."
+      ]
+    },
+    {
+      "id": "igb-premier-league-2024",
+      "title": "Uptime, arbitrage and risk: Comparing the leading betting platforms (Premier League)",
+      "url": "https://igamingbusiness.com/sports-betting/bettormetrics-trading-review/",
+      "publisher": "iGaming Business / Bettormetrics",
+      "date": "2025-01-16",
+      "topics": [
+        "sports_betslip"
+      ],
+      "insights": [
+        "Best-in-class books prioritise peak wagering windows: Bet365 stays open during high-demand Premier League moments without excessive arbitrage exposure — availability when it matters beats raw uptime averages.",
+        "Excessive downtime is a visible failure: SkyBet's 2.8% unmatched downtime made it the worst Premier League performer, hurting both availability and lost wagering.",
+        "The most competitive margin isn't automatically the best strategy: Unibet's 5.8% overround attracted bettors but pushed it into unhealthy arbitrage exposure."
+      ]
+    },
+    {
+      "id": "online-gambling-lower-income-risk",
+      "title": "Study: Lower-income gamblers take more risks online",
+      "url": "https://igamingbusiness.com/sports-betting/online-gambling-lower-income-risk/",
+      "publisher": "iGaming Business",
+      "date": "2024-07-24",
+      "topics": [
+        "casino",
+        "sports_betslip",
+        "market:US",
+        "market:Canada",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "A study of over 700,000 North American online gamblers (2019-2023) found that 96% of respondents lose money overall.",
+        "In a Canadian subset of 250,000 online gamblers, 43% spend above the recommended 1% of their salary on betting, with 5.3% spending over 10% and 3.2% spending over 15% of income on gambling.",
+        "From 2019 to 2023, online sports betting (OSB) app downloads grew from 6 million to 33 million in North America.",
+        "During the study period, the average OSB player made 21 transactions (18 deposits), with an average total deposit of $1,375 and average withdrawal of $742.",
+        "DraftKings and FanDuel held the largest share of deposits in the US market, followed by BetMGM, BetRivers, and TVG; the total value of wagers placed grew 14-fold and taxable revenue grew 18-fold between 2019 and 2023."
+      ]
+    },
+    {
+      "id": "slot-trumps-nigeria-market-huge-potential",
+      "title": "Slot Trumps Nigeria: Unlock a market with huge potential",
+      "url": "https://igamingbusiness.com/casino-games/slots/slot-trumps-nigeria-market-huge-potential/",
+      "publisher": "iGaming Business",
+      "date": "2024-04-26",
+      "topics": [
+        "casino",
+        "landing",
+        "loyalty_rewards",
+        "market:Nigeria"
+      ],
+      "insights": [
+        "Internet penetration in Nigeria is 42%, compared to 89% in Europe and 68% in LatAm, resulting in lower bandwidth and influencing the need for lightweight, mobile-optimized casino game content.",
+        "According to EveryMatrix SlotMatrix data, the average bet per spin across the top 40 online slot games in Nigeria is €0.24, markedly lower than the global average of €1.",
+        "Bonus features such as in-game free spins are present in 55% of the top 20 slot games in Nigeria, and jackpots appear in 35% of these games, indicating strong player engagement with these mechanics.",
+        "Nigerian players show a preference for low-volatility games and demonstrate high-frequency but low-stakes betting patterns.",
+        "Gamification mechanics such as tournaments and tiered challenges are effective for player engagement and acquisition in the Nigerian online casino market."
+      ]
+    },
+    {
+      "id": "ice365-macau-report-resumption-or-renewal-in-a-post-covid-world",
+      "title": "ICE365 Macau report: Resumption or renewal in a post-Covid world",
+      "url": "https://igamingbusiness.com/casino-games/ice365-macau-report-resumption-or-renewal-in-a-post-covid-world/",
+      "publisher": "iGaming Business",
+      "date": "2024-02-02",
+      "topics": [
+        "casino",
+        "market:Macau"
+      ],
+      "insights": [
+        "In 2019, Macau's gaming revenue was MOP292.46 billion (approximately $36.60bn), while Nevada and Las Vegas combined reported gaming revenue of $12.03bn.",
+        "By 2019, non-gaming revenue in Macau totalled MOP33.74bn, representing 10.4% of total casino industry revenue, with the remainder coming from gaming activities.",
+        "In 2019, gambling made up 34.4% of Las Vegas Strip revenue according to University of Nevada Las Vegas research, compared with 50.9% of Macau's gross domestic product attributed to gaming the same year.",
+        "Due to Covid-19 and travel restrictions in 2020, Macau’s gaming revenue dropped 79.3% to MOP60.44bn ($7.56bn), while Nevada's full-year gaming revenue was $7.87bn, temporarily surpassing Macau.",
+        "Operators’ gaming concessions in Macau are due to expire in 2022, prompting regulatory focus on diversification beyond the current heavy reliance on gaming."
+      ]
+    },
+    {
+      "id": "whats-covered-in-the-gambling-act-white-paper",
+      "title": "What's covered in the Gambling Act white paper?",
+      "url": "https://igamingbusiness.com/legal-compliance/legal/whats-covered-in-the-gambling-act-white-paper/",
+      "publisher": "iGaming Business",
+      "date": "2023-04-27",
+      "topics": [
+        "landing",
+        "signup",
+        "deposit",
+        "withdraw",
+        "loyalty_rewards",
+        "support",
+        "my_account",
+        "casino",
+        "sports_betslip",
+        "market:UK"
+      ],
+      "insights": [
+        "In the UK, operators must now perform 'passive' affordability checks for online gambling customers who have a net loss beyond £125 per month or £500 per year, with more detailed affordability checks required for players losing £1,000 in 24 hours or £2,000 in 90 days.",
+        "A statutory levy will be made mandatory for all operators in the UK to fund research, education, and treatment for gambling harms, to be collected by the Gambling Commission.",
+        "A new, operationally independent gambling ombudsman will be created to address customer complaints, providing a single point of contact for dispute resolution; the ombudsman's participation is initially voluntary, but may become mandatory.",
+        "Casinos in the UK will be permitted to offer sports betting in their premises, and the cap on the number of slot machines in larger casinos will move to a 5:1 slot-to-table games ratio.",
+        "The Gambling Commission will consult on controls for customer opt-in to online bonuses and offers, and implement new restrictions on VIP schemes and 'intensifying features' in online games to enhance player protection."
+      ]
+    },
+    {
+      "id": "us-betting-in-2023-h2",
+      "title": "US sports betting in 2023: Where do we go from here?",
+      "url": "https://igamingbusiness.com/sports-betting/online-sports-betting/us-betting-in-2023-h2/",
+      "publisher": "iGaming Business",
+      "date": "2023-03-08",
+      "topics": [
+        "sports_betslip",
+        "market:US"
+      ],
+      "insights": [
+        "H2 Gambling Capital predicts that in 2023, 20% of new gross win for US sports betting will come from just two states: Massachusetts and Ohio.",
+        "H2 Gambling Capital now projects US sports betting gross win to reach $23.2 billion by 2030.",
+        "Bonusing strategies by US sports betting operators may be inflating gross win figures, potentially skewing performance benchmarking.",
+        "According to H2 Gambling Capital, there is increasing adoption of in-play wagering and microbetting by US operators, which may help drive higher returns and market share in maturing states."
+      ]
+    },
+    {
+      "id": "ontario-report",
+      "title": "Ontario report",
+      "url": "https://igamingbusiness.com/strategy/ontario-report/",
+      "publisher": "iGaming Business",
+      "date": "2022-10-26",
+      "topics": [
+        "market:Canada",
+        "market:Ontario",
+        "deposit",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "Operators in Ontario, excluding the lottery, generated a combined CA$267 million in revenue in the three months ended 30 September 2022.",
+        "Ontario is the first Canadian province or territory to open up a licensing system for igaming.",
+        "Operators in Ontario are allowed to offer bonuses, but may not promote them publicly due to marketing rules.",
+        "As of October 2022, compliant licensed operators still compete with unlicensed brands active in Ontario."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-february-2022",
+      "title": "Affiliate Monitor: February 2022",
+      "url": "https://igamingbusiness.com/casino-games/affiliate-monitor-february-2022/",
+      "publisher": "iGaming Business (iGB)",
+      "date": "2022-02-23",
+      "topics": [
+        "sports_betslip",
+        "market:US",
+        "market:NY"
+      ],
+      "insights": [
+        "New York bettors staked $1.63bn within just 23 days of the mobile sports betting market launch in early 2022, breaking New Jersey’s previous monthly handle record.",
+        "New York’s regulated sports betting market started with a 51% revenue tax on operators as of Q1 2022.",
+        "Better Collective stated it could drive betting traffic from a 500,000-strong New York audience after partnering with the New York Post through its flagship Action Network platform.",
+        "Catena Media reported a strong start for its portfolio of affiliate brands in driving traffic to licensed New York sportsbooks within the market’s launch window."
+      ]
+    },
+    {
+      "id": "market-monitor-omnichannel-comes-of-age",
+      "title": "Market Monitor: omnichannel comes of age",
+      "url": "https://igamingbusiness.com/marketing-affiliates/market-monitor-omnichannel-comes-of-age/",
+      "publisher": "iGaming Business",
+      "date": "2021-10-05",
+      "topics": [
+        "loyalty_rewards",
+        "my_account",
+        "market:UK",
+        "market:US"
+      ],
+      "insights": [
+        "US operators such as Penn National report early success in leveraging omnichannel strategies to drive online customers into physical venues, which also stimulates new product development.",
+        "The development of omnichannel in the UK and Europe required operators to build loyalty schemes from scratch, and then use them to convert retail bettors to online.",
+        "US operators are at an advanced starting point in omnichannel due to up to 20 years of existing loyalty program infrastructure, compared to the UK where such programs developed primarily as an online conversion tool.",
+        "Rapid, state-by-state regulation in the US and the pandemic-driven rise of cashless gaming are accelerating the adoption of omnichannel strategies among diversified US betting and gaming operators."
+      ]
+    },
+    {
+      "id": "british-retail-betting-report",
+      "title": "British retail betting report",
+      "url": "https://igamingbusiness.com/ice365/british-retail-betting-report/",
+      "publisher": "ICE365/iGaming Business",
+      "date": "2021-04-07",
+      "topics": [
+        "market:UK",
+        "deposit",
+        "withdraw",
+        "loyalty_rewards",
+        "my_account"
+      ],
+      "insights": [
+        "The £2 stake limit imposed on B2 gaming machines in April 2019 caused UK gaming machine revenue to drop by 41% to £1.075 billion for the year to March 2020, and betting revenue fell by 5.2% to £1.28 billion in the same period (UK Gambling Commission).",
+        "Combined gross gaming yield (GGY) from UK retail betting shops declined to £2.36bn for the year to March 2020, representing a 26% drop from the 2017 high of £3.22bn (UK Gambling Commission).",
+        "The number of UK retail betting shops fell by almost 16% from a 2014 peak of over 9,100 to 7,861 by March 2020, and is expected to shrink further following Covid-19 lockdowns (UK Gambling Commission).",
+        "In 2020, net revenue from William Hill's retail operations dropped by 50%, Entain's fell by 4%, and Paddy Power's by 28% compared to the previous year (Company reports).",
+        "Both William Hill and Entain reported operational losses in their UK retail betting operations for 2020, highlighting the impact of regulatory and pandemic pressures (Company financial statements)."
+      ]
+    },
+    {
+      "id": "tech-futures-survey-and-report-part-one",
+      "title": "Tech Futures survey and report: Part one",
+      "url": "https://igamingbusiness.com/ice365/tech-futures-survey-and-report-part-one/",
+      "publisher": "iGaming Business",
+      "date": "2021-03-09",
+      "topics": [
+        "casino",
+        "sports_betslip",
+        "signup",
+        "my_account",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "In a 2021 survey of industry stakeholders, 52.9% identified AI/ML-driven personalisation as the most immediately transformative technology for igaming, closely followed by strategic automation (51.8%) and responsible gambling (51%).",
+        "The reported use of AI/ML for personalisation declined from 62.3% in 2020 to 52.9% in 2021, while strategic automation remained steady (51.9% in 2020 to 51.8% in 2021), and responsible gambling use cases rose from 47.2% to 51%.",
+        "31.8% of respondents in 2021 viewed blockchain as an immediately transformative technology, slightly down from 34% in 2020, suggesting waning interest or adoption barriers.",
+        "The share of industry respondents who saw IoT as immediately transformative more than doubled from 12.26% in 2020 to 29.41% in 2021; edge computing also increased from 5.66% in 2020 to 14.12% in 2021.",
+        "Among surveyed stakeholders, 51.4% stated they would most likely leverage AI/ML in-house for use cases such as personalisation and automation, compared with only 11.43% for VR/AR, 8.57% for blockchain, and 5.71% for IoT."
+      ]
+    },
+    {
+      "id": "tech-futures-survey-and-report-part-two",
+      "title": "Tech Futures survey and report: Part two",
+      "url": "https://igamingbusiness.com/ice365/tech-futures-survey-and-report-part-two/",
+      "publisher": "iGaming Business (iGB)",
+      "date": "2021-03-09",
+      "topics": [
+        "support",
+        "my_account",
+        "market:Europe",
+        "market:UK",
+        "market:France",
+        "market:US"
+      ],
+      "insights": [
+        "In the 2021 Tech Futures survey, 32.94% of respondents said personalisation will have the most immediate and significant AI/ML impact on igaming, followed by data/analytics at 22.35%.",
+        "Interest in compliance as a disruptive technology use case increased from 9.43% in 2020 to 15.29% in 2021, and interest in chatbots rose from 3.77% to 9.41% in the same period.",
+        "21.15% of surveyed respondents expressed ethical concerns about AI's relationship with responsible gambling, and 13.46% specifically cited concerns around the handling of player data privacy.",
+        "40% of respondents strongly agreed and 38.82% somewhat agreed that regulators have a responsibility to monitor and encourage technology innovation in the industry.",
+        "Survey feedback indicates regulators in Great Britain and France are becoming more attuned to the role of new technology (such as AI) in regulation and compliance, in response to industry and consumer protection pressures."
+      ]
+    },
+    {
+      "id": "casinos-need-to-be-ready-to-adapt",
+      "title": "Casinos need to be ready to adapt",
+      "url": "https://igamingbusiness.com/casino-games/land-based-casino/casinos-need-to-be-ready-to-adapt/",
+      "publisher": "iGaming Business (iGB)",
+      "date": "2021-02-26",
+      "topics": [
+        "casino",
+        "market:US",
+        "market:Nevada",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "Historical player data shows that the primary target demographic for slot machines in land-based casinos is aging, with a heavy reliance on slot players over 55.",
+        "Studies cited in the referenced white paper found that integrating skill-based gaming machines entices new, younger players to engage with slot machine floor space, with skill-based machines in some casinos making up to 80% of total unit space.",
+        "Data suggests that integration of skill-based gaming technology can attract new demographic segments to casino slot floors without cannibalising play from traditional machines.",
+        "There remains a large, underserved population of carded (loyalty-enrolled) players in casinos that have not yet been effectively engaged through new machines and updated technology."
+      ]
+    },
+    {
+      "id": "market-monitor-february-2021",
+      "title": "Market Monitor: February 2021",
+      "url": "https://igamingbusiness.com/legal-compliance/market-monitor-february-2021/",
+      "publisher": "iGaming Business",
+      "date": "2021-02-22",
+      "topics": [
+        "market:UK",
+        "market:Netherlands"
+      ],
+      "insights": [
+        "Figures from the UK Gambling Commission show there was no 'significant or sustained increase in gambling activity in the Covid-19 period', despite concerns about a pandemic-driven rise.",
+        "The UK Gambling Commission's affordability review is seen by the industry as a greater risk to future viability than the government's review of the Gambling Act.",
+        "In the Netherlands, the launch of the regulated gambling market was delayed by one month to October 2021, following prior delays and regulation requiring operators to be absent from the market for 32 months before re-entry."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-january-2021",
+      "title": "Affiliate Monitor: January 2021",
+      "url": "https://igamingbusiness.com/marketing-affiliates/affiliate-monitor-january-2021/",
+      "publisher": "iGaming Business",
+      "date": "2021-01-17",
+      "topics": [
+        "market:UK",
+        "market:Sweden"
+      ],
+      "insights": [
+        "Better Collective invested €44 million in paid media specialist Atemi, signaling a strategic focus on paid media for sports betting affiliate traffic as of Q3 2020.",
+        "Raketech has adopted a paid media-led strategy by acquiring Lead Republik earlier in 2020.",
+        "Catena Media has reduced its spending and enthusiasm for paid media over the past few years, shifting its strategy away from that channel.",
+        "Proposals for spending (deposit) caps for online gambling in the UK have been widely criticised but are considered almost inevitable by industry observers.",
+        "The implementation of bonus and deposit limits in Sweden led to a short-term increase in affiliate activity within regulated markets, as players shopped around for better offers."
+      ]
+    },
+    {
+      "id": "power-your-payments-in-gaming",
+      "title": "Power your payments in gaming",
+      "url": "https://igamingbusiness.com/tech-innovation/payments/power-your-payments-in-gaming/",
+      "publisher": "iGaming Business",
+      "date": "2021-01-15",
+      "topics": [
+        "deposit",
+        "withdraw",
+        "market:Brazil",
+        "market:UK",
+        "market:US",
+        "market:Germany",
+        "market:Spain",
+        "market:Argentina",
+        "market:Colombia",
+        "market:Mexico",
+        "market:Australia"
+      ],
+      "insights": [
+        "According to a Worldpay (FIS) study of player payment experiences in nine countries, 27% of players surveyed drop out and use a different company when they can't pay using their preferred payment method.",
+        "70% of players surveyed consider payout speed (ideally 30 minutes or less) a deciding factor when choosing which operator to use, according to research commissioned by Worldpay from FIS.",
+        "Less than half of players surveyed by Worldpay from FIS prefer to use credit or debit cards for online gambling payments, indicating a diverse set of payment preferences among global players.",
+        "The cited Worldpay research (April–May 2020, by Opinium) highlights that player payment preferences vary significantly by country and demographic, suggesting the need for localised payment solutions."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-december-2020",
+      "title": "iGB Market Monitor: December 2020",
+      "url": "https://igamingbusiness.com/finance/igb-market-monitor-december-2020/",
+      "publisher": "iGB (iGaming Business)",
+      "date": "2020-12-07",
+      "topics": [
+        "market:Sweden",
+        "market:Denmark",
+        "market:Portugal",
+        "deposit"
+      ],
+      "insights": [
+        "Sweden implemented a regulated iGaming market in January 2019, but evidence prior to and during Covid-19 indicates a significant player migration from the regulated to the unregulated market, exacerbated by the introduction of deposit limits.",
+        "As of late 2020, smaller operators are increasingly targeting Swedish players without a licence, while larger operators are reconsidering their commitment to Sweden's licensed regime.",
+        "Analysts predict a sizeable shift away from Sweden’s regulated market within five years, signalling potential failure of the licensing system in retaining market share.",
+        "Portugal is experiencing similar trends to Sweden, with data indicating a rise in players moving to unlicensed operators, despite political assumptions of increased regulated iGaming activity during the pandemic.",
+        "In Denmark, analysis of data from 2012 to 2019 shows that adding regulated online gambling expanded the total market size, rather than just shifting play between offline and online channels."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-october-2020",
+      "title": "Affiliate Monitor: October 2020",
+      "url": "https://igamingbusiness.com/marketing-affiliates/affiliate-monitor-october-2020/",
+      "publisher": "iGaming Business",
+      "date": "2020-10-19",
+      "topics": [
+        "loyalty_rewards",
+        "market:Sweden",
+        "market:Spain",
+        "market:Italy",
+        "market:UK",
+        "market:US"
+      ],
+      "insights": [
+        "The Swedish gambling regulator conceded that its Covid-19-induced bonus crackdown may have been overly restrictive, indicating negative impacts on player acquisition and retention mechanics.",
+        "New bonus bans were introduced in Spain in 2020, adding further limitations to the use of bonuses as a player retention tool.",
+        "Affiliates in Italy continued to operate and find opportunities despite the implementation of restrictive gambling advertising measures.",
+        "There is a trend toward the increasing likelihood of affiliate licensing requirements being implemented in European markets, with the UK specifically identified as moving in this direction.",
+        "Better Collective reported year-on-year revenue declines in Q2 2020 due to its stronger focus on sports betting, whereas most large affiliates with a heavier casino focus saw YoY revenue increases during the same period."
+      ]
+    },
+    {
+      "id": "igb-africa-report-the-rise-of-digital",
+      "title": "iGB Africa Report: the rise of digital",
+      "url": "https://igamingbusiness.com/legal-compliance/igb-africa-report-the-rise-of-digital/",
+      "publisher": "iGB (iGaming Business)",
+      "date": "2020-10-14",
+      "topics": [
+        "market:Africa",
+        "market:Kenya",
+        "market:South Africa",
+        "market:Ghana",
+        "market:Nigeria",
+        "casino",
+        "sports_betslip"
+      ],
+      "insights": [
+        "According to H2 Gambling Capital, Africa is projected to account for just 1% of global gambling gross gaming revenue (GGR) in 2020.",
+        "Across Africa, digital channels already account for 23% of betting GGR, with mobile devices generating more than half of this digital GGR.",
+        "Rapid population growth, strong GDP growth in sub-Sahara African countries, and an emerging middle class are contributing to a gambling market growth rate forecast to exceed the global average through 2025."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-may-2020",
+      "title": "iGB Market Monitor – May 2020",
+      "url": "https://igamingbusiness.com/sports-betting/igb-market-monitor-may-2020/",
+      "publisher": "iGaming Business",
+      "date": "2020-05-20",
+      "topics": [
+        "market:UK",
+        "market:Sweden",
+        "deposit",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "In Sweden, proposed regulatory measures during the Covid-19 pandemic included deposit limits and a ban on betting on lower league football.",
+        "A report from Copenhagen Economics found that Swedish regulatory actions may be decreasing channelisation, potentially increasing usage of grey market operators.",
+        "In the UK, the Betting and Gaming Council coordinated a voluntary advertising ban during the Covid-19 crisis, but there is pressure from public groups to make such a ban permanent."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-february-2020",
+      "title": "Affiliate Monitor - February 2020",
+      "url": "https://igamingbusiness.com/sports-betting/affiliate-monitor-february-2020/",
+      "publisher": "iGaming Business",
+      "date": "2020-02-24",
+      "topics": [
+        "market:Sweden",
+        "market:Germany",
+        "market:UK",
+        "market:Europe"
+      ],
+      "insights": [
+        "Increasing compliance demands from regulators in the UK and Sweden are negatively impacting even the largest affiliates in the sports betting and casino sector as of late 2019.",
+        "The opening of Sweden's regulated gambling market has not produced the anticipated positive impact for the affiliate sector.",
+        "Initial analysis of the new Germany gambling treaty in late 2019 raised concerns among the affiliate sector that affiliate activity could be outlawed under the proposed rules.",
+        "Better Collective reported growth in both revenues and new depositing customers (NDCs) in Q4 2019, in contrast to market declines among comparable affiliates.",
+        "Google algorithm changes in late 2019 led to significant drops in performance for XLMedia, Gambling.com, and GiG’s media services division, while Catena Media's core sites, particularly the 'AskGamblers' brand, demonstrated resilience."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-december-2019",
+      "title": "Affiliate Monitor - December 2019",
+      "url": "https://igamingbusiness.com/sports-betting/affiliate-monitor-december-2019/",
+      "publisher": "iGaming Business",
+      "date": "2019-12-15",
+      "topics": [
+        "signup",
+        "market:Europe",
+        "market:US"
+      ],
+      "insights": [
+        "Catena Media led in new depositing customers (NDCs) in Q3 2019 after being temporarily overtaken by Better Collective the previous quarter.",
+        "Better Collective achieved 54% revenue growth in Q3 2019, outperforming other listed affiliates in revenue gains.",
+        "Gambling.com Group reported revenue growth of just 2% in Q3 2019, while other listed affiliates experienced revenue declines.",
+        "Lower affiliate margins and a preference for CPA (cost-per-acquisition) deals over revenue share models are prevalent in the US compared to Europe, impacting affiliate profitability and investor confidence.",
+        "Catena Media experienced a decline in repeat business in New Jersey’s iGaming market as initial surges were driven by CPA-driven sign-ups, which were not replicated in subsequent periods."
+      ]
+    },
+    {
+      "id": "affiliate-monitor-october-2019",
+      "title": "Affiliate Monitor – October 2019",
+      "url": "https://igamingbusiness.com/sports-betting/affiliate-monitor-october-2019/",
+      "publisher": "iGaming Business",
+      "date": "2019-10-03",
+      "topics": [
+        "market:US",
+        "market:Sweden",
+        "market:Spain",
+        "market:France",
+        "market:Italy",
+        "market:Japan",
+        "market:India",
+        "support",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "Better Collective overtook Catena Media in the volume of new depositing customers (NDCs) acquired in Q2 2019, despite Catena still leading on revenue and EBITDA among its listed peers.",
+        "Catena Media reported an increase in value per individual NDC to €235 in Q2 2019, up from €170 in Q4 2018, even as their quarterly NDC volumes declined.",
+        "Regulatory changes were cited as continuing to depress affiliate performance in Sweden, Spain, France, and Italy, with operators and affiliates focusing more on geographic expansion into Latam, Japan, and India.",
+        "In the US market, the large daily fantasy sports (DFS) databases of FanDuel and DraftKings reduce these brands' reliance on affiliate marketers, and in some states online operations were absent during initial market launches.",
+        "Gambling.com Group highlighted that US regulators' focus on 'suitability' for licensing criteria and less on explicit rules for advertising and problem gambling controls could result in problems similar to those observed in the UK and Sweden."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-september-2019",
+      "title": "iGB Market Monitor - September 2019",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-september-2019/",
+      "publisher": "iGaming Business",
+      "date": "2019-09-23",
+      "topics": [
+        "market:Netherlands",
+        "market:Portugal",
+        "market:Spain",
+        "casino",
+        "sports_betslip"
+      ],
+      "insights": [
+        "In July 2019, Dutch authorities reaffirmed their commitment to restrict illegal advertising and enforce a two-year cooling-off period for potential licensees, with violation resulting in exclusion from the regulated .nl market from January 2021.",
+        "The Dutch regulator (KSA) anticipates that out of 180 operator applications, 90-100 will be granted licenses when the market opens, for a total market estimated to be less than €600 million according to MotivAction.",
+        "Offshore operators in the Netherlands face strong local brand recognition from existing lottery and land-based casino brands, posing a challenge in market entry during the transition from dot.com to dot.country regulation.",
+        "Portugal's igaming market is constrained by a heavy turnover tax regime for sports betting, which influences its scaling and operator margins, as cited in September 2019.",
+        "Spain signals a move towards adopting a blanket ban on gambling advertising, similar to the regulatory approach previously taken in Italy as of September 2019."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-june-2019",
+      "title": "iGB Market Monitor: June 2019",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-june-2019/",
+      "publisher": "iGaming Business",
+      "date": "2019-06-30",
+      "topics": [
+        "signup",
+        "market:UK",
+        "market:Sweden",
+        "market:Germany"
+      ],
+      "insights": [
+        "In the UK, the online bingo market experienced a significant decline in revenue from VIP customers following the introduction of stricter know your customer (KYC) regulations that require operators to closely monitor players and determine sources of funding.",
+        "As of June 2019, the UK bingo market has only seen major M&A activity in 888’s acquisition of JPJ Group’s Mandalay business and Rank Group's planned acquisition of Stride Gaming that year, indicating limited consolidation despite regulatory pressures.",
+        "In Sweden, after the regulated igaming market opened, the government initiated an investigation into advertising practices due to concerns about player exposure, with new restrictions—including a potential advertising ban—being considered within months of market opening.",
+        "Germany's Amended State Treaty on Gambling, passed in March 2019 and in force until 2021, represents a step toward a more liberal, multi-vertical regulatory framework, though historically only sports betting was allowed and other forms remained unregulated."
+      ]
+    },
+    {
+      "id": "brazil-e-zine",
+      "title": "Brazil e-zine",
+      "url": "https://igamingbusiness.com/casino-games/brazil-e-zine/",
+      "publisher": "iGaming Business",
+      "date": "2019-05-24",
+      "topics": [
+        "market:Brazil"
+      ],
+      "insights": [
+        "Morgan Stanley analysis suggests the Brazilian sports betting market might be worth up to £1.6bn annually at maturity within five years if an open licensing structure is adopted.",
+        "The current regulated gambling offering in Brazil is confined to the lottery and a small amount of horse race betting.",
+        "A KPMG report for the Remote Gaming Association (RGA) in late 2017 estimated a combined online betting and gaming market in Brazil could be worth up to $2.1bn annually.",
+        "Legislation to legalise sports betting in Brazil was signed into law in December 2018, beginning a two-year consultation process for regulatory structure."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-february-2019",
+      "title": "iGB Market Monitor: February 2019",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-february-2019/",
+      "publisher": "iGaming Business",
+      "date": "2019-02-21",
+      "topics": [
+        "market:Italy",
+        "market:Poland",
+        "market:Denmark"
+      ],
+      "insights": [
+        "In Italy, online gambling GGR (Gross Gaming Revenue) surpassed €1.5bn in 2018, up from €1bn two years prior.",
+        "Italy's gambling industry will face a complete ban on all forms of advertising from July 2019.",
+        "Poland only allows non-monopoly operators to offer sports betting, which is taxed at 12% of turnover for these operators.",
+        "Poland's national lottery monopoly, Totalizator Sportowy, launched the Playtech-powered online casino totalcasino.pl in December 2018.",
+        "In Denmark, the Gambling Authority has maintained high channelisation rates to licensed (.dk) brands and is actively strengthening enforcement against black market operators."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-december-2018",
+      "title": "iGB Market Monitor - December 2018",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-december-2018/",
+      "publisher": "iGaming Business",
+      "date": "2019-01-18",
+      "topics": [
+        "market:Spain",
+        "market:UK"
+      ],
+      "insights": [
+        "In Spain, the gross gaming revenue (GGR) tax rate for licensed operators was reduced from 25% to 20% in 2018.",
+        "In the UK, the remote gaming duty will be increased from 15% to 21%, effective April 2019.",
+        "Spanish and Danish legislators have proposed new restrictions on gambling advertising in response to public concern about its prevalence."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-september-2018",
+      "title": "iGB Market Monitor - September 2018",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-september-2018/",
+      "publisher": "iGaming Business",
+      "date": "2018-09-10",
+      "topics": [
+        "market:UK",
+        "market:Spain",
+        "market:Denmark",
+        "market:Sweden"
+      ],
+      "insights": [
+        "In Q1 2018, Spain's regulated gambling market saw a year-on-year growth rate of 16.5%.",
+        "Denmark's regulated gambling market grew by nearly 29% year-on-year in the same period.",
+        "The UK gambling market, while down on the 20% growth seen in previous years, was still growing at a rate between 8-10% a year as of early 2018.",
+        "Spain reduced its gambling tax on most products from 25% to 20% in 2018.",
+        "Sweden planned to apply an 18% gambling tax rate with the opening of its regulated market in January 2019."
+      ]
+    },
+    {
+      "id": "the-industry-landscape-affiliates-in-igaming-2018",
+      "title": "The industry landscape: affiliates in igaming 2018",
+      "url": "https://igamingbusiness.com/casino-games/the-industry-landscape-affiliates-in-igaming-2018/",
+      "publisher": "iGaming Business",
+      "date": "2018-07-23",
+      "topics": [
+        "signup",
+        "market:UK"
+      ],
+      "insights": [
+        "The mean monthly amount generated by surveyed affiliates in 2018 was $150,000, up 28% year-on-year, according to the iGB Affiliate and Operator Survey.",
+        "14% of affiliates surveyed reported earning more than $400,000 per month (2018, iGB Affiliate and Operator Survey).",
+        "69% of surveyed affiliates targeted the UK market as of 2018 (iGB Affiliate and Operator Survey).",
+        "Half (50%) of affiliates surveyed indicated they do not read the terms and conditions before signing up to an affiliate programme (2018, iGB Affiliate and Operator Survey).",
+        "Commissions earned by surveyed affiliates increased by 42% in 2018 compared to a 37% increase in 2017 (iGB Affiliate and Operator Survey)."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-the-nordics",
+      "title": "iGB Market Monitor – the Nordics",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-the-nordics/",
+      "publisher": "iGaming Business",
+      "date": "2018-05-15",
+      "topics": [
+        "market:Sweden",
+        "market:Denmark",
+        "casino",
+        "sports_betslip",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "Sweden’s official igaming market estimate before re-regulation was SEK5.65bn (€545m), though this is considered likely understated for such a high-performing market.",
+        "Sweden’s new regulated online gambling market, launching January 2019, will implement a comparatively low GGR tax rate of 18%, intended to drive channelisation to licensed operators.",
+        "Operators Kindred, Betsson, and LeoVegas are identified as the leading Malta-domiciled brands best positioned for the regulated Swedish environment.",
+        "Lottery and horse racing monopolies Svenska Spel and ATG will remain, with non-monopoly operators expressing concern that existing monopoly operators could leverage their lottery-acquired player databases to cross-sell into competitive verticals, as previously occurred in Denmark with Danske Spil before regulatory intervention.",
+        "A proposed bonus cap in Sweden is under debate, with multiple stakeholders arguing that it could unintentionally incentivize irresponsible gambling behaviour among players."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-december-2017",
+      "title": "iGB Market Monitor - December 2017",
+      "url": "https://igamingbusiness.com/casino-games/igb-market-monitor-december-2017/",
+      "publisher": "iGaming Business",
+      "date": "2017-12-13",
+      "topics": [
+        "market:UK",
+        "market:Denmark",
+        "market:Spain",
+        "casino",
+        "sports_betslip"
+      ],
+      "insights": [
+        "In Q3 2017, the UK online gambling market was dominated by Bet365 and Sky Bet, with medium and small operators continuing to survive particularly on the gaming side.",
+        "In Denmark, mobile channels accounted for 34.5% of casino turnover and 55% of sports betting turnover during the third quarter of 2017.",
+        "The Danish regulator reported that liberalisation has dramatically reduced illegal gambling activity, with low numbers of sites found illegally targeting Danish players as of Q3 2017.",
+        "In Spain, the regulated market will increase to 45 licensees in 2018 after the DGOJ announced 10 more licenses were to be issued, and analyst Paul Leyland stated the market could double or triple in size over three to five years with a lower tax rate and more licensees."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-june-2017",
+      "title": "iGB Market Monitor - June 2017",
+      "url": "https://igamingbusiness.com/finance/igb-market-monitor-june-2017/",
+      "publisher": "iGaming Business",
+      "date": "2017-06-30",
+      "topics": [
+        "market:UK",
+        "market:ES",
+        "market:DK",
+        "casino",
+        "my_account",
+        "loyalty_rewards"
+      ],
+      "insights": [
+        "In 2017, the UK remote gambling sector reached a gross gaming yield (GGY) of £4.5 billion per year, but growth has slowed compared to the previous five years.",
+        "From late 2015 to Q1 2017, Spanish online slots GGR grew but saw a decline from €16.8m in Q4 2016 to €13.7m in Q1 2017, a near 20% quarter-on-quarter fall, but still a 44% year-on-year rise.",
+        "As of 2017, only 20% of Spanish online gambling licensees were profitable, with Jdigital citing a high 25% GGR tax rate as a key factor, compared to the UK's 15% tax.",
+        "Denmark's 2016 total online gambling market was worth DKK 2,967 million (€399 million), nearly matching Spain's market of €429 million, despite Denmark's population (5.5 million) being far smaller than Spain's (47 million).",
+        "The UK Gambling Commission fined BGO Entertainment £300,000 for misleading advertising and required Lottoland to pay £150,000 to good causes for breaching advertising and marketing codes in 2017."
+      ]
+    },
+    {
+      "id": "the-industry-landscape-affiliates-in-igaming-2017-2",
+      "title": "The industry landscape: affiliates in igaming 2017",
+      "url": "https://igamingbusiness.com/casino-games/the-industry-landscape-affiliates-in-igaming-2017-2/",
+      "publisher": "iGaming Business",
+      "date": "2017-04-27",
+      "topics": [
+        "market:UK",
+        "market:Germany",
+        "market:Australia"
+      ],
+      "insights": [
+        "83% of surveyed affiliates reported feeling 'confident' about the igaming industry as a whole, according to the 2017 iGB Affiliate and Operator Survey.",
+        "71% of surveyed affiliates reported being 'confident' specifically about the affiliate sector of igaming.",
+        "70% of surveyed affiliates stated casino is a core vertical for them, while 62% selected sports betting, 34% poker, 33% bingo, and 29% lotteries.",
+        "67% of affiliates surveyed in the iGB Affiliate and Operator Survey reported primarily targeting the UK market, 43% targeted Germany, and 39% targeted Australia.",
+        "Unclear or ambiguous legislation was identified by affiliates as the single biggest factor currently impacting their business in the 2017 iGB Affiliate and Operator Survey."
+      ]
+    },
+    {
+      "id": "igb-market-monitor-april-2017-uk-and-denmark",
+      "title": "iGB Market Monitor April 2017: UK and Denmark",
+      "url": "https://igamingbusiness.com/finance/igb-market-monitor-april-2017-uk-and-denmark/",
+      "publisher": "iGaming Business",
+      "date": "2017-04-05",
+      "topics": [
+        "market:Denmark",
+        "market:UK",
+        "casino",
+        "sports_betslip"
+      ],
+      "insights": [
+        "In Denmark, a 2015 survey by the Danish Online Gambling Association reported that only 6% of 4,000 respondents used unregulated betting sites.",
+        "In the same Danish survey, 23% of respondents used unlicensed casino sites and 27% went offshore for poker.",
+        "Denmark's regulatory tax rate for online gambling is 20% of gross gaming revenues.",
+        "Sweden's proposed regulatory framework for igaming includes a suggested tax rate of 18% of gross gaming revenues."
+      ]
+    },
+    {
+      "id": "read-the-jumio-igb-abandonment-in-gaming-white-paper",
+      "title": "Read the Jumio-iGB Abandonment in Gaming White Paper",
+      "url": "https://igamingbusiness.com/finance/read-the-jumio-igb-abandonment-in-gaming-white-paper/",
+      "publisher": "iGaming Business",
+      "date": "2016-01-19",
+      "topics": [
+        "signup",
+        "deposit",
+        "market:Europe"
+      ],
+      "insights": [
+        "24% of potential players in mobile gaming abandon the journey at the moment of registration, according to a Jumio-iGaming Business research report.",
+        "Operators are potentially losing £98m due to abandonment during registration and deposit processes, per the Jumio-iGaming Business white paper."
+      ]
+    }
+  ]
+}

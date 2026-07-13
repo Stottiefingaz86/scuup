@@ -117,7 +117,7 @@ function OverviewContent({ project }: { project: Project }) {
           <>
             <span className="text-brand">{leader.brand.name}</span> leads the
             set at {leader.score} — you&apos;re {leader.score - ownScore}{" "}
-            points behind on first impressions.
+            points behind on player experience.
           </>
         ),
         body:

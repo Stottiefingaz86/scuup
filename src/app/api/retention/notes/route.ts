@@ -26,12 +26,12 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const retentionNotes = await extractRetentionNotesFromShots(
+    const extract = await extractRetentionNotesFromShots(
       retention,
       ctx,
       screenshots
     );
-    return NextResponse.json({ retentionNotes });
+    return NextResponse.json(extract);
   } catch (e) {
     const message =
       e instanceof Error ? e.message : "retention notes extract failed";

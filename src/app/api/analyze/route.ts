@@ -9,7 +9,7 @@ import { requireEmailVerified } from "@/lib/email-verification";
 import { analyzeJourney } from "@/lib/analyst";
 import { auditUrlForMarket } from "@/lib/brand-markets";
 import { createContext } from "@/lib/browserbase";
-import { journeyRequiresLogin, MARKET_PROXY_COUNTRY } from "@/lib/constants";
+import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { journeyAllowedOnPlan } from "@/lib/plan";
 import {
   getBrandContextId,
@@ -18,6 +18,7 @@ import {
   saveBrandContext,
   seedTestPersona,
 } from "@/lib/credentials-db";
+import { brandProjectArchived } from "@/lib/project-db";
 import { personaVariables } from "@/lib/test-persona";
 
 export const runtime = "nodejs";
@@ -73,6 +74,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "valid url required" }, { status: 400 });
   }
 
+  if (brandId && (await brandProjectArchived(brandId).catch(() => false))) {
+    return NextResponse.json(
+      { error: "This report is archived — reactivate it to run updates." },
+      { status: 409 }
+    );
+  }
+
   const plan = await planFor(userId);
   if (!journeyAllowedOnPlan(plan, journey)) {
     return NextResponse.json(
@@ -92,15 +100,17 @@ export async function POST(request: NextRequest) {
     contextId = await getBrandContextId(brandId).catch(() => null);
   }
 
-  // Signup runs register a real test account: seed the persona (test email,
-  // random identity, env password) if missing, and pin the run to a
-  // persistent browser context so the created session unlocks the gated
-  // journeys that follow.
+  // Every journey is walked logged in when possible — the agent's first
+  // port of call is the brand's test account. Signup additionally seeds
+  // the persona and a persistent browser context so registration unlocks
+  // the whole brand.
   let signupVars: Record<string, string> | null = null;
-  if (journey === "signup" && brandId) {
+  let loginVars: Record<string, string> | null = null;
+  let accountExists = false;
+  if (brandId) {
     try {
       let creds = await getCredentialsForLogin(brandId);
-      if (!creds.persona || !creds.password) {
+      if (journey === "signup" && (!creds.persona || !creds.password)) {
         await seedTestPersona(brandId, {
           market,
           brandName: brandName || new URL(url).hostname,
@@ -109,33 +119,21 @@ export async function POST(request: NextRequest) {
         creds = await getCredentialsForLogin(brandId);
       }
       if (creds.persona && creds.password) {
-        signupVars = personaVariables(creds.persona, creds.password);
+        const vars = personaVariables(creds.persona, creds.password);
+        loginVars = vars;
+        if (journey === "signup") signupVars = vars;
       }
-      if (!contextId) {
+      accountExists = creds.loggedInAt != null;
+      if (journey === "signup" && !contextId) {
         contextId = await createContext();
         await saveBrandContext(brandId, contextId);
       }
     } catch (e) {
-      // Registration is best-effort — without a persona the run still
-      // scores the opened form like before.
+      // Credentials are best-effort — public runs still work logged out.
       console.error(
-        `[analyze] signup persona setup failed for ${brandId}:`,
+        `[analyze] credential setup failed for ${brandId}:`,
         e instanceof Error ? e.message : e
       );
-    }
-  }
-
-  // Login-gated journeys carry the saved test credentials so the agent can
-  // restore an expired session by logging in itself before giving up.
-  let loginVars: Record<string, string> | null = null;
-  if (journeyRequiresLogin(journey) && brandId) {
-    try {
-      const creds = await getCredentialsForLogin(brandId);
-      if (creds.persona && creds.password) {
-        loginVars = personaVariables(creds.persona, creds.password);
-      }
-    } catch {
-      // Without credentials the run still works while the context is live.
     }
   }
 
@@ -154,9 +152,10 @@ export async function POST(request: NextRequest) {
       chainLoginJourneys:
         journey === "signup" ? chainLoginJourneys : undefined,
       loginVars,
+      accountExists,
     });
     const { chainedAnalyses, ...analysis } = result;
-    if (journey === "signup" && brandId && analysis.authenticated) {
+    if (brandId && (analysis.authenticated || analysis.loggedIn)) {
       await markLoggedIn(brandId).catch(() => {});
     }
     return NextResponse.json({ ...analysis, chainedAnalyses });

@@ -121,14 +121,6 @@ export function canAdviseOnMechanic(
   return true;
 }
 
-export function naCtaForMechanic(key: string): "launch" | "agent" {
-  const meta = RETENTION_MECHANIC_META.find((m) => m.key === key);
-  if (!meta) return "agent";
-  if (meta.requires === "tracked_play") return "launch";
-  if (meta.requires === "login") return "launch";
-  return "agent";
-}
-
 /** Drop notes for mechanics we can't honestly score — avoids stale logged-out advice. */
 export function sanitizeRetentionNotes(
   retention: Record<string, number | null> | undefined,

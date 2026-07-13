@@ -12,7 +12,7 @@ import {
 import { PRO_PRICE_MONTHLY, PRO_SELLING_POINTS } from "@/lib/plan";
 
 const FREE_FEATURES = [
-  "One report — your own brand",
+  "One active report — your brand + 1 competitor",
   "First impression audit",
   "Casino lobby + sports betslip journeys",
   "Full heuristic scoring and evidence",
@@ -22,7 +22,7 @@ const HEADLINES: Record<string, { title: string; description: string }> = {
   new: {
     title: "Benchmark against the brands taking your players",
     description:
-      "Your free audit covers your own brand. Pro puts up to 3 competitors next to it and walks every journey — including the logged-in ones.",
+      "Your free audit covers your brand plus one competitor. Pro puts up to 4 competitors next to it and walks every journey — including the logged-in ones.",
   },
   limit: {
     title: "You've used your free report",
@@ -32,7 +32,7 @@ const HEADLINES: Record<string, { title: string; description: string }> = {
   competitors: {
     title: "See who's actually taking your players",
     description:
-      "Pro benchmarks up to 3 competitors next to your brand — same journeys, same heuristics, ranked side by side.",
+      "Pro benchmarks up to 4 competitors next to your brand — same journeys, same heuristics, ranked side by side.",
   },
   default: {
     title: "Go beyond your own brand",

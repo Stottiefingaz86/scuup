@@ -33,8 +33,18 @@ import {
   PRODUCTS,
   type MarketOption,
 } from "@/lib/constants";
-import { FREE_JOURNEYS, PRO_SELLING_POINTS, type Plan } from "@/lib/plan";
-import { createProject, LimitError } from "@/lib/project-store";
+import {
+  FREE_JOURNEYS,
+  PLAN_COMPETITOR_LIMIT,
+  PRO_SELLING_POINTS,
+  type Plan,
+} from "@/lib/plan";
+import {
+  ActiveReportError,
+  archiveProject,
+  createProject,
+  LimitError,
+} from "@/lib/project-store";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
 import { VerifyEmailDialog } from "@/components/verify-email-dialog";
 import type { JourneyType } from "@/lib/types";
@@ -69,7 +79,13 @@ type StepId =
   | "journeys"
   | "launch";
 
-const FREE_STEPS: StepId[] = ["brand", "market", "products", "launch"];
+const FREE_STEPS: StepId[] = [
+  "brand",
+  "competitors",
+  "market",
+  "products",
+  "launch",
+];
 const PRO_STEPS: StepId[] = [
   "brand",
   "competitors",
@@ -412,8 +428,8 @@ function LimitReachedScreen() {
         </h1>
         <p className="text-muted-foreground">
           Free accounts include one report so you can see how Scuup scores
-          your brand. Pro unlocks competitors, every journey, and unlimited
-          reports.
+          your brand. Delete your current report to start a fresh one, or go
+          Pro for logged-in journeys, more competitors and unlimited reports.
         </p>
       </div>
       <ul className="flex flex-col gap-2">
@@ -458,7 +474,12 @@ export default function NewProjectPage() {
   const [limitReached, setLimitReached] = useState(false);
 
   const [ownBrandUrl, setOwnBrandUrl] = useState("");
-  const [competitors, setCompetitors] = useState<string[]>(["", "", ""]);
+  const [competitors, setCompetitors] = useState<string[]>(["", "", "", ""]);
+  const [activeConflict, setActiveConflict] = useState<{
+    message: string;
+    projectId: string | null;
+  } | null>(null);
+  const [archiving, setArchiving] = useState(false);
   const [market, setMarket] = useState<string | null>(null);
   const [products, setProducts] = useState<string[]>(["Casino", "Sports"]);
   const [journeys, setJourneys] = useState<JourneyType[]>([
@@ -525,9 +546,13 @@ export default function NewProjectPage() {
     });
   }, [plan, availableJourneys]);
 
+  const competitorLimit = PLAN_COMPETITOR_LIMIT[plan];
   const validCompetitors = useMemo(
-    () => competitors.filter((c) => c.trim().length > 0),
-    [competitors]
+    () =>
+      competitors
+        .slice(0, PLAN_COMPETITOR_LIMIT[plan])
+        .filter((c) => c.trim().length > 0),
+    [competitors, plan]
   );
 
   // Best-effort brand→market availability, fetched when the market step
@@ -642,10 +667,10 @@ export default function NewProjectPage() {
         name: `${brandName} — ${market}`,
         ownBrandName: brandName,
         ownBrandUrl: ownBrandUrl.trim(),
-        competitors:
-          plan === "pro"
-            ? validCompetitors.map((url) => ({ name: "", url: url.trim() }))
-            : [],
+        competitors: validCompetitors.map((url) => ({
+          name: "",
+          url: url.trim(),
+        })),
         market: market!,
         products,
         journeys: journeys.filter((j) => availableJourneys.includes(j)),
@@ -653,6 +678,13 @@ export default function NewProjectPage() {
       });
       router.push(`/projects/${project.id}/analyzing`);
     } catch (e) {
+      if (e instanceof ActiveReportError) {
+        setActiveConflict({
+          message: e.message,
+          projectId: e.activeProjectId,
+        });
+        return;
+      }
       if (e instanceof LimitError) {
         setLimitReached(true);
         return;
@@ -730,6 +762,69 @@ export default function NewProjectPage() {
     );
   }
 
+  if (activeConflict) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <header className="flex items-center px-6 py-5">
+          <ScuupLogo href="/dashboard" />
+        </header>
+        <main className="flex flex-1 items-center justify-center px-6 pb-20">
+          <div className="flex w-full max-w-lg flex-col gap-6 duration-500 animate-in fade-in slide-in-from-bottom-6">
+            <div className="flex flex-col gap-2">
+              <h1 className="font-heading text-3xl font-medium tracking-tight">
+                You already have an active report
+              </h1>
+              <p className="text-muted-foreground">
+                Plans currently include one active report at a time.
+                Archiving pauses your current report — no more agent runs or
+                score updates — but everything captured stays readable and
+                you can reactivate it later.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeConflict.projectId ? (
+                <Button
+                  className="glow-primary"
+                  disabled={archiving}
+                  onClick={async () => {
+                    setArchiving(true);
+                    try {
+                      await archiveProject(activeConflict.projectId!);
+                      setActiveConflict(null);
+                      await launch();
+                    } catch (e) {
+                      setError(
+                        e instanceof Error
+                          ? e.message
+                          : "Failed to archive report"
+                      );
+                      setActiveConflict(null);
+                    } finally {
+                      setArchiving(false);
+                    }
+                  }}
+                >
+                  <Sparkles data-icon="inline-start" />
+                  {archiving
+                    ? "Archiving…"
+                    : "Archive current report & start this one"}
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/dashboard" />}
+              >
+                <ArrowLeft data-icon="inline-start" />
+                Keep my current report
+              </Button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen flex-col">
       {/* Progress */}
@@ -772,10 +867,14 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question="Who's taking your players?"
-            hint="Up to three competitors, benchmarked side by side. Leave blank to audit solo."
+            hint={
+              plan === "pro"
+                ? "Up to four competitors, benchmarked side by side. Leave blank to audit solo."
+                : "Free audits benchmark one competitor. Pro compares up to four side by side. Leave blank to audit solo."
+            }
           >
             <div className="flex flex-col gap-6">
-              {competitors.map((url, i) => (
+              {competitors.slice(0, competitorLimit).map((url, i) => (
                 <div key={i} className="flex items-center gap-4">
                   <span className="w-6 shrink-0 font-heading text-sm text-muted-foreground tabular-nums">
                     {String.fromCharCode(65 + i)}
@@ -791,7 +890,12 @@ export default function NewProjectPage() {
                       )
                     }
                     placeholder={
-                      ["https://stake.com", "https://rainbet.com", "https://bet365.com"][i]
+                      [
+                        "https://stake.com",
+                        "https://rainbet.com",
+                        "https://bet365.com",
+                        "https://betway.com",
+                      ][i]
                     }
                     className="w-full border-b-2 border-input bg-transparent pb-2 font-heading text-xl outline-none transition-colors placeholder:text-muted-foreground/40 focus:border-primary"
                   />
@@ -938,7 +1042,7 @@ export default function NewProjectPage() {
                   <ShieldCheck className="size-3.5 text-primary" />
                   {ownBrandUrl || "your brand"}
                 </span>
-                {plan === "pro" && validCompetitors.length > 0 ? (
+                {validCompetitors.length > 0 ? (
                   <span>
                     vs {validCompetitors.length} competitor
                     {validCompetitors.length === 1 ? "" : "s"}

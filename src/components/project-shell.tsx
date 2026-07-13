@@ -4,18 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
 import {
+  Archive,
+  ArchiveRestore,
   ArrowLeft,
   Camera,
   Coins,
   FileText,
   Grid3x3,
-  KeyRound,
   LayoutDashboard,
-  Radio,
+  MessagesSquare,
+  Palette,
   Repeat,
   Route,
   Zap,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -47,20 +50,62 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { VerifyEmailBanner } from "@/components/verify-email-banner";
 import { VerifyEmailPrompt } from "@/components/verify-email-dialog";
 import { AnalysisFailedBanner } from "@/components/analysis-failed-banner";
-import { useProject } from "@/lib/project-store";
-import type { Project } from "@/lib/types";
+import { unarchiveProject, useProject } from "@/lib/project-store";
+import { tierTextClass } from "@/lib/score";
+import { cn } from "@/lib/utils";
+import { scorePillars, type Project, type ScorePillar } from "@/lib/types";
 
+function ArchivedBanner({ project }: { project: Project }) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 print:hidden">
+      <Archive className="size-4 shrink-0 text-amber-500" />
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="font-medium">This report is archived.</span>{" "}
+        <span className="text-muted-foreground">
+          It&apos;s paused — no agent runs, score updates or new evidence
+          until you reactivate it.
+        </span>
+      </p>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() =>
+          unarchiveProject(project.id).catch((e) =>
+            toast.error(
+              e instanceof Error ? e.message : "Failed to reactivate report"
+            )
+          )
+        }
+      >
+        <ArchiveRestore data-icon="inline-start" />
+        Reactivate
+      </Button>
+    </div>
+  );
+}
+
+/** Nav mirrors how the Player CX Score is built: the four score pillars
+ * first, then supporting context that informs but never moves the number,
+ * then the outputs. */
 const NAV_GROUPS = [
   {
-    label: "Intelligence",
+    label: null,
+    items: [{ slug: "overview", label: "Overview", icon: LayoutDashboard }],
+  },
+  {
+    label: "Score pillars",
     items: [
-      { slug: "overview", label: "Overview", icon: LayoutDashboard },
       { slug: "journeys", label: "Journeys", icon: Route },
-      { slug: "features", label: "Features", icon: Grid3x3 },
       { slug: "retention", label: "Retention", icon: Repeat },
+      { slug: "voc", label: "Voice of Customer", icon: MessagesSquare },
+      { slug: "design", label: "Design Review", icon: Palette },
+    ],
+  },
+  {
+    label: "Deep dives",
+    items: [
+      { slug: "features", label: "Feature Matrix", icon: Grid3x3 },
       { slug: "cashier", label: "Cashier Trust", icon: Coins },
-      { slug: "sessions", label: "Live Sessions", icon: Radio },
-      { slug: "accounts", label: "Accounts", icon: KeyRound },
     ],
   },
   {
@@ -73,14 +118,23 @@ const NAV_GROUPS = [
   },
 ];
 
+/** Which pillar score each nav slug reports — the reader's own brand,
+ * mirroring the numbers on the overview card. */
+const SLUG_PILLAR: Record<string, ScorePillar["key"]> = {
+  journeys: "journeys",
+  retention: "retention",
+  voc: "voc",
+  design: "design",
+};
+
 const PAGE_TITLES: Record<string, string> = {
   overview: "Overview",
   journeys: "Journeys",
   features: "Feature Matrix",
   retention: "Retention Loop",
+  voc: "Voice of Customer",
+  design: "Design Review",
   cashier: "Cashier Trust",
-  sessions: "Live Sessions",
-  accounts: "Accounts",
   evidence: "Evidence Library",
   report: "Report",
   "action-plan": "Action Plan",
@@ -126,6 +180,12 @@ export function ProjectShell({
     );
   }
 
+  const ownBrand = project.brands.find((b) => b.role === "own_brand");
+  const pillarScores: Partial<Record<ScorePillar["key"], number | null>> =
+    ownBrand
+      ? Object.fromEntries(scorePillars(ownBrand).map((p) => [p.key, p.score]))
+      : {};
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon" className="print:hidden">
@@ -134,16 +194,22 @@ export function ProjectShell({
         </SidebarHeader>
         <SidebarContent className="gap-5 px-2 py-4 group-data-[collapsible=icon]:px-1">
           {NAV_GROUPS.map((group) => (
-            <SidebarGroup key={group.label} className="p-0">
-              <SidebarGroupLabel className="h-auto px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
-                {group.label}
-              </SidebarGroupLabel>
+            <SidebarGroup key={group.label ?? "top"} className="p-0">
+              {group.label ? (
+                <SidebarGroupLabel className="h-auto px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">
+                  {group.label}
+                </SidebarGroupLabel>
+              ) : null}
               <SidebarGroupContent>
                 <SidebarMenu className="gap-1 group-data-[collapsible=icon]:items-center">
                   {group.items.map((item) => {
                     const href = `/projects/${projectId}/${item.slug}`;
                     const active = pathname === href;
                     const Icon = item.icon;
+                    const pillarKey = SLUG_PILLAR[item.slug];
+                    const score = pillarKey
+                      ? (pillarScores[pillarKey] ?? null)
+                      : undefined;
                     return (
                       <SidebarMenuItem
                         key={item.slug}
@@ -159,6 +225,18 @@ export function ProjectShell({
                           <span className="group-data-[collapsible=icon]:hidden">
                             {item.label}
                           </span>
+                          {score !== undefined ? (
+                            <span
+                              className={cn(
+                                "ms-auto font-heading text-xs font-semibold tabular-nums group-data-[collapsible=icon]:hidden",
+                                score === null
+                                  ? "font-normal text-sidebar-foreground/30"
+                                  : tierTextClass(score)
+                              )}
+                            >
+                              {score ?? "—"}
+                            </span>
+                          ) : null}
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     );
@@ -226,6 +304,9 @@ export function ProjectShell({
           <Suspense fallback={null}>
             <AnalysisFailedBanner />
           </Suspense>
+          {project.status === "archived" ? (
+            <ArchivedBanner project={project} />
+          ) : null}
           {children(project)}
         </div>
       </SidebarInset>

@@ -7,7 +7,12 @@ import {
   requireUser,
 } from "@/lib/auth-server";
 import { journeyAllowedOnPlan } from "@/lib/plan";
-import { countProjects, insertProject, listProjects } from "@/lib/project-db";
+import {
+  activeProject,
+  countProjects,
+  insertProject,
+  listProjects,
+} from "@/lib/project-db";
 import type { Project } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -41,18 +46,29 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "invalid project" }, { status: 400 });
     }
 
-    const [plan, count] = await Promise.all([
+    const [plan, count, active] = await Promise.all([
       planFor(user.id),
       countProjects(user.id),
+      activeProject(user.id),
     ]);
     if (count >= PLAN_PROJECT_LIMIT[plan]) {
       return NextResponse.json(
         {
           error:
-            "Free accounts include one report. Upgrade to create more audits.",
+            "Free accounts include one report. Delete your current report to start over, or upgrade for more.",
           code: "limit_reached",
         },
         { status: 402 }
+      );
+    }
+    if (active) {
+      return NextResponse.json(
+        {
+          error: `"${active.name}" is still active. Archive it to start a new report — plans currently include one active report.`,
+          code: "active_report_exists",
+          activeProjectId: active.id,
+        },
+        { status: 409 }
       );
     }
 
@@ -63,7 +79,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            "Competitor benchmarking is a Pro feature. Upgrade to add up to 3 competitors.",
+            plan === "free"
+              ? "Free reports benchmark one competitor. Upgrade to compare up to 4."
+              : "Pro reports benchmark up to 4 competitors.",
           code: "limit_reached",
         },
         { status: 402 }
