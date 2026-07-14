@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { TierLegend } from "@/components/score-chip";
 import { LandingReveal } from "@/components/landing/landing-reveal";
-import { Separator } from "@/components/ui/separator";
+import { WhatYouGetAccordion } from "@/components/landing/what-you-get-accordion";
 import { cn } from "@/lib/utils";
 import { TIERS, TIER_BG } from "@/lib/score";
 import {
@@ -65,48 +65,6 @@ const METHODOLOGY = [
   "Vision-scored screenshots",
   "Market-routed browsing",
   "iGaming-native analyst",
-];
-
-const REPORT_SECTIONS = [
-  {
-    num: "01",
-    title: "Executive summary",
-    description:
-      "Where you rank in the set, your overall Player CX Score, and a plain-language read of the biggest gap.",
-  },
-  {
-    num: "02",
-    title: "Scorecard & ranking",
-    description:
-      "Every site ranked side-by-side with journey scores and tier-coloured gauges on the same heuristics.",
-  },
-  {
-    num: "03",
-    title: "Findings by journey",
-    description:
-      "Heuristic scores, analyst summary, observations, detected features, and screenshot evidence per journey.",
-  },
-  {
-    num: "04",
-    title: "Action plan",
-    description:
-      "Impact vs effort matrix plus Fix now / Improve next / Strategic bets — each tied to audit evidence.",
-  },
-  {
-    num: "05",
-    title: "Coverage & next steps",
-    description:
-      "What's captured vs what still needs a logged-in session or live recording.",
-  },
-];
-
-const WORKSPACE_ITEMS = [
-  "Overview with rank, Player CX Score, and executive read",
-  "Journey deep-dives with heuristic-by-heuristic breakdown",
-  "Evidence library — screenshots from every visit",
-  "Gap analysis vs whoever leads your set",
-  "Action plan with prioritisation matrix",
-  "Feature matrix across all sites in the audit",
 ];
 
 function SectionIntro({
@@ -294,45 +252,17 @@ export function HowItWorks() {
 export function WhatYouGet() {
   return (
     <section id="report" className="mx-auto w-full max-w-7xl px-6 py-20 sm:py-28">
-      <SectionIntro
-        kicker="What you get"
-        title="A live workspace and a report your board can read"
-        description="Every audit produces an interactive dashboard for your product team and a structured PDF for leadership — both built from the same scored visits."
-      />
+      <LandingReveal>
+        <SectionIntro
+          kicker="What you get"
+          title="A live workspace and a report your board can read"
+          description="Every audit produces an interactive dashboard for your product team and a structured report for leadership — both built from the same scored visits."
+        />
+      </LandingReveal>
 
-      <div className="mt-14 grid gap-16 lg:grid-cols-2">
-        <div>
-          <h3 className="font-heading text-lg font-semibold">In the workspace</h3>
-          <ul className="mt-5 flex flex-col gap-3">
-            {WORKSPACE_ITEMS.map((item) => (
-              <li key={item} className="text-sm leading-relaxed text-muted-foreground">
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div>
-          <h3 className="font-heading text-lg font-semibold">In the report</h3>
-          <ol className="mt-5 flex flex-col gap-0">
-            {REPORT_SECTIONS.map((s, i) => (
-              <li key={s.num}>
-                {i > 0 ? <Separator className="my-4" /> : null}
-                <div className="flex gap-4">
-                  <span className="w-6 shrink-0 font-mono text-xs text-muted-foreground">
-                    {s.num}
-                  </span>
-                  <div>
-                    <p className="text-sm font-medium">{s.title}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                      {s.description}
-                    </p>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
+      <LandingReveal delay={120} className="mt-14">
+        <WhatYouGetAccordion />
+      </LandingReveal>
     </section>
   );
 }
