@@ -76,7 +76,7 @@ function HeroRadar() {
   return (
     <div
       aria-hidden
-      className="pointer-events-none absolute left-1/2 top-[-420px] size-[900px] -translate-x-1/2 opacity-70 sm:top-[-660px] sm:size-[1400px] xl:top-[-880px] xl:size-[1800px] [mask-image:radial-gradient(closest-side,black_35%,transparent_82%)]"
+      className="pointer-events-none absolute left-1/2 top-[-420px] z-0 size-[900px] -translate-x-1/2 opacity-70 sm:top-[-660px] sm:size-[1400px] xl:top-[-880px] xl:size-[1800px] [mask-image:radial-gradient(closest-side,black_35%,transparent_82%)]"
     >
       <div className="radar-rings absolute inset-0 rounded-full" />
       <div className="radar-sweep absolute inset-0 rounded-full" />
@@ -109,7 +109,7 @@ function HeroRadar() {
 
 function HeroVisual() {
   return (
-    <div className="relative mx-auto mt-16 w-full max-w-6xl px-4 sm:mt-20 sm:px-6">
+    <div className="relative z-[2] mx-auto mt-16 w-full max-w-6xl px-4 sm:mt-20 sm:px-6">
       <div
         aria-hidden
         className="absolute inset-x-16 top-6 h-72 rounded-full bg-primary/15 blur-[120px]"
@@ -275,9 +275,10 @@ export function LandingShowcase() {
 
       <main>
         {/* Hero */}
-        <section className="landing-hero-glow landing-bg-dots landing-bg-grain relative overflow-hidden pb-20 pt-20 sm:pt-28">
+        <section className="landing-hero-glow landing-bg-dots relative isolate overflow-hidden pb-20 pt-20 sm:pt-28">
+          <div aria-hidden className="landing-grain-texture absolute z-[1]" />
           <HeroRadar />
-          <div className="relative mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
+          <div className="relative z-[2] mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
             <Badge
               variant="outline"
               className="gap-1.5 rounded-full border-primary/30 px-3 py-1 font-normal text-muted-foreground"
@@ -287,7 +288,7 @@ export function LandingShowcase() {
             </Badge>
             <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.06] tracking-tight text-balance sm:text-6xl">
               Know where you stand{" "}
-              <span className="text-gradient">in an instant</span>
+              <span className="text-brand">in an instant</span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">
               Deep dives into casino, sports, retention and what players are
