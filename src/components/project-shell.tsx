@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Suspense } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Suspense, useEffect } from "react";
 import {
   Archive,
   ArchiveRestore,
@@ -71,20 +71,22 @@ function ArchivedBanner({ project }: { project: Project }) {
           until you reactivate it.
         </span>
       </p>
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() =>
-          unarchiveProject(project.id).catch((e) =>
-            toast.error(
-              e instanceof Error ? e.message : "Failed to reactivate report"
+      {project.access !== "viewer" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() =>
+            unarchiveProject(project.id).catch((e) =>
+              toast.error(
+                e instanceof Error ? e.message : "Failed to reactivate report"
+              )
             )
-          )
-        }
-      >
-        <ArchiveRestore data-icon="inline-start" />
-        Reactivate
-      </Button>
+          }
+        >
+          <ArchiveRestore data-icon="inline-start" />
+          Reactivate
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -153,8 +155,17 @@ export function ProjectShell({
   children: (project: Project) => React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const project = useProject(projectId);
   const currentSlug = pathname.split("/").pop() ?? "overview";
+  const isViewer = project != null && project.access === "viewer";
+
+  // Invited teammates only get the report — bounce them off other pages.
+  useEffect(() => {
+    if (isViewer && currentSlug !== "report") {
+      router.replace(`/projects/${projectId}/report`);
+    }
+  }, [isViewer, currentSlug, projectId, router]);
 
   if (project === undefined) {
     return (
@@ -192,6 +203,15 @@ export function ProjectShell({
       : {};
   const cxScore = ownBrand ? overallScore(ownBrand) : null;
 
+  const navGroups = isViewer
+    ? [
+        {
+          label: "Shared with you",
+          items: [{ slug: "report", label: "Report", icon: FileText }],
+        },
+      ]
+    : NAV_GROUPS;
+
   return (
     <SidebarProvider>
       <Sidebar collapsible="icon" className="print:hidden">
@@ -199,7 +219,7 @@ export function ProjectShell({
           <ProjectSwitcher project={project} />
         </SidebarHeader>
         <SidebarContent className="gap-5 px-2 py-4 group-data-[collapsible=icon]:px-1">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <SidebarGroup key={group.label ?? "top"} className="p-0">
               {group.label ? (
                 <SidebarGroupLabel className="h-auto px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-sidebar-foreground/40 group-data-[collapsible=icon]:hidden">

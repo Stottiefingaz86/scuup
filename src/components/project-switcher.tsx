@@ -51,6 +51,7 @@ export function ProjectSwitcher({ project }: { project: Project }) {
   const [confirm, setConfirm] = useState<"archive" | "delete" | null>(null);
   const [busy, setBusy] = useState(false);
   const archived = project.status === "archived";
+  const isViewer = project.access === "viewer";
 
   async function onArchive() {
     setBusy(true);
@@ -146,7 +147,11 @@ export function ProjectSwitcher({ project }: { project: Project }) {
                       {p.market}
                     </span>
                   </span>
-                  {p.status === "archived" ? (
+                  {p.access === "viewer" ? (
+                    <Badge variant="outline" className="shrink-0 text-[10px]">
+                      Shared
+                    </Badge>
+                  ) : p.status === "archived" ? (
                     <Badge variant="outline" className="shrink-0 text-[10px]">
                       Archived
                     </Badge>
@@ -167,6 +172,8 @@ export function ProjectSwitcher({ project }: { project: Project }) {
               </span>
               New analysis
             </DropdownMenuItem>
+            {!isViewer ? (
+            <>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -198,6 +205,8 @@ export function ProjectSwitcher({ project }: { project: Project }) {
                 Delete report
               </DropdownMenuItem>
             </DropdownMenuGroup>
+            </>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
 

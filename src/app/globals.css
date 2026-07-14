@@ -154,6 +154,14 @@
 }
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+  }
   * {
     @apply border-border outline-ring/50;
   }
@@ -267,6 +275,147 @@
     .animate-marquee,
     .animate-marquee-reverse {
       animation: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-marquee,
+    .animate-marquee-reverse,
+    .landing-float-card,
+    .landing-orb {
+      animation: none;
+    }
+    .landing-reveal {
+      opacity: 1;
+      transform: none;
+      transition: none;
+    }
+  }
+
+  /* Landing scroll reveals and floating cards */
+  .landing-reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .landing-reveal-visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .landing-float-card {
+    animation: landing-float 8s ease-in-out infinite;
+    will-change: transform;
+  }
+  .landing-float-card-delayed {
+    animation-delay: -4s;
+  }
+  @keyframes landing-float {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    50% {
+      transform: translateY(-12px) rotate(0.4deg);
+    }
+  }
+  .landing-orb {
+    pointer-events: none;
+    border-radius: 9999px;
+    background: radial-gradient(
+      circle,
+      oklch(0.77 0.15 163 / 14%) 0%,
+      oklch(0.77 0.15 163 / 4%) 45%,
+      transparent 72%
+    );
+    filter: blur(36px);
+    animation: landing-orb 10s ease-in-out infinite;
+  }
+  .landing-orb-delayed {
+    animation-delay: -5s;
+  }
+  @keyframes landing-orb {
+    0%,
+    100% {
+      transform: translate(0, 0) scale(1);
+      opacity: 0.55;
+    }
+    50% {
+      transform: translate(10px, -14px) scale(1.06);
+      opacity: 0.85;
+    }
+  }
+
+  /* Hero radar — concentric rings with a rotating sweep and pinging blips. */
+  .radar-rings {
+    background:
+      radial-gradient(circle at center, oklch(0.77 0.15 163 / 5%), transparent 62%),
+      repeating-radial-gradient(
+        circle at center,
+        oklch(1 0 0 / 7%) 0 1px,
+        transparent 1px 12.5%
+      );
+  }
+  .radar-sweep {
+    background: conic-gradient(
+      from 0deg,
+      transparent 0deg,
+      transparent 268deg,
+      oklch(0.77 0.15 163 / 2%) 290deg,
+      oklch(0.77 0.15 163 / 11%) 348deg,
+      oklch(0.77 0.15 163 / 24%) 359deg,
+      oklch(0.87 0.18 163 / 42%) 360deg
+    );
+    animation: radar-sweep 7s linear infinite;
+  }
+  @keyframes radar-sweep {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+  .radar-node {
+    opacity: 0.28;
+    box-shadow:
+      0 0 0 1px oklch(0.77 0.15 163 / 18%),
+      0 0 8px 1px oklch(0.77 0.15 163 / 22%);
+  }
+  .radar-blip {
+    animation: radar-blip 7s ease-out infinite;
+    opacity: 0.28;
+  }
+  @keyframes radar-blip {
+    0%,
+    100% {
+      opacity: 0.28;
+      transform: translate(-50%, -50%) scale(0.85);
+      box-shadow:
+        0 0 0 1px oklch(0.77 0.15 163 / 18%),
+        0 0 8px 1px oklch(0.77 0.15 163 / 22%);
+    }
+    4% {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1.15);
+      box-shadow:
+        0 0 0 1px oklch(0.87 0.18 163 / 45%),
+        0 0 14px 3px oklch(0.77 0.15 163 / 55%);
+    }
+    45% {
+      opacity: 0.28;
+      transform: translate(-50%, -50%) scale(0.95);
+      box-shadow:
+        0 0 0 1px oklch(0.77 0.15 163 / 18%),
+        0 0 8px 1px oklch(0.77 0.15 163 / 22%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .radar-sweep,
+    .radar-blip {
+      animation: none;
+    }
+    .radar-node,
+    .radar-blip {
+      opacity: 0.45;
     }
   }
 }

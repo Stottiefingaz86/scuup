@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Lock, ShieldCheck } from "lucide-react";
+import {
+  Check,
+  ListChecks,
+  Lock,
+  MousePointerClick,
+  Target,
+} from "lucide-react";
 import { TierLegend } from "@/components/score-chip";
+import { LandingReveal } from "@/components/landing/landing-reveal";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { TIERS, TIER_BG } from "@/lib/score";
@@ -32,29 +39,32 @@ const HEURISTIC_COUNT = Object.values(JOURNEY_HEURISTICS).reduce(
 const HOW_STEPS = [
   {
     step: "01",
+    icon: MousePointerClick,
     title: "Walk the journeys",
     description:
-      "Automated sessions open a real browser in your target market and navigate like a player — homepage, sign-up, casino lobby, rewards hub, support, and more. Every step is captured.",
+      "A real browser in your market moves like a player: sign-up, lobby, cashier, rewards, support. Every screen captured.",
   },
   {
     step: "02",
+    icon: ListChecks,
     title: "Score on iGaming heuristics",
     description:
-      "Each capture is rated against the same product heuristics for every site — offer clarity, tier transparency, cashier trust, reward cadence. Not generic UX checklists.",
+      "Every capture rated 0–100 on the same fixed heuristics. Offer clarity, cashier trust, reward cadence.",
   },
   {
     step: "03",
+    icon: Target,
     title: "Compare and prioritise",
     description:
-      "Scores roll up to 0–100 per journey and overall Player CX Score. Gap analysis shows where you win and lose, heuristic by heuristic. An action plan ranks fixes by impact vs effort.",
+      "Scores roll up to your Player CX Score. Gaps ranked, fixes ordered by impact vs effort.",
   },
 ];
 
 const METHODOLOGY = [
-  "A canonical heuristic list per journey — the same axis names on every site so scores are comparable.",
-  "iGaming domain expertise in the analyst — promo vs loop retention, cashier trust, regulated vs crypto patterns.",
-  "Vision scoring on captured screenshots — every point tied to UI evidence, not assumptions from HTML.",
-  "Market-routed browsing — sessions appear from the region you select so geo-gated content matches local players.",
+  "Same heuristics on every site",
+  "Vision-scored screenshots",
+  "Market-routed browsing",
+  "iGaming-native analyst",
 ];
 
 const REPORT_SECTIONS = [
@@ -131,13 +141,15 @@ export function WhatWeMeasure() {
 
   return (
     <section id="measure" className="mx-auto w-full max-w-7xl px-6 py-20 sm:py-28">
-      <SectionIntro
-        kicker="What we measure"
-        title={`${MEASURE_AREAS.length} journey areas · ${HEURISTIC_COUNT} heuristics`}
-        description="Scuup scores acquisition, play, money, retention, and support on a fixed heuristic set — so every site in your audit is measured on the same axes."
-      />
+      <LandingReveal>
+        <SectionIntro
+          kicker="What we measure"
+          title={`${MEASURE_AREAS.length} journey areas · ${HEURISTIC_COUNT} heuristics`}
+          description="Scuup scores acquisition, play, money, retention, and support on a fixed heuristic set — so every site in your audit is measured on the same axes."
+        />
+      </LandingReveal>
 
-      <div className="mt-14 overflow-hidden rounded-xl border bg-card/50">
+      <LandingReveal delay={100} className="mt-14 overflow-hidden rounded-xl border bg-card/50">
         <div className="grid lg:grid-cols-[minmax(260px,300px)_1fr]">
           <nav
             className="flex flex-col gap-0.5 border-b border-border bg-muted/15 p-2 lg:border-b-0 lg:border-r"
@@ -222,7 +234,7 @@ export function WhatWeMeasure() {
             </p>
           </div>
         </div>
-      </div>
+      </LandingReveal>
     </section>
   );
 }
@@ -231,42 +243,49 @@ export function HowItWorks() {
   return (
     <section id="how" className="border-y border-border bg-card/40 py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
-        <SectionIntro
-          kicker="How it works"
-          title="Real browsers. Fixed heuristics. Screenshot evidence."
-          description="Add your URLs and pick a market. Scuup walks each journey, scores what it captures, and compares your set — no synthetic data, no scraped HTML."
-        />
+        <LandingReveal>
+          <SectionIntro
+            kicker="How it works"
+            title="Real browsers. Fixed heuristics. Screenshot evidence."
+            description="Add your URLs, pick a market, and Scuup does the rest."
+          />
+        </LandingReveal>
 
-        <ol className="mt-14 border-t">
-          {HOW_STEPS.map((step) => (
-            <li
-              key={step.step}
-              className="grid gap-4 border-b py-10 md:grid-cols-[4rem_1fr]"
-            >
-              <span className="font-mono text-sm text-muted-foreground">{step.step}</span>
-              <div className="flex flex-col gap-2">
+        <ol className="mt-14 grid gap-5 lg:grid-cols-3">
+          {HOW_STEPS.map((step, i) => (
+            <LandingReveal key={step.step} delay={i * 90} as="li">
+              <div className="group relative flex h-full flex-col gap-4 overflow-hidden rounded-xl border bg-background/60 p-6 pb-7 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_20px_50px_-32px_oklch(0.77_0.15_163/0.25)]">
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -right-3 -top-6 font-heading text-[7rem] font-semibold leading-none text-foreground/[0.04] transition-colors group-hover:text-primary/[0.07]"
+                >
+                  {step.step}
+                </span>
+                <span className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                  <step.icon className="size-5" />
+                </span>
                 <h3 className="font-heading text-lg font-semibold">{step.title}</h3>
-                <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                <p className="text-sm leading-relaxed text-muted-foreground">
                   {step.description}
                 </p>
               </div>
-            </li>
+            </LandingReveal>
           ))}
         </ol>
 
-        <div className="mt-12 flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <ShieldCheck className="size-4 text-muted-foreground" />
-            Based on what
-          </div>
-          <ul className="grid gap-3 sm:grid-cols-2">
+        <LandingReveal delay={200} className="mt-8">
+          <ul className="flex flex-wrap gap-2.5">
             {METHODOLOGY.map((item) => (
-              <li key={item} className="text-sm leading-relaxed text-muted-foreground">
+              <li
+                key={item}
+                className="flex items-center gap-1.5 rounded-full border bg-background/40 px-3.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/30"
+              >
+                <Check className="size-3.5 text-brand" />
                 {item}
               </li>
             ))}
           </ul>
-        </div>
+        </LandingReveal>
       </div>
     </section>
   );

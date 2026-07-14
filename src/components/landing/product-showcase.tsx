@@ -18,7 +18,6 @@ import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupMark } from "@/components/landing/scuup-mark";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
   FREE_PLAN_FEATURES,
@@ -36,8 +35,16 @@ import {
   WhatYouGet,
 } from "@/components/landing/landing-explainer";
 import { LandingHeaderActions } from "@/components/landing/landing-header-actions";
+import { LandingProductNav } from "@/components/landing/landing-product-nav";
+import { PillarSpotlights } from "@/components/landing/pillar-spotlights";
 import { ShowcaseCarousel } from "@/components/landing/showcase-carousel";
+import { LandingContact } from "@/components/landing/landing-contact";
+import { AboutNavButton, AboutUsProvider } from "@/components/landing/landing-about";
+import { LegalDialogProvider } from "@/components/landing/landing-legal-dialog";
+import { CookieConsent } from "@/components/landing/cookie-consent";
+import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingFaq } from "@/components/landing/landing-faq";
+import { LandingReveal } from "@/components/landing/landing-reveal";
 import { MarketsMarquee } from "@/components/landing/markets-marquee";
 import { SharedReportReview } from "@/components/landing/shared-report-review";
 
@@ -45,6 +52,60 @@ import { SharedReportReview } from "@/components/landing/shared-report-review";
 /* Hero visual: a real screenshot of the live workspace in a browser   */
 /* frame — no mocked UI, the actual product with actual scores.        */
 /* ------------------------------------------------------------------ */
+
+/** Animated radar behind the hero copy — Scuup scanning the market.
+ * Static nodes sit on the grid; a subset flash when the 7s sweep passes. */
+const RADAR_NODES = [
+  { angle: 18, radius: 26, size: 1.5, blip: true },
+  { angle: 52, radius: 14, size: 1 },
+  { angle: 88, radius: 38, size: 1.25 },
+  { angle: 118, radius: 22, size: 1, blip: true },
+  { angle: 155, radius: 32, size: 1.5 },
+  { angle: 192, radius: 16, size: 1 },
+  { angle: 228, radius: 40, size: 1.25, blip: true },
+  { angle: 262, radius: 24, size: 1 },
+  { angle: 298, radius: 12, size: 1.5 },
+  { angle: 332, radius: 34, size: 1, blip: true },
+  { angle: 8, radius: 42, size: 1 },
+  { angle: 145, radius: 8, size: 1.25 },
+  { angle: 205, radius: 30, size: 1 },
+  { angle: 275, radius: 18, size: 1.25 },
+];
+
+function HeroRadar() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-[-420px] size-[900px] -translate-x-1/2 opacity-70 sm:top-[-660px] sm:size-[1400px] xl:top-[-880px] xl:size-[1800px] [mask-image:radial-gradient(closest-side,black_35%,transparent_82%)]"
+    >
+      <div className="radar-rings absolute inset-0 rounded-full" />
+      <div className="radar-sweep absolute inset-0 rounded-full" />
+      {RADAR_NODES.map((node) => {
+        const rad = (node.angle * Math.PI) / 180;
+        const px = node.size * 4;
+        return (
+          <span
+            key={`${node.angle}-${node.radius}`}
+            className={cn(
+              "radar-node absolute rounded-full bg-brand",
+              node.blip && "radar-blip",
+            )}
+            style={{
+              width: px,
+              height: px,
+              left: `${50 + node.radius * Math.sin(rad)}%`,
+              top: `${50 - node.radius * Math.cos(rad)}%`,
+              transform: "translate(-50%, -50%)",
+              ...(node.blip && {
+                animationDelay: `${((node.angle / 360) * 7).toFixed(2)}s`,
+              }),
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
 
 function HeroVisual() {
   return (
@@ -185,6 +246,8 @@ const HERO_STATS = [
 
 export function LandingShowcase() {
   return (
+    <AboutUsProvider>
+    <LegalDialogProvider>
     <LandingShell>
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex w-full max-w-7xl items-center gap-8 px-6 py-4">
@@ -192,20 +255,16 @@ export function LandingShowcase() {
             <ScuupMark />
           </Link>
           <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
-            <a href="#pillars" className="transition-colors hover:text-foreground">
-              What we score
-            </a>
-            <a href="#how" className="transition-colors hover:text-foreground">
-              How it works
-            </a>
-            <a href="#compare" className="transition-colors hover:text-foreground">
-              Why Scuup
-            </a>
+            <LandingProductNav />
             <a href="#pricing" className="transition-colors hover:text-foreground">
               Pricing
             </a>
+            <AboutNavButton />
             <a href="#faq" className="transition-colors hover:text-foreground">
               FAQ
+            </a>
+            <a href="#contact" className="transition-colors hover:text-foreground">
+              Contact
             </a>
           </nav>
           <div className="ms-auto flex items-center gap-2">
@@ -217,7 +276,8 @@ export function LandingShowcase() {
       <main>
         {/* Hero */}
         <section className="landing-hero-glow landing-bg-dots landing-bg-grain relative overflow-hidden pb-20 pt-20 sm:pt-28">
-          <div className="mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
+          <HeroRadar />
+          <div className="relative mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
             <Badge
               variant="outline"
               className="gap-1.5 rounded-full border-primary/30 px-3 py-1 font-normal text-muted-foreground"
@@ -229,11 +289,11 @@ export function LandingShowcase() {
               Know where you stand{" "}
               <span className="text-gradient">in an instant</span>
             </h1>
-            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+            <p className="mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">
               Deep dives into casino, sports, retention and what players are
               really saying. You versus your competitors, from the market you
-              operate in. Scuup (like “scoop”) pinpoints where you&apos;re
-              losing players and shows you exactly how the leaders do it.
+              operate in. Scuup (like “scoop”) pinpoints where you lose
+              players and how the leaders win them.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Button
@@ -249,9 +309,9 @@ export function LandingShowcase() {
                 size="lg"
                 variant="outline"
                 nativeButton={false}
-                render={<Link href="#pillars" />}
+                render={<a href="#contact" />}
               >
-                See what we score
+                Contact us
               </Button>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">
@@ -281,7 +341,7 @@ export function LandingShowcase() {
 
         {/* Four pillars */}
         <section id="pillars" className="mx-auto w-full max-w-7xl px-6 py-20 sm:py-28">
-          <div className="mx-auto max-w-2xl text-center">
+          <LandingReveal className="mx-auto max-w-2xl text-center">
             <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
               The Player CX Score
             </p>
@@ -295,21 +355,20 @@ export function LandingShowcase() {
               pillars, each auditable down to the screen it was scored from,
               so the number holds up in front of a sceptical board.
             </p>
-          </div>
+          </LandingReveal>
           <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {PILLARS.map((p) => (
-              <div
-                key={p.title}
-                className="group flex flex-col gap-4 rounded-xl border bg-card/60 p-6 transition-colors hover:border-primary/40"
-              >
-                <span className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                  <p.icon className="size-5" />
-                </span>
-                <h3 className="font-heading text-lg font-semibold">{p.title}</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {p.description}
-                </p>
-              </div>
+            {PILLARS.map((p, i) => (
+              <LandingReveal key={p.title} delay={i * 70}>
+                <div className="group flex h-full flex-col gap-4 rounded-xl border bg-card/60 p-6 transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-[0_20px_50px_-32px_oklch(0.77_0.15_163/0.2)]">
+                  <span className="flex size-10 items-center justify-center rounded-lg bg-primary/12 text-primary">
+                    <p.icon className="size-5" />
+                  </span>
+                  <h3 className="font-heading text-lg font-semibold">{p.title}</h3>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {p.description}
+                  </p>
+                </div>
+              </LandingReveal>
             ))}
           </div>
         </section>
@@ -318,11 +377,12 @@ export function LandingShowcase() {
 
         <HowItWorks />
         <WhatWeMeasure />
+        <PillarSpotlights />
 
         {/* Comparison */}
         <section id="compare" className="border-y border-border bg-card/40 py-20 sm:py-28">
           <div className="mx-auto w-full max-w-7xl px-6">
-            <div className="max-w-2xl">
+            <LandingReveal className="max-w-2xl">
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
                 Why Scuup
               </p>
@@ -335,9 +395,9 @@ export function LandingShowcase() {
                 rakeback loop is. Scuup is purpose-built for operator
                 benchmarking.
               </p>
-            </div>
+            </LandingReveal>
 
-            <div className="mt-12 overflow-hidden rounded-xl border">
+            <LandingReveal delay={120} className="mt-12 overflow-hidden rounded-xl border">
               <div className="grid grid-cols-[1fr_1.2fr_1.2fr] gap-px bg-border text-sm sm:grid-cols-[220px_1fr_1fr]">
                 <div className="bg-card/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Capability
@@ -364,7 +424,7 @@ export function LandingShowcase() {
                   </Fragment>
                 ))}
               </div>
-            </div>
+            </LandingReveal>
           </div>
         </section>
 
@@ -377,7 +437,7 @@ export function LandingShowcase() {
         {/* Pricing */}
         <section id="pricing" className="border-t border-border bg-card/40 py-20 sm:py-28">
           <div className="mx-auto w-full max-w-7xl px-6">
-            <div className="mx-auto max-w-xl text-center">
+            <LandingReveal className="mx-auto max-w-xl text-center">
               <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
                 Pricing
               </p>
@@ -388,17 +448,17 @@ export function LandingShowcase() {
                 Free scores your brand once with no updates. Pro adds four
                 competitors on one live report. Pro Plus runs five.
               </p>
-            </div>
+            </LandingReveal>
 
             <div className="mx-auto mt-12 grid max-w-6xl gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-3">
-              {PRICING.map((plan) => (
-                <div
-                  key={plan.name}
-                  className={cn(
-                    "flex flex-col bg-background p-8",
-                    plan.highlight && "bg-primary/[0.05]"
-                  )}
-                >
+              {PRICING.map((plan, i) => (
+                <LandingReveal key={plan.name} delay={i * 90}>
+                  <div
+                    className={cn(
+                      "flex h-full flex-col bg-background p-8 transition-colors duration-300",
+                      plan.highlight && "bg-primary/[0.05]",
+                    )}
+                  >
                   <div className="flex items-baseline justify-between gap-2">
                     <h3 className="font-heading text-lg font-semibold">
                       {plan.name}
@@ -447,7 +507,8 @@ export function LandingShowcase() {
                       <ArrowUpRight data-icon="inline-end" />
                     ) : null}
                   </Button>
-                </div>
+                  </div>
+                </LandingReveal>
               ))}
             </div>
           </div>
@@ -455,9 +516,11 @@ export function LandingShowcase() {
 
         <LandingFaq />
 
+        <LandingContact />
+
         {/* Final CTA */}
         <section className="landing-hero-glow border-t border-border">
-          <div className="mx-auto flex w-full max-w-7xl flex-col items-center gap-6 px-6 py-24 text-center sm:py-32">
+          <LandingReveal className="mx-auto flex w-full max-w-7xl flex-col items-center gap-6 px-6 py-24 text-center sm:py-32">
             <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
               Stop guessing where
               <br /> you&apos;re losing players
@@ -475,26 +538,14 @@ export function LandingShowcase() {
               Run your free audit
               <ArrowRight data-icon="inline-end" />
             </Button>
-          </div>
+          </LandingReveal>
         </section>
       </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-6 py-10">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <ScuupMark />
-            <p className="text-sm text-muted-foreground">
-              Player CX intelligence for iGaming operators.
-            </p>
-          </div>
-          <Separator />
-          <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <ShieldCheck className="mt-0.5 size-4 shrink-0" />
-            Compliant market research. Scuup pauses at CAPTCHAs, KYC and
-            payment confirmation. No real money moves.
-          </p>
-        </div>
-      </footer>
+      <LandingFooter />
+      <CookieConsent />
     </LandingShell>
+    </LegalDialogProvider>
+    </AboutUsProvider>
   );
 }

@@ -26,6 +26,13 @@ export const PLAN_ACTIVE_PROJECT_LIMIT: Record<Plan, number> = {
   pro_plus: 5,
 };
 
+/** Team members (read-only viewers) that can be invited to each report. */
+export const PLAN_INVITE_LIMIT: Record<Plan, number> = {
+  free: 1,
+  pro: 5,
+  pro_plus: 15,
+};
+
 export const PRO_PRICE_MONTHLY = 79;
 export const PRO_PLUS_PRICE_MONTHLY = 349;
 

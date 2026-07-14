@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 import {
   ArrowRight,
-  Mail,
   Printer,
   Radio,
   ShieldAlert,
@@ -30,7 +30,16 @@ import {
 import { cn } from "@/lib/utils";
 import { ActionPlanView } from "@/components/action-plan-view";
 import { BrandMark } from "@/components/brand-mark";
+import { InviteTeamDialog } from "@/components/invite-team-dialog";
 import { ProjectShell } from "@/components/project-shell";
+import {
+  PresenceFacepile,
+  ReportCollabProvider,
+} from "@/components/report-collab";
+import {
+  SectionCommentsButton,
+  SectionCommentsThread,
+} from "@/components/section-comments";
 import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import { ScoreGauge } from "@/components/score-gauge";
@@ -87,21 +96,46 @@ function SectionHeading({
   index,
   title,
   description,
+  sectionId,
+  canModerate = false,
 }: {
   index: number;
   title: string;
   description?: string;
+  sectionId?: string;
+  canModerate?: boolean;
 }) {
+  const [commentsOpen, setCommentsOpen] = useState(false);
   return (
     <div className="flex flex-col gap-1.5 border-b pb-4">
-      <span className="font-heading text-xs font-semibold uppercase tracking-[0.2em] text-brand">
-        Section {String(index).padStart(2, "0")}
-      </span>
-      <h2 className="font-heading text-2xl font-semibold tracking-tight">
-        {title}
-      </h2>
-      {description ? (
-        <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
+      <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <span className="font-heading text-xs font-semibold uppercase tracking-[0.2em] text-brand">
+            Section {String(index).padStart(2, "0")}
+          </span>
+          <h2 className="font-heading text-2xl font-semibold tracking-tight">
+            {title}
+          </h2>
+          {description ? (
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {sectionId ? (
+          <SectionCommentsButton
+            sectionId={sectionId}
+            open={commentsOpen}
+            onToggle={() => setCommentsOpen((v) => !v)}
+          />
+        ) : null}
+      </div>
+      {sectionId && commentsOpen ? (
+        <SectionCommentsThread
+          sectionId={sectionId}
+          isOwner={canModerate}
+          className="mt-3"
+        />
       ) : null}
     </div>
   );
@@ -122,6 +156,7 @@ function BrandLabel({ brand }: { brand: Brand }) {
 }
 
 function ReportContent({ project }: { project: Project }) {
+  const isOwner = project.access !== "viewer";
   const areas = projectAreas(project);
   const coverage = getCoverage(project);
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
@@ -145,31 +180,14 @@ function ReportContent({ project }: { project: Project }) {
   return (
     <div className="report-document mx-auto flex w-full max-w-4xl flex-col gap-10">
       {/* Toolbar */}
-      <div className="flex items-center gap-2 print:hidden">
-        <span className="text-sm text-muted-foreground">
+      <div className="flex items-center gap-3 print:hidden">
+        <span className="hidden text-sm text-muted-foreground lg:inline">
           Every number in this report comes from a real analysed visit or
           recorded session.
         </span>
-        <div className="ms-auto flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            nativeButton={false}
-            render={
-              <a
-                href={`mailto:?subject=${encodeURIComponent(
-                  `${project.name} — Competitor CX report`
-                )}&body=${encodeURIComponent(
-                  `The latest competitor CX report for ${project.name}: ${
-                    typeof window !== "undefined" ? window.location.href : ""
-                  }`
-                )}`}
-              />
-            }
-          >
-            <Mail data-icon="inline-start" />
-            Send email
-          </Button>
+        <div className="ms-auto flex items-center gap-3">
+          <PresenceFacepile />
+          <InviteTeamDialog projectId={project.id} />
           <Button size="sm" onClick={() => window.print()}>
             <Printer data-icon="inline-start" />
             Export PDF
@@ -243,6 +261,8 @@ function ReportContent({ project }: { project: Project }) {
           index={1}
           title="Executive summary"
           description="What the analyst found across this cycle's real site visits."
+          sectionId="summary"
+          canModerate={isOwner}
         />
         <div className="grid gap-6 lg:grid-cols-[auto_1fr]">
           <Card>
@@ -311,6 +331,8 @@ function ReportContent({ project }: { project: Project }) {
           index={2}
           title="Competitor ranking"
           description="Overall score is the average of four pillars: journey scores, the retention read, voice of customer (Trustpilot, rescaled to 100), and the design review. N/A means not observed — never estimated."
+          sectionId="ranking"
+          canModerate={isOwner}
         />
         <Card>
           <CardContent>
@@ -390,6 +412,8 @@ function ReportContent({ project }: { project: Project }) {
           index={3}
           title="Findings by area"
           description="Per-area summaries and the concrete observations behind each score."
+          sectionId="findings"
+          canModerate={isOwner}
         />
         {analysedAreas.length === 0 ? (
           <Card>
@@ -485,6 +509,8 @@ function ReportContent({ project }: { project: Project }) {
             index={4}
             title="Feature matrix"
             description="Every feature the analyst saw on screen, side by side. Each cell is backed by a screenshot in the app — nothing here is inferred from marketing pages."
+            sectionId="features"
+            canModerate={isOwner}
           />
           <Card>
             <CardContent className="pt-6">
@@ -581,6 +607,8 @@ function ReportContent({ project }: { project: Project }) {
             index={5}
             title="Voice of customer"
             description="What real players say in public reviews — and where that confirms or contradicts what we measured on the site."
+            sectionId="voc"
+            canModerate={isOwner}
           />
           {project.brands
             .filter((b) => b.voc)
@@ -684,6 +712,8 @@ function ReportContent({ project }: { project: Project }) {
             index={6}
             title="Design review"
             description="What each site is built with, its real colour palette, and whether the design craft holds up — measured from the live rendered code."
+            sectionId="design"
+            canModerate={isOwner}
           />
           {project.brands
             .filter((b) => b.design)
@@ -771,6 +801,8 @@ function ReportContent({ project }: { project: Project }) {
           index={7}
           title="Action plan"
           description="Prioritised roadmap synthesised from every finding in this report — each action cites the evidence behind it."
+          sectionId="action-plan"
+          canModerate={isOwner}
         />
         {project.actionPlan ? (
           <ActionPlanView plan={project.actionPlan} />
@@ -801,6 +833,8 @@ function ReportContent({ project }: { project: Project }) {
           index={8}
           title="Data coverage & next steps"
           description="What this edition could and couldn't observe, and exactly how the next edition gets sharper."
+          sectionId="coverage"
+          canModerate={isOwner}
         />
         <Card>
           <CardContent className="flex flex-col gap-6 py-6">
@@ -884,7 +918,11 @@ export default function ReportPage() {
   const params = useParams<{ id: string }>();
   return (
     <ProjectShell projectId={params.id}>
-      {(project) => <ReportContent project={project} />}
+      {(project) => (
+        <ReportCollabProvider projectId={project.id}>
+          <ReportContent project={project} />
+        </ReportCollabProvider>
+      )}
     </ProjectShell>
   );
 }

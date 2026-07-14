@@ -107,13 +107,18 @@ function assemble(
 
 export async function listProjects(userId: string): Promise<Project[]> {
   const db = supabase();
-  const [projects, brands, analyses, sessions, plans, vocs, designs] =
+  const [projects, shared, brands, analyses, sessions, plans, vocs, designs] =
     await Promise.all([
       db
         .from("ps_projects")
         .select("*")
         .eq("user_id", userId)
         .order("created_at", { ascending: false }),
+      db
+        .from("ps_project_members")
+        .select("project_id")
+        .eq("user_id", userId)
+        .eq("status", "active"),
       db.from("ps_brands").select("*"),
       db.from("ps_analyses").select("brand_id, area, data"),
       db.from("ps_sessions").select("id, project_id, data").order("created_at", { ascending: false }),
@@ -121,17 +126,34 @@ export async function listProjects(userId: string): Promise<Project[]> {
       db.from("ps_voc").select("brand_id, data"),
       db.from("ps_design").select("brand_id, data"),
     ]);
-  for (const res of [projects, brands, analyses, sessions, plans, vocs, designs]) {
+  for (const res of [projects, shared, brands, analyses, sessions, plans, vocs, designs]) {
     if (res.error) throw new Error(res.error.message);
   }
+
+  // Reports shared with this account as a read-only viewer.
+  const ownRows = (projects.data ?? []) as ProjectRow[];
+  const sharedIds = ((shared.data ?? []) as { project_id: string }[])
+    .map((r) => r.project_id)
+    .filter((id) => !ownRows.some((p) => p.id === id));
+  let sharedRows: ProjectRow[] = [];
+  if (sharedIds.length > 0) {
+    const { data, error } = await db
+      .from("ps_projects")
+      .select("*")
+      .in("id", sharedIds)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    sharedRows = (data ?? []) as ProjectRow[];
+  }
+
   const brandRows = (brands.data ?? []) as BrandRow[];
   const analysisRows = (analyses.data ?? []) as AnalysisRow[];
   const sessionRows = (sessions.data ?? []) as SessionRow[];
   const planRows = (plans.data ?? []) as ActionPlanRow[];
   const vocRows = (vocs.data ?? []) as VocRow[];
   const designRows = (designs.data ?? []) as DesignRow[];
-  return ((projects.data ?? []) as ProjectRow[]).map((p) =>
-    assemble(
+  const build = (p: ProjectRow, access: "owner" | "viewer") => ({
+    ...assemble(
       p,
       brandRows.filter((b) => b.project_id === p.id),
       analysisRows.filter((a) =>
@@ -145,8 +167,13 @@ export async function listProjects(userId: string): Promise<Project[]> {
       designRows.filter((d) =>
         brandRows.some((b) => b.id === d.brand_id && b.project_id === p.id)
       )
-    )
-  );
+    ),
+    access,
+  });
+  return [
+    ...ownRows.map((p) => build(p, "owner" as const)),
+    ...sharedRows.map((p) => build(p, "viewer" as const)),
+  ];
 }
 
 /** Load one project with full brand data — server-side only. */

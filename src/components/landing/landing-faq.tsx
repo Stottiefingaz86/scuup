@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ChevronDown, ShieldCheck } from "lucide-react";
+import { LandingReveal } from "@/components/landing/landing-reveal";
 import { cn } from "@/lib/utils";
 
 const FAQ_ITEMS = [
@@ -94,7 +95,7 @@ export function LandingFaq() {
     <section id="faq" className="border-t border-border bg-card/40 py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
         <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] lg:gap-16">
-          <div className="max-w-md">
+          <LandingReveal className="max-w-md">
             <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
               FAQ
             </p>
@@ -112,20 +113,22 @@ export function LandingFaq() {
                 for prioritising product work, not replacing your judgment.
               </p>
             </div>
-          </div>
+          </LandingReveal>
 
-          <div className="rounded-xl border border-border bg-background px-5 sm:px-6">
-            {FAQ_ITEMS.map((item) => (
-              <FaqItem
-                key={item.id}
-                item={item}
-                open={openId === item.id}
-                onToggle={() =>
-                  setOpenId((prev) => (prev === item.id ? null : item.id))
-                }
-              />
-            ))}
-          </div>
+          <LandingReveal delay={120}>
+            <div className="rounded-xl border border-border bg-background px-5 sm:px-6">
+              {FAQ_ITEMS.map((item) => (
+                <FaqItem
+                  key={item.id}
+                  item={item}
+                  open={openId === item.id}
+                  onToggle={() =>
+                    setOpenId((prev) => (prev === item.id ? null : item.id))
+                  }
+                />
+              ))}
+            </div>
+          </LandingReveal>
         </div>
       </div>
     </section>

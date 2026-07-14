@@ -358,6 +358,9 @@ export interface Project {
   status: "draft" | "analyzing" | "complete" | "archived";
   createdAt: string;
   analysedAt?: string;
+  /** How the signed-in account relates to this report. Owners run and
+   * manage it; viewers were invited and can only read the report. */
+  access?: "owner" | "viewer";
 }
 
 /* ---- Derived score helpers (single source of truth for all pages) ---- */
