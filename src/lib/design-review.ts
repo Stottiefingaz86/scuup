@@ -17,6 +17,7 @@ import {
   pickDesignScreenshot,
   type DesignReviewShot,
 } from "./design-shots";
+import { PLAIN_PROSE_RULE, sanitizeDesignReview } from "./prose";
 import type { Brand, DesignReview, Project } from "./types";
 
 /**
@@ -354,7 +355,7 @@ export async function extractDesignSignals(
     >;
     if (!raw || !raw.palette?.length) {
       throw new Error(
-        `Couldn't read the rendered page for ${brandUrl} — the site never painted real content.`
+        `Couldn't read the rendered page for ${brandUrl}. The site never painted real content.`
       );
     }
     return { ...raw, finalUrl: page.url() };
@@ -579,7 +580,9 @@ RULES:
 MEASURED CODE SIGNALS:
 ${signalsBlock(signals)}
 
-JOURNEY SCREENSHOTS (exact order, area key → label): ${shots.map((s, i) => `[${i}] ${s.area} (${ANALYSIS_AREA_LABELS[s.area] ?? s.area})`).join(", ") || "none captured yet — judge visual craft from the live homepage signals only and say so in the summary"}`;
+JOURNEY SCREENSHOTS (exact order, area key → label): ${shots.map((s, i) => `[${i}] ${s.area} (${ANALYSIS_AREA_LABELS[s.area] ?? s.area})`).join(", ") || "none captured yet, judge visual craft from the live homepage signals only and say so in the summary"}
+
+${PLAIN_PROSE_RULE}`;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -648,11 +651,11 @@ JOURNEY SCREENSHOTS (exact order, area key → label): ${shots.map((s, i) => `[$
       0.3 * parsed.accessibility.score
   );
 
-  return {
+  return sanitizeDesignReview({
     ...parsed,
     journeyNotes,
     reviewedScreens,
     score,
     fetchedAt: new Date().toISOString(),
-  };
+  });
 }

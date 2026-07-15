@@ -154,7 +154,7 @@ function LoginForm() {
     try {
       await fetch("/api/auth/verification", { method: "POST" });
     } catch {
-      // Non-blocking — user can resend from the dashboard banner.
+      // Non-blocking, user can resend from the dashboard banner.
     }
   }
 
@@ -179,14 +179,14 @@ function LoginForm() {
             .includes("already registered");
           if (exists) {
             throw new Error(
-              "That email already has an account — log in instead."
+              "That email already has an account, log in instead."
             );
           }
           throw signUpError;
         }
         if (!data.session) {
           throw new Error(
-            "Account created — check your email to confirm, then log in."
+            "Account created, check your email to confirm, then log in."
           );
         }
         await sendVerificationEmail();

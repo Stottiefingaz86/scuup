@@ -10,7 +10,7 @@ import {
 /**
  * Score pill for matrices and tables.
  * `muted` renders a neutral pill (competitor cells) that reveals its tier
- * colour on hover — colour at rest is reserved for the reader's own brand.
+ * colour on hover, colour at rest is reserved for the reader's own brand.
  * `null` renders an N/A pill: the agent was blocked before it could score.
  */
 export function ScoreChip({
@@ -29,7 +29,7 @@ export function ScoreChip({
           "inline-flex min-w-9 items-center justify-center rounded-md border border-dashed border-border px-1.5 py-0.5 font-heading text-xs font-medium text-muted-foreground/60",
           className
         )}
-        title="A bot wall blocked the agent from completing this flow — other journeys use saved account credentials"
+        title="A bot wall blocked the agent from completing this flow, other journeys use saved account credentials"
       >
         N/A
       </span>

@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
   if (brandId && (await brandProjectArchived(brandId).catch(() => false))) {
     return NextResponse.json(
-      { error: "This report is archived — reactivate it to run updates." },
+      { error: "This report is archived. Reactivate it to run updates." },
       { status: 409 }
     );
   }

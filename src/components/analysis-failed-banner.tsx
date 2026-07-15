@@ -12,7 +12,7 @@ export function AnalysisFailedBanner() {
       <CircleAlert />
       <AlertTitle>Analysis didn&apos;t complete</AlertTitle>
       <AlertDescription>
-        Every journey visit failed — usually a Browserbase session limit or
+        Every journey visit failed, usually a Browserbase session limit or
         connectivity issue. Fix the underlying problem, then run analysis
         again from Journeys.
       </AlertDescription>

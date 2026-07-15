@@ -35,24 +35,32 @@ interface FeatureWithEvidence extends DetectedFeature {
  * until the journey is re-run. */
 function extractedFeatures(analysis: JourneyAnalysis): FeatureWithEvidence[] {
   if (!analysis.features?.length) return [];
-  return analysis.features.map((f) => {
+  return analysis.features.flatMap((f) => {
     const area = f.area ?? analysis.area;
     const screenshot =
       f.shot != null ? (analysis.screenshots?.[f.shot] ?? null) : null;
-    return {
-      ...f,
-      source: "extracted" as const,
-      area,
-      cellEvidence: {
-        status: f.status,
-        note: f.note,
+    // "hidden"/"no" without a screenshot means the model didn't actually
+    // see it — that's "not seen" (—), not a provable absence. Drop it so
+    // every negative cell in the matrix has visual proof behind it.
+    if ((f.status === "hidden" || f.status === "no") && !screenshot) {
+      return [];
+    }
+    return [
+      {
+        ...f,
+        source: "extracted" as const,
         area,
-        // Prefer what the visit actually was; fall back to the journey type
-        // for analyses recorded before per-visit tracking existed.
-        loggedIn: analysis.loggedIn ?? journeyRequiresLogin(area),
-        screenshot,
+        cellEvidence: {
+          status: f.status,
+          note: f.note,
+          area,
+          // Prefer what the visit actually was; fall back to the journey type
+          // for analyses recorded before per-visit tracking existed.
+          loggedIn: analysis.loggedIn ?? journeyRequiresLogin(area),
+          screenshot,
+        },
       },
-    };
+    ];
   });
 }
 

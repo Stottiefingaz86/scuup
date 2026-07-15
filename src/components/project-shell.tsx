@@ -67,7 +67,7 @@ function ArchivedBanner({ project }: { project: Project }) {
       <p className="min-w-0 flex-1 text-sm">
         <span className="font-medium">This report is archived.</span>{" "}
         <span className="text-muted-foreground">
-          It&apos;s paused — no agent runs, score updates or new evidence
+          It&apos;s paused, no agent runs, score updates or new evidence
           until you reactivate it.
         </span>
       </p>
@@ -125,7 +125,7 @@ const NAV_GROUPS = [
   },
 ];
 
-/** Which pillar score each nav slug reports — the reader's own brand,
+/** Which pillar score each nav slug reports, the reader's own brand,
  * mirroring the numbers on the overview card. */
 const SLUG_PILLAR: Record<string, ScorePillar["key"]> = {
   journeys: "journeys",
@@ -160,7 +160,7 @@ export function ProjectShell({
   const currentSlug = pathname.split("/").pop() ?? "overview";
   const isViewer = project != null && project.access === "viewer";
 
-  // Invited teammates only get the report — bounce them off other pages.
+  // Invited teammates only get the report, bounce them off other pages.
   useEffect(() => {
     if (isViewer && currentSlug !== "report") {
       router.replace(`/projects/${projectId}/report`);
@@ -270,7 +270,7 @@ export function ProjectShell({
                                   : tierTextClass(score)
                               )}
                             >
-                              {score ?? "—"}
+                              {score ?? "N/A"}
                             </span>
                           ) : null}
                         </SidebarMenuButton>

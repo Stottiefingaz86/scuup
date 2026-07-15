@@ -55,7 +55,7 @@ function DashboardRedirect() {
   );
 }
 
-/** Legacy entry — immediately forwards to the user's project overview. */
+/** Legacy entry, immediately forwards to the user's project overview. */
 export default function DashboardPage() {
   return (
     <Suspense

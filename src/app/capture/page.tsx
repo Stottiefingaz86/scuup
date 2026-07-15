@@ -33,17 +33,17 @@ interface FeedItem {
 /** Fallback recorder feed when no live remote browser is available (e.g. no
  * Browserbase key configured). */
 const FEED_SCRIPT: FeedItem[] = [
-  { at: 3, icon: MonitorPlay, label: "Remote browser attached — capturing" },
-  { at: 8, icon: Route, label: "Screen captured — Home" },
+  { at: 3, icon: MonitorPlay, label: "Remote browser attached, capturing" },
+  { at: 8, icon: Route, label: "Screen captured, Home" },
   { at: 15, icon: Route, label: "Navigated to Cashier" },
   { at: 22, icon: Coins, label: "Deposit £50 detected", tone: "money" },
   { at: 29, icon: Clock, label: "Deposit credited in 6s" },
-  { at: 38, icon: Coins, label: "Bet placed — £2.50 stake", tone: "money" },
-  { at: 47, icon: Coins, label: "Bet placed — £5.00 stake", tone: "money" },
+  { at: 38, icon: Coins, label: "Bet placed, £2.50 stake", tone: "money" },
+  { at: 47, icon: Coins, label: "Bet placed, £5.00 stake", tone: "money" },
   { at: 56, icon: Gift, label: "Rakeback credit detected +£0.21", tone: "reward" },
-  { at: 68, icon: Route, label: "Screen captured — Rewards hub" },
+  { at: 68, icon: Route, label: "Screen captured, Rewards hub" },
   { at: 79, icon: Gift, label: "Level progress +40 XP", tone: "reward" },
-  { at: 92, icon: Coins, label: "Bet placed — £2.50 stake", tone: "money" },
+  { at: 92, icon: Coins, label: "Bet placed, £2.50 stake", tone: "money" },
   { at: 104, icon: Gift, label: "Rakeback credit detected +£0.18", tone: "reward" },
 ];
 
@@ -71,7 +71,7 @@ function eventText(e: WireEvent): string {
 }
 
 /** What the platform needs from this session. Each goal only ticks when the
- * recorder detects genuinely matching activity — never on a timer or a
+ * recorder detects genuinely matching activity, never on a timer or a
  * generic event count. An untucked goal is honest: we didn't observe it. */
 const SESSION_GOALS: {
   label: string;
@@ -152,7 +152,7 @@ function SimulatedSite({ name }: { name: string }) {
         ))}
       </div>
       <span className="text-[11px] text-muted-foreground/50">
-        No live browser available — showing a simulation. Add a Browserbase
+        No live browser available, showing a simulation. Add a Browserbase
         key to stream the real site here.
       </span>
     </div>
@@ -195,7 +195,7 @@ function CaptureContent() {
   }, [elapsed, mode, liveEvents]);
 
   useEffect(() => {
-    document.title = `Recording ${name} — Scuup`;
+    document.title = `Recording ${name} | Scuup`;
     const interval = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(interval);
   }, [name]);
@@ -206,7 +206,7 @@ function CaptureContent() {
   };
 
   // Kick off a real remote-browser session; fall back to simulation on
-  // error. While live, poll the observation endpoint — each tick reports
+  // error. While live, poll the observation endpoint, each tick reports
   // navigations, money deltas and (periodically) a persisted screenshot.
   useEffect(() => {
     if (startedRef.current || !url) return;
@@ -230,7 +230,7 @@ function CaptureContent() {
             wantShot: n % 3 === 1,
           }),
         });
-        if (res.status === 410) return; // session released — stop polling
+        if (res.status === 410) return; // session released, stop polling
         if (res.ok) {
           const data = (await res.json()) as {
             url: string;
@@ -255,7 +255,7 @@ function CaptureContent() {
           balancesRef.current = data.balances;
         }
       } catch {
-        // Transient network error — try again next tick.
+        // Transient network error, try again next tick.
       }
       if (!cancelled && !endedRef.current) {
         timer = setTimeout(() => void tick(n + 1), 4000);
@@ -392,7 +392,7 @@ function CaptureContent() {
     window.close();
   };
 
-  // Closing the window with the X still saves the recorded session — but it
+  // Closing the window with the X still saves the recorded session, but it
   // can't wait for scoring, so that path skips analysis (use End & save for
   // scores).
   useEffect(() => {
@@ -450,7 +450,7 @@ function CaptureContent() {
                 Scoring your session…
               </span>
               <span className="max-w-sm text-center text-xs leading-relaxed text-muted-foreground">
-                The analyst is turning what you just did into journey scores —
+                The analyst is turning what you just did into journey scores,
                 every area you visited gets rated with the screenshots as
                 evidence. This can take a minute; the window closes itself
                 when done.
@@ -463,7 +463,7 @@ function CaptureContent() {
                 Attaching secure remote browser…
               </span>
               <span className="text-xs text-muted-foreground">
-                {name} loads in an isolated session — nothing runs on your
+                {name} loads in an isolated session, nothing runs on your
                 machine.
               </span>
             </div>
@@ -531,7 +531,7 @@ function CaptureContent() {
           })}
           <span className="text-[11px] leading-relaxed text-muted-foreground/60">
             These fill this brand&apos;s data gaps. A goal only ticks when the
-            recorder detects that specific activity — unticked means we
+            recorder detects that specific activity, unticked means we
             didn&apos;t observe it.
           </span>
         </div>
@@ -540,7 +540,7 @@ function CaptureContent() {
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3.5">
           {feed.length === 0 ? (
             <span className="py-1 text-xs text-muted-foreground">
-              Waiting for activity — play as a normal customer…
+              Waiting for activity, play as a normal customer…
             </span>
           ) : (
             feed.map((event, i) => {

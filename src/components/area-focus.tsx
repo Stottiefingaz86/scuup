@@ -27,7 +27,7 @@ import { areaScore, type Brand, type Project } from "@/lib/types";
 /**
  * Focused view of one or more analysis areas (e.g. Retention = loyalty
  * rewards, Cashier = deposit + withdraw). Renders a ranking per area and a
- * per-brand deep dive — 100% real analyses, with launch CTAs for gaps.
+ * per-brand deep dive, 100% real analyses, with launch CTAs for gaps.
  */
 export function AreaFocus({
   project,

@@ -125,7 +125,7 @@ function brand(
 export function landingDemoProject(): Project {
   return {
     id: LANDING_DEMO_PROJECT_ID,
-    name: "Winna — Canada (rest)",
+    name: "Winna | Canada (rest)",
     market: "Canada (rest / crypto)",
     products: ["Casino", "Sports", "Rewards"],
     journeys: ["casino", "sports_betslip", "signup", "loyalty_rewards"],

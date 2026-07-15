@@ -49,7 +49,7 @@ export function AccountMenuContent({
 
   return (
     <DropdownMenuContent align={align} className="w-56">
-      {/* Base UI requires GroupLabel to live inside a Group — a bare label
+      {/* Base UI requires GroupLabel to live inside a Group, a bare label
        * throws MenuGroupContext-missing and crashes the whole page. */}
       <DropdownMenuGroup>
         <DropdownMenuLabel className="p-0 font-normal">

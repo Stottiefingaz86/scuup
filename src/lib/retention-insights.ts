@@ -3,6 +3,7 @@ import type {
   JourneyAnalysis,
   RetentionMechanicNote,
 } from "./types";
+import { sanitizeProse } from "./prose";
 import {
   applyRetentionGates,
   canAdviseOnMechanic,
@@ -97,7 +98,7 @@ function fallbackNote(
     note:
       score !== null
         ? excerpt ||
-          "Score from loyalty visit — re-run the agent for per-mechanic evidence notes."
+          "Score from loyalty visit. Re-run the agent for per-mechanic evidence notes."
         : "Not scored on this visit.",
     shot: firstShot(analysis),
     improve:
@@ -152,9 +153,11 @@ export function buildMechanicInsights(
         ? { name: best.name, score: best.score }
         : null,
       gap,
-      note: detail.note,
-      improve: detail.improve,
-      competitorNote: competitorDetail?.note ?? null,
+      note: sanitizeProse(detail.note),
+      improve: sanitizeProse(detail.improve),
+      competitorNote: competitorDetail?.note
+        ? sanitizeProse(competitorDetail.note)
+        : null,
       shot,
       screenshotUrl,
       canAdvise,

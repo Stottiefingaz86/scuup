@@ -61,7 +61,7 @@ function LevelDots({
 }: {
   label: string;
   level: RecommendationLevel;
-  /** For effort, low is good — fill dots by cost, not by merit. */
+  /** For effort, low is good, fill dots by cost, not by merit. */
   invert?: boolean;
 }) {
   const filled = level === "high" ? 3 : level === "medium" ? 2 : 1;
@@ -131,7 +131,7 @@ function PriorityMatrix({
       <CardHeader>
         <CardTitle>Prioritisation matrix</CardTitle>
         <CardDescription>
-          Impact vs effort for every action. Top-left is the quick-win zone —
+          Impact vs effort for every action. Top-left is the quick-win zone,
           numbers match the lists below.
         </CardDescription>
         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1.5">

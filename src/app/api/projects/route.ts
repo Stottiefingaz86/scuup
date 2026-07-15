@@ -17,6 +17,7 @@ import {
   insertProject,
   listProjects,
 } from "@/lib/project-db";
+import { sanitizeProject } from "@/lib/prose";
 import type { Project } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -33,7 +34,7 @@ function errorResponse(e: unknown, fallback: string) {
 export async function GET() {
   try {
     const user = await requireUser();
-    const projects = await listProjects(user.id);
+    const projects = (await listProjects(user.id)).map(sanitizeProject);
     return NextResponse.json({ projects });
   } catch (e) {
     console.error("[projects] list failed:", e);
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
         {
           error:
             activeLimit === 1
-              ? `"${active?.name ?? "Your report"}" is still active. Archive it to start a new one — your plan includes one live report.`
+              ? `"${active?.name ?? "Your report"}" is still active. Archive it to start a new one. Your plan includes one live report.`
               : `You have ${activeCount} active reports (limit ${activeLimit}). Archive one to start another.`,
           code: "active_report_exists",
           activeProjectId: active?.id ?? null,

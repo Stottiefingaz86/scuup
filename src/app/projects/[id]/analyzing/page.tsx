@@ -52,7 +52,7 @@ type JobState =
 /** Browserbase free plan allows 3 concurrent sessions. */
 const MAX_CONCURRENT = 3;
 
-/** Browserbase also burst-limits session creation to 5 per minute — space
+/** Browserbase also burst-limits session creation to 5 per minute, space
  * out job starts so a batch launch (or fast-failing jobs) can't trip it. */
 const MIN_START_GAP_MS = 14000;
 
@@ -222,7 +222,7 @@ export default function AnalyzingPage() {
       let successCount = 0;
       let quotaExhausted = false;
       const quotaMessage =
-        "Browser session quota exhausted — upgrade Browserbase or wait for the monthly reset.";
+        "Browser session quota exhausted, upgrade Browserbase or wait for the monthly reset.";
 
       let nextStartAt = 0;
       const runQueue = async (queue: { brand: Brand; area: string }[]) => {
@@ -289,7 +289,7 @@ export default function AnalyzingPage() {
       ];
 
       // Per-brand pipeline: VoC and Design start as soon as *this* brand's
-      // journeys finish — not after every competitor clears the queue.
+      // journeys finish, not after every competitor clears the queue.
       await runQueue(brands.flatMap(buildBrandJobs));
       if (cancelled || finishedRef.current || !getProject(projectId)) return;
       finishedRef.current = true;
@@ -374,8 +374,8 @@ export default function AnalyzingPage() {
           <CardDescription>
             {project
               ? allSettled && !hasResults
-                ? `${project.name} — every journey visit failed. You'll be sent back to overview shortly.`
-                : `${project.name} — real browsers walk each brand's journeys, then scrape public reviews and measure the live code for Voice of Customer and Design as soon as that brand finishes.`
+                ? `${project.name}, every journey visit failed. You'll be sent back to overview shortly.`
+                : `${project.name}, real browsers walk each brand's journeys, then scrape public reviews and measure the live code for Voice of Customer and Design as soon as that brand finishes.`
               : "Loading project…"}
           </CardDescription>
         </CardHeader>
@@ -407,7 +407,7 @@ export default function AnalyzingPage() {
           <div className="flex flex-col gap-2">
             <Progress value={progress} />
             <span className="text-sm text-muted-foreground tabular-nums">
-              {settled} of {totalJobs} checks complete — {progress}%
+              {settled} of {totalJobs} checks complete, {progress}%
             </span>
           </div>
 
@@ -480,7 +480,7 @@ export default function AnalyzingPage() {
             <div className="flex flex-col items-center gap-2 border-t pt-4 sm:flex-row sm:justify-center">
               {isRunning ? (
                 <p className="text-center text-sm text-muted-foreground sm:flex-1 sm:text-left">
-                  Analysis still running — you can leave and come back later.
+                  Analysis still running, you can leave and come back later.
                 </p>
               ) : null}
               <div className="flex w-full flex-wrap justify-center gap-2 sm:w-auto">

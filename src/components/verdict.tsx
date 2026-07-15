@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 /** Verdict-first summary: the first sentence carries the judgement, the rest
- * is supporting detail — render them with different visual weight. */
+ * is supporting detail, render them with different visual weight. */
 export function Verdict({
   text,
   className,

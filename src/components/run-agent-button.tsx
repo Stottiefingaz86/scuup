@@ -53,7 +53,7 @@ export function RunAgentButton({
       ) : (
         <Bot className="size-3.5" />
       )}
-      {isRunning ? "Agent running…" : failed ? "Failed — retry" : label}
+      {isRunning ? "Agent running…" : failed ? "Failed, retry" : label}
     </Button>
   );
 }

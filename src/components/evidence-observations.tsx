@@ -150,7 +150,7 @@ export function EvidenceObservations({
       >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Evidence — {brandName}</DialogTitle>
+            <DialogTitle>Evidence: {brandName}</DialogTitle>
             <DialogDescription>{open?.text}</DialogDescription>
           </DialogHeader>
           {openSrc ? (

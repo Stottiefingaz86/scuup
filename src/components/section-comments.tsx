@@ -9,7 +9,7 @@ import { colorForUser, timeAgo } from "@/lib/collab";
 import { useReportCollab } from "@/components/report-collab";
 import { cn } from "@/lib/utils";
 
-/** Toggle for a section heading — shows the comment count and expands the
+/** Toggle for a section heading, shows the comment count and expands the
  * thread inline. Hidden in print. */
 export function SectionCommentsButton({
   sectionId,
@@ -72,7 +72,7 @@ export function SectionCommentsThread({
     >
       {thread.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          No comments on this section yet — start the discussion.
+          No comments on this section yet, start the discussion.
         </p>
       ) : (
         <div className="flex flex-col gap-3">

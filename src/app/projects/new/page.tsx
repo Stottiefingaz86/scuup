@@ -211,7 +211,7 @@ function MarketPicker({
     (a) => a.blocked.length > 0 || a.available.length > 0
   );
 
-  /** Brands known to geo-block a market — the decision-relevant signal. */
+  /** Brands known to geo-block a market, the decision-relevant signal. */
   const blockedIn = (label: string): PickerBrand[] =>
     brands.filter((b) => availability[b.url]?.blocked.includes(label));
 
@@ -321,7 +321,7 @@ function MarketPicker({
         })}
         {matches.length === 0 ? (
           <p className="py-2 text-sm text-muted-foreground">
-            No market matches &quot;{query}&quot; — pick Global (US routing) or
+            No market matches &quot;{query}&quot;, pick Global (US routing) or
             the closest country.
           </p>
         ) : null}
@@ -336,7 +336,7 @@ function MarketPicker({
         <p className="text-xs text-muted-foreground">
           A brand&apos;s icon means it geo-blocks that market.{" "}
           <span className="text-brand">All brands</span> means every brand you
-          entered serves it — Stake and Rainbet block Canada and all US routes;
+          entered serves it, Stake and Rainbet block Canada and all US routes;
           Winna and offshore books like BetOnline need different markets.
         </p>
       ) : null}
@@ -346,7 +346,7 @@ function MarketPicker({
           <Check className="mt-0.5 size-4 shrink-0 text-brand" />
           <span>
             Every brand you entered serves{" "}
-            <span className="font-medium text-foreground">{market}</span> — good
+            <span className="font-medium text-foreground">{market}</span>, good
             pick for a side-by-side audit.
           </span>
         </p>
@@ -360,7 +360,7 @@ function MarketPicker({
               {selectedBlocked.map((b) => b.name).join(" and ")}
             </span>{" "}
             geo-block{selectedBlocked.length === 1 ? "s" : ""} players in{" "}
-            {market} — those audits will come back blocked. Pick a market every
+            {market}, those audits will come back blocked. Pick a market every
             brand serves, or continue if this market is what you compete in.
           </span>
         </p>
@@ -370,15 +370,15 @@ function MarketPicker({
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand" />
         <span>
           {selectedOption && !selectedOption.geo
-            ? "No routing — sessions browse from our datacenter. Fine for brands that serve one worldwide experience."
-            : `Stake and Rainbet block Canada and all US routes — pick Finland, Brazil or Japan for crypto brands, or US (rest / offshore) for BetOnline-class books.`}
+            ? "No routing, sessions browse from our datacenter. Fine for brands that serve one worldwide experience."
+            : `Stake and Rainbet block Canada and all US routes, pick Finland, Brazil or Japan for crypto brands, or US (rest / offshore) for BetOnline-class books.`}
         </span>
       </p>
     </div>
   );
 }
 
-/** Compact Pro pitch shown on the free launch step — sells, never blocks. */
+/** Compact Pro pitch shown on the free launch step, sells, never blocks. */
 function ProUpsellCard() {
   return (
     <div className="mt-6 flex flex-col gap-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-5">
@@ -413,7 +413,7 @@ function ProUpsellCard() {
   );
 }
 
-/** Free accounts get one report — say so before they fill anything out. */
+/** Free accounts get one report, say so before they fill anything out. */
 function LimitReachedScreen() {
   return (
     <div className="flex w-full max-w-lg flex-col gap-6 duration-500 animate-in fade-in slide-in-from-bottom-6">
@@ -422,7 +422,7 @@ function LimitReachedScreen() {
           You&apos;ve used your free audit
         </h1>
         <p className="text-muted-foreground">
-          Free accounts score your brand once — no competitors and no re-runs.
+          Free accounts score your brand once, no competitors and no re-runs.
           Upgrade to Pro for four competitors and logged-in journeys, or Pro
           Plus for five parallel reports.
         </p>
@@ -665,7 +665,7 @@ export default function NewProjectPage() {
         const brandName = brandNameFromUrl(ownBrandUrl.trim());
         const project = await createProject(
           {
-            name: `${brandName} — ${market}`,
+            name: `${brandName}: ${market}`,
             ownBrandName: brandName,
             ownBrandUrl: ownBrandUrl.trim(),
             competitors: validCompetitors.map((url) => ({
@@ -807,8 +807,8 @@ export default function NewProjectPage() {
                 </h1>
                 <p className="text-muted-foreground">
                   Plans currently include one active report at a time.
-                  Archiving pauses your current report — no more agent runs or
-                  score updates — but everything captured stays readable and
+                  Archiving pauses your current report, no more agent runs or
+                  score updates, but everything captured stays readable and
                   you can reactivate it later.
                 </p>
               </div>
@@ -882,8 +882,8 @@ export default function NewProjectPage() {
             question="Where do your players play?"
             hint={
               isPaidPlan(plan)
-                ? "Your brand's URL — the experience everything gets benchmarked against."
-                : "Your brand's URL. Free scores first impression, casino and sports — your brand only, one time."
+                ? "Your brand's URL, the experience everything gets benchmarked against."
+                : "Your brand's URL. Free scores first impression, casino and sports, your brand only, one time."
             }
           >
             <BigInput
@@ -938,7 +938,7 @@ export default function NewProjectPage() {
           <StepShell
             index={stepIndex}
             question="Which market are we auditing?"
-            hint="Sessions browse from this location through residential routing — no VPN needed. Offers, payment methods and geo-gates match what a real local player sees."
+            hint="Sessions browse from this location through residential routing, no VPN needed. Offers, payment methods and geo-gates match what a real local player sees."
           >
             <MarketPicker
               market={market}
@@ -964,7 +964,7 @@ export default function NewProjectPage() {
             hint={
               isPaidPlan(plan)
                 ? "We'll weight the analysis toward the products you actually compete on."
-                : "Your free audit walks the casino lobby and the sports betslip — pick what applies."
+                : "Your free audit walks the casino lobby and the sports betslip, pick what applies."
             }
           >
             <div className="flex flex-wrap gap-2">
@@ -995,7 +995,7 @@ export default function NewProjectPage() {
                     className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border px-4 py-2 font-heading text-sm text-muted-foreground/60"
                   >
                     <Lock className="size-3" />
-                    {p} — Pro
+                    {p}, Pro
                   </span>
                 ))}
               </div>
@@ -1062,7 +1062,7 @@ export default function NewProjectPage() {
             question={
               isPaidPlan(plan) ? "Ready to see the gaps?" : "Ready for your free audit?"
             }
-            hint="Real browsers visit your site and walk each journey — a vision model scores what they see. Public pages only, no credentials needed."
+            hint="Real browsers visit your site and walk each journey, a vision model scores what they see. Public pages only, no credentials needed."
           >
             <div className="flex flex-col gap-2">
               {/* Review strip */}

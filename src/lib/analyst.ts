@@ -18,6 +18,7 @@ import {
   type CookieDismissPage,
 } from "./dismiss-site-cookies";
 import { waitForPageReady } from "./page-ready";
+import { PLAIN_PROSE_RULE, sanitizeAnalysisProse } from "./prose";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
 import {
@@ -223,7 +224,7 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
  * jackpots, leaderboards and provider rows below the fold. */
 const DEEP_SCROLL_JOURNEYS = new Set(["landing", "casino", "sports_betslip"]);
 
-const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan ALL screenshots — including scrolled sections at the bottom of the page — for product features. Casino lobbies often hide live win feeds, jackpot rows, leaderboards, provider carousels and recently-played rows below the fold; loyalty hubs show tier grids and reward calendars. Return a "features" array for every feature with visible evidence. Use standard names when possible: "Live wins feed", "Leaderboards", "Jackpot games", "VIP levels", "Rakeback", "Weekly bonus", "Status transfer", "Originals", "Provider filters", "Casino search", "Live casino", "Bet builder", "Cashout", "Live chat", "Crypto payments", "Provably fair", "Free spins", "Missions / streaks", etc. Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account. Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (hard to find). Include note (one-line evidence) and shot (screenshot index). Only list features you can SEE — omit absent ones.`;
+const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan ALL screenshots — including scrolled sections at the bottom of the page — for product features. Casino lobbies often hide live win feeds, jackpot rows, leaderboards, provider carousels and recently-played rows below the fold; loyalty hubs show tier grids and reward calendars. Return a "features" array for every feature with visible evidence. Use standard names when possible: "Live wins feed", "Leaderboards", "Jackpot games", "VIP levels", "Rakeback", "Weekly bonus", "Status transfer", "Originals", "Provider filters", "Casino search", "Live casino", "Bet builder", "Cashout", "Live chat", "Crypto payments", "Provably fair", "Free spins", "Missions / streaks", etc. Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account. Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (VISIBLE in a screenshot but buried in obscure navigation — never use hidden for something you cannot see). Include note (one-line evidence) and shot (screenshot index — REQUIRED for every feature; if you cannot point at a screenshot showing it, do not list it). Only list features you can SEE — omit absent ones; a feature you cannot see is simply not listed, never marked hidden or no.`;
 
 async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -248,7 +249,7 @@ function looksLikeInterstitial(text: string): boolean {
  * same address). */
 function geoBlockReason(finalUrl: string, pageText = ""): string | null {
   if (/restrictedRegion|regionKey=|not.?available.?in.?your/i.test(finalUrl)) {
-    return "This brand geo-blocked the agent at the main domain for this market — the site detected the proxy location and showed a restricted-region wall instead of the product.";
+    return "This brand geo-blocked the agent at the main domain for this market. The site detected the proxy location and showed a restricted-region wall instead of the product.";
   }
   const text = pageText.trim();
   if (
@@ -257,12 +258,18 @@ function geoBlockReason(finalUrl: string, pageText = ""): string | null {
       text
     )
   ) {
-    return "This brand geo-blocked the agent for this market — the page never loaded past a 'not available in your region' wall, so there was no real product to score.";
+    return "This brand geo-blocked the agent for this market. The page never loaded past a 'not available in your region' wall, so there was no real product to score.";
   }
   if (looksLikeInterstitial(text)) {
-    return "The page never finished loading — the agent only ever saw the site's loading/challenge interstitial, so there was no real product to score.";
+    return "The page never finished loading. The agent only ever saw the site's loading/challenge interstitial, so there was no real product to score.";
   }
   return null;
+}
+
+/** First clause of a playbook step, for user-facing block messages. */
+function instructionSummary(instruction: string): string {
+  const first = instruction.split(/[.,]/)[0]?.trim();
+  return first || instruction.slice(0, 80);
 }
 
 /** Poll until a heavy SPA has rendered real content — not just a splash
@@ -336,15 +343,31 @@ async function captureScrollSequence(
   return shots.slice(0, maxShots);
 }
 
+/** Evenly-sampled original indices when we captured more frames than the
+ * vision model needs. The model sees the sampled frames in order, so its
+ * shot indices must be mapped back through this list. */
+function pickShotIndices(count: number, max = 8): number[] {
+  if (count <= max) return Array.from({ length: count }, (_, i) => i);
+  const indices: number[] = [];
+  for (let i = 0; i < max; i++) {
+    indices.push(Math.round((i / (max - 1)) * (count - 1)));
+  }
+  return indices;
+}
+
 /** Evenly sample when we captured more frames than the vision model needs. */
 function pickShots(shots: string[], max = 8): string[] {
-  if (shots.length <= max) return shots;
-  const picked: string[] = [];
-  for (let i = 0; i < max; i++) {
-    const idx = Math.round((i / (max - 1)) * (shots.length - 1));
-    picked.push(shots[idx]!);
-  }
-  return picked;
+  return pickShotIndices(shots.length, max).map((i) => shots[i]!);
+}
+
+/** Map a model-returned shot index (relative to the sampled frames) back to
+ * the index in the full persisted screenshot list. */
+function remapShot(
+  shot: number | null | undefined,
+  indices: number[]
+): number | null {
+  if (shot == null) return null;
+  return indices[shot] ?? indices[indices.length - 1] ?? null;
 }
 
 /** The displayed score is always derived from heuristics — never an
@@ -604,7 +627,9 @@ Observations: concrete findings a product team could act on. Be specific: name a
 
 For each observation, point at the evidence: set "shot" to the screenshot index (0 or 1) showing the element you're discussing, and "region" to that element's bounding box as PERCENTAGES of the image (x,y = top-left corner, w,h = size, all 0-100). Keep regions tight around the specific element. Use null for shot/region only when the observation is about the page as a whole.
 
-If the screenshots show a bot-verification wall, geo-block, error page, or a loading/splash screen with no real product content, set blocked=true, explain in blockReason, and do NOT score the brand's product from it — a capture problem must never read as a bad product.${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEATURE_PROMPT}`;
+If the screenshots show a bot-verification wall, geo-block, error page, or a loading/splash screen with no real product content, set blocked=true, explain in blockReason, and do NOT score the brand's product from it. A capture problem must never read as a bad product.
+
+${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEATURE_PROMPT}`;
 
   const visionShots = pickShots(screenshots);
 
@@ -668,17 +693,29 @@ If the screenshots show a bot-verification wall, geo-block, error page, or a loa
         )
       : parsed.retentionNotes;
   const derivedScore = overallFromHeuristics(parsed.heuristics);
-  return {
+  // The model's shot indices point at the sampled frames it was shown —
+  // map them back to the full persisted screenshot list.
+  const shotIndices = pickShotIndices(screenshots.length);
+  return sanitizeAnalysisProse({
     ...parsed,
     score: derivedScore ?? parsed.score,
     retention,
-    retentionNotes,
+    retentionNotes: retentionNotes?.map((n) => ({
+      ...n,
+      shot: remapShot(n.shot, shotIndices),
+    })),
     retentionContext: ctx,
+    observations: (parsed.observations ?? []).map((o) =>
+      typeof o === "string"
+        ? o
+        : { ...o, shot: remapShot(o.shot, shotIndices) }
+    ),
     features: (parsed.features ?? []).map((f) => ({
       ...f,
+      shot: remapShot(f.shot, shotIndices),
       source: "extracted" as const,
     })),
-  };
+  });
 }
 
 const FEATURE_ONLY_SCHEMA = {
@@ -701,8 +738,8 @@ DISAMBIGUATION — critical:
 Use standard names: Live wins feed, Leaderboards, Jackpot games, VIP levels, Rakeback, Weekly bonus, Monthly bonus, Status transfer, Originals, Provider filters, Casino search, Live casino, Bet builder, Cashout, Live chat, Crypto payments, Provably fair, Free spins, Missions / streaks, Help centre, Sportsbook, Welcome offer, Reloads, Lossback, Free bet.
 
 Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account.
-Status: strong | yes | medium | partial | weak | hidden.
-Include note (what you see) and shot (screenshot index). Return empty array if nothing is clearly visible.`;
+Status: strong | yes | medium | partial | weak | hidden (hidden = VISIBLE in a screenshot but buried in obscure navigation — never use it for something you cannot see).
+Include note (what you see) and shot (screenshot index — REQUIRED; if no screenshot shows the feature, do not list it). Return empty array if nothing is clearly visible.`;
 
 /** Feature-only pass over existing evidence screenshots — used to backfill
  * analyses that were scored before structured feature extraction existed. */
@@ -758,8 +795,10 @@ export async function extractFeaturesFromShots(
   )?.text;
   if (!text) throw new Error("OpenAI returned no output text");
   const parsed = JSON.parse(text) as { features: DetectedFeature[] };
+  const shotIndices = pickShotIndices(screenshots.length, 8);
   return parsed.features.map((f) => ({
     ...f,
+    shot: remapShot(f.shot, shotIndices),
     source: "extracted" as const,
     area: journey,
   }));
@@ -859,11 +898,15 @@ export async function extractRetentionNotesFromShots(
     loyaltySnapshot: LoyaltySnapshot | null;
   };
   const snapshot = parsed.loyaltySnapshot;
+  const shotIndices = pickShotIndices(screenshots.length, 8);
   return {
     retentionNotes: fillGatedRetentionNotes(
       gated,
       ctx,
-      parsed.retentionNotes ?? []
+      (parsed.retentionNotes ?? []).map((n) => ({
+        ...n,
+        shot: remapShot(n.shot, shotIndices),
+      }))
     ),
     loyaltySnapshot:
       snapshot && (snapshot.ftdOffer || snapshot.tiers.length || snapshot.cadence)
@@ -951,7 +994,7 @@ export async function analyzeJourney(
   if (loginPlaybook) {
     if (!contextId && !loginVars) {
       throw new Error(
-        `${journey} sits behind a login — run the Sign Up journey first so the agent registers a test account, or record a live session.`
+        `${journey} sits behind a login. Run the Sign Up journey first so the agent registers a test account, or record a live session.`
       );
     }
     return analyzeWithAgent(
@@ -968,7 +1011,7 @@ export async function analyzeJourney(
   }
   if (journey !== "landing") {
     throw new Error(
-      `${journey} sits behind a login — record a live session to score it.`
+      `${journey} sits behind a login. Record a live session to score it.`
     );
   }
   return analyzeLanding(url, contextId, proxyCountry);
@@ -1039,12 +1082,12 @@ async function runRegistrationWalk(
     shots.push(await capture());
 
     if (await agentIsLoggedIn(stagehand)) {
-      trail.push("registration submitted — account created and logged in");
+      trail.push("registration submitted, account created and logged in");
       return true;
     }
     if (!submitted && step >= 2) {
       trail.push(
-        `registration stalled at step ${step} — submit button may be disabled or blocked by captcha`
+        `registration stalled at step ${step}: submit button may be disabled or blocked by captcha`
       );
       break;
     }
@@ -1064,7 +1107,7 @@ async function runRegistrationWalk(
     return true;
   }
   trail.push(
-    "registration submitted but no authenticated session — email/SMS verification or captcha may be required"
+    "registration submitted but no authenticated session. Email/SMS verification or captcha may be required"
   );
   return false;
 }
@@ -1198,7 +1241,7 @@ async function analyzeWithAgent(
         score: 0,
         blocked: true,
         blockReason:
-          "The agent couldn't get a logged-in session on this site — the saved test account may need email/SMS verification or the session expired. Take control to walk this journey yourself.",
+          "The agent couldn't get a logged-in session on this site. The saved test account may need email/SMS verification or the session expired. Take control to walk this journey yourself.",
         summary: "",
         heuristics: [],
         observations: [],
@@ -1294,7 +1337,7 @@ async function analyzeWithAgent(
           analysedAt: new Date().toISOString(),
           score: 0,
           blocked: true,
-          blockReason: `The agent couldn't ${step.instruction.split(" — ")[0]} on this site${message ? ` (${message})` : ""}. Launch the site to capture this area manually.`,
+          blockReason: `The agent couldn't ${instructionSummary(step.instruction)} on this site${message ? ` (${message})` : ""}. Launch the site to capture this area manually.`,
           summary: "",
           heuristics: [],
           observations: [],
@@ -1397,7 +1440,7 @@ async function analyzeWithAgent(
           await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (!(await agentIsLoggedIn(stagehand))) {
             trail.push(
-              `skipped ${loginJourney} — session lost before logged-in pass`
+              `skipped ${loginJourney}: session lost before logged-in pass`
             );
             break;
           }
@@ -1504,7 +1547,7 @@ async function walkPlaybookAndScore(
         analysedAt: new Date().toISOString(),
         score: 0,
         blocked: true,
-        blockReason: `The agent couldn't ${step.instruction.split(" — ")[0]} on this site${message ? ` (${message})` : ""}. Launch the site to capture this area manually.`,
+        blockReason: `The agent couldn't ${instructionSummary(step.instruction)} on this site${message ? ` (${message})` : ""}. Launch the site to capture this area manually.`,
         summary: "",
         heuristics: [],
         observations: [],

@@ -63,7 +63,7 @@ export function PillarRow({ pillar, muted }: { pillar: ScorePillar; muted: boole
                 : tierTextClass(pillar.score!)
           )}
         >
-          {scored ? pillar.score : "—"}
+          {scored ? pillar.score : "N/A"}
         </span>
       </div>
       <div className="h-1 w-full overflow-hidden rounded-full bg-muted/60">

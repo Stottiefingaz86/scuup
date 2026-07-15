@@ -1,6 +1,7 @@
 import { chromium } from "playwright-core";
 import { createSession, releaseSession } from "./browserbase";
 import { ANALYSIS_AREA_LABELS } from "./constants";
+import { PLAIN_PROSE_RULE, sanitizeVocAnalysis } from "./prose";
 import type {
   Brand,
   Project,
@@ -83,7 +84,7 @@ export async function scrapeTrustpilot(
       if (!raw) {
         if (p === 1) {
           throw new Error(
-            `Couldn't reach the Trustpilot page for ${domain} — the review site did not load.`
+            `Couldn't reach the Trustpilot page for ${domain}. The review site did not load.`
           );
         }
         break;
@@ -110,7 +111,7 @@ export async function scrapeTrustpilot(
       if (p === 1) {
         if (!pp?.businessUnit) {
           throw new Error(
-            `${domain} has no Trustpilot profile — no public reviews to analyse.`
+            `${domain} has no Trustpilot profile. No public reviews to analyse.`
           );
         }
         trustScore = pp.businessUnit.trustScore ?? null;
@@ -267,7 +268,9 @@ OUR AUDIT OF ${brand.name.toUpperCase()} (for alignment only — do not restate 
 ${reportContext(project, brand)}
 
 REVIEWS (recent first):
-${reviewBlock}`;
+${reviewBlock}
+
+${PLAIN_PROSE_RULE}`;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -307,7 +310,7 @@ ${reviewBlock}`;
     alignment: VocAlignment[];
   };
 
-  return {
+  return sanitizeVocAnalysis({
     source: "trustpilot",
     sourceUrl: scrape.sourceUrl,
     fetchedAt: new Date().toISOString(),
@@ -319,5 +322,5 @@ ${reviewBlock}`;
     positives: parsed.positives,
     negatives: parsed.negatives,
     alignment: parsed.alignment,
-  };
+  });
 }

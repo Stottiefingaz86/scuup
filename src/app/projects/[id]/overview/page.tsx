@@ -68,7 +68,7 @@ function OverviewContent({ project }: { project: Project }) {
   const heroStats = [
     {
       label: "Player CX rank",
-      value: ownRank === null ? "—" : ordinal(ownRank),
+      value: ownRank === null ? "N/A" : ordinal(ownRank),
       detail:
         ownRank === null
           ? "no scored analysis yet"
@@ -101,14 +101,14 @@ function OverviewContent({ project }: { project: Project }) {
       return {
         headline: (
           <>
-            We couldn&apos;t score your brand yet —{" "}
+            We couldn&apos;t score your brand yet, 
             <span className="text-brand">take over a live session</span> to
             get your baseline.
           </>
         ),
         body:
           ownLanding?.blockReason ??
-          "The agent was blocked before it could observe your site. Launch it in a recorded session — a human passes the checks our agent can't.",
+          "The agent was blocked before it could observe your site. Launch it in a recorded session, a human passes the checks our agent can't.",
       };
     }
     if (leader && leader.brand.id !== ownBrand.id) {
@@ -116,7 +116,7 @@ function OverviewContent({ project }: { project: Project }) {
         headline: (
           <>
             <span className="text-brand">{leader.brand.name}</span> leads the
-            set at {leader.score} — you&apos;re {leader.score - ownScore}{" "}
+            set at {leader.score}, you&apos;re {leader.score - ownScore}{" "}
             points behind on player experience.
           </>
         ),
@@ -128,7 +128,7 @@ function OverviewContent({ project }: { project: Project }) {
     return {
       headline: (
         <>
-          You lead the set at <span className="text-brand">{ownScore}</span> —
+          You lead the set at <span className="text-brand">{ownScore}</span>,
           now protect it by going deeper than first impressions.
         </>
       ),
@@ -217,7 +217,7 @@ function OverviewContent({ project }: { project: Project }) {
                 </span>
                 <span className="text-xs text-muted-foreground/60">
                   {i === 0
-                    ? "See who's beating you here — Pro benchmarks up to 3 rivals"
+                    ? "See who's beating you here, Pro benchmarks up to 3 rivals"
                     : "Unlock with Pro"}
                 </span>
               </Link>
@@ -244,7 +244,7 @@ function OverviewContent({ project }: { project: Project }) {
               </div>
               <span className="text-xs text-muted-foreground">
                 {coverage.captured} of {coverage.total} areas captured so far.
-                Every gap below fills in with a recorded live session — no
+                Every gap below fills in with a recorded live session, no
                 guesses, no synthetic scores.
               </span>
             </div>
@@ -456,7 +456,7 @@ function OverviewContent({ project }: { project: Project }) {
             </div>
           ) : (
             <p className="py-4 text-sm text-muted-foreground">
-              No observations yet — they appear as soon as an analysis
+              No observations yet, they appear as soon as an analysis
               completes.
             </p>
           )}

@@ -15,7 +15,7 @@ export function ScoreGauge({
   score: number;
   size?: number;
   caption?: string;
-  /** Neutral arc for competitor gauges — tier color is reserved for own brand. */
+  /** Neutral arc for competitor gauges, tier color is reserved for own brand. */
   muted?: boolean;
   className?: string;
 }) {

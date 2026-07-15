@@ -162,7 +162,7 @@ export function MarketsMarquee({ compactTop = false }: { compactTop?: boolean })
               Audit from the market your players are in
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:mt-4 sm:text-base">
-              Sessions browse through local residential connections — so
+              Sessions browse through local residential connections, so
               geo-gated offers, payment rails and licensing walls match exactly
               what a local player sees.
             </p>

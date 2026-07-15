@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { faviconUrl } from "./constants";
+import { sanitizeProject } from "./prose";
 import {
   LANDING_DEMO_PROJECT_ID,
   landingDemoProject,
@@ -71,14 +72,16 @@ async function loadFromServer(): Promise<void> {
     if (!res.ok) {
       throw new Error(data.error ?? `failed to load projects (${res.status})`);
     }
-    projects = data.projects as Project[];
+    projects = (data.projects as Project[]).map(sanitizeProject);
     storeError = null;
   } catch (e) {
     storeError = e instanceof Error ? e.message : "failed to load projects";
     // Fall back to legacy local data so the app stays usable offline.
     try {
       const raw = window.localStorage.getItem(LEGACY_KEY);
-      projects = raw ? (JSON.parse(raw) as Project[]) : [];
+      projects = raw
+        ? (JSON.parse(raw) as Project[]).map(sanitizeProject)
+        : [];
     } catch {
       projects = [];
     }

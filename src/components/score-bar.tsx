@@ -22,9 +22,9 @@ export function ScoreBar({
   score: number;
   rank?: number;
   highlight?: boolean;
-  /** Neutral fill for competitor rows — tier color is reserved for own brand. */
+  /** Neutral fill for competitor rows, tier color is reserved for own brand. */
   muted?: boolean;
-  /** Score computed from incomplete data — flags that it may be skewed. */
+  /** Score computed from incomplete data, flags that it may be skewed. */
   partial?: boolean;
   icon?: React.ReactNode;
   className?: string;
@@ -61,7 +61,7 @@ export function ScoreBar({
             aria-label="Partial data"
           >
             <title>
-              Partial data — some mechanics are unobserved, so this score may
+              Partial data, some mechanics are unobserved, so this score may
               be skewed
             </title>
           </CircleAlert>

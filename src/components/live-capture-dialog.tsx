@@ -35,7 +35,7 @@ const CAPTURED = [
   {
     icon: Route,
     title: "Journey steps",
-    detail: "The path you take — taps, transitions and dead ends.",
+    detail: "The path you take, taps, transitions and dead ends.",
   },
   {
     icon: Coins,
@@ -144,7 +144,7 @@ export function LiveCaptureDialog({
                 ? `${formatElapsed(e.data.elapsed)} of ${e.data.brand} captured. Scored: ${scored
                     .map((a) => ANALYSIS_AREA_LABELS[a] ?? a)
                     .join(", ")}.`
-                : `${formatElapsed(e.data.elapsed)} of ${e.data.brand} captured — ${e.data.events.length} events recorded. No scoreable journey pages were visited.`,
+                : `${formatElapsed(e.data.elapsed)} of ${e.data.brand} captured, ${e.data.events.length} events recorded. No scoreable journey pages were visited.`,
             duration: 8000,
           });
         } else {
@@ -161,7 +161,7 @@ export function LiveCaptureDialog({
 
     const poll = setInterval(() => {
       if (popupRef.current?.closed) {
-        // Closed via the X — the popup still saved server-side on pagehide.
+        // Closed via the X, the popup still saved server-side on pagehide.
         void refreshProjects();
         cleanup();
       }
@@ -195,11 +195,11 @@ export function LiveCaptureDialog({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Live capture — {brand?.name}</DialogTitle>
+          <DialogTitle>Live capture, {brand?.name}</DialogTitle>
           <DialogDescription>
             The site opens in a desktop-size capture window with the
             recording dock alongside it. Use your own account and play as a
-            normal customer — everything is recorded in that window.
+            normal customer, everything is recorded in that window.
           </DialogDescription>
         </DialogHeader>
 

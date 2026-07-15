@@ -92,10 +92,10 @@ function HeroRollingPhrase() {
 
 /* ------------------------------------------------------------------ */
 /* Hero visual: a real screenshot of the live workspace in a browser   */
-/* frame — no mocked UI, the actual product with actual scores.        */
+/* frame, no mocked UI, the actual product with actual scores.        */
 /* ------------------------------------------------------------------ */
 
-/** Animated radar behind the hero copy — Scuup scanning the market.
+/** Animated radar behind the hero copy, Scuup scanning the market.
  * Static nodes sit on the grid; a subset flash when the 7s sweep passes. */
 const RADAR_NODES = [
   { angle: 18, radius: 26, size: 1.5, blip: true },

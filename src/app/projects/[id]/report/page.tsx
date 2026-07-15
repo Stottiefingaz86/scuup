@@ -89,7 +89,7 @@ const FEATURE_STATUS_CLASS: Record<FeatureStatus, string> = {
 };
 
 /** How many matrix rows the printed report shows before deferring to the
- * app — priority order means the gaps that matter always make the cut. */
+ * app, priority order means the gaps that matter always make the cut. */
 const REPORT_FEATURE_ROWS = 25;
 
 function SectionHeading({
@@ -255,7 +255,7 @@ function ReportContent({ project }: { project: Project }) {
         </CardContent>
       </Card>
 
-      {/* 01 — Executive summary */}
+      {/* 01, Executive summary */}
       <section id="summary" className="flex flex-col gap-6">
         <SectionHeading
           index={1}
@@ -302,7 +302,7 @@ function ReportContent({ project }: { project: Project }) {
                         </span>{" "}
                         leads the set at {leader.score}
                         {ownScore !== null
-                          ? ` — you trail by ${leader.score! - ownScore}.`
+                          ? `. You trail by ${leader.score! - ownScore}.`
                           : "."}
                       </>
                     )}
@@ -311,7 +311,7 @@ function ReportContent({ project }: { project: Project }) {
                     {ownBrand.analyses.landing && !ownBrand.analyses.landing.blocked
                       ? ownBrand.analyses.landing.summary
                       : (ownBrand.analyses.landing?.blockReason ??
-                        "Your brand has no successful analysis yet — resolve the gap from the coverage section to establish your baseline.")}
+                        "Your brand has no successful analysis yet, resolve the gap from the coverage section to establish your baseline.")}
                   </p>
                 </>
               ) : (
@@ -325,12 +325,12 @@ function ReportContent({ project }: { project: Project }) {
         </div>
       </section>
 
-      {/* 02 — Ranking */}
+      {/* 02, Ranking */}
       <section id="ranking" className="flex flex-col gap-6">
         <SectionHeading
           index={2}
           title="Competitor ranking"
-          description="Overall score is the average of four pillars: journey scores, the retention read, voice of customer (Trustpilot, rescaled to 100), and the design review. N/A means not observed — never estimated."
+          description="Overall score is the average of four pillars: journey scores, the retention read, voice of customer (Trustpilot, rescaled to 100), and the design review. N/A means not observed, never estimated."
           sectionId="ranking"
           canModerate={isOwner}
         />
@@ -406,7 +406,7 @@ function ReportContent({ project }: { project: Project }) {
         </Card>
       </section>
 
-      {/* 03 — Findings by area */}
+      {/* 03, Findings by area */}
       <section id="findings" className="flex flex-col gap-6">
         <SectionHeading
           index={3}
@@ -473,7 +473,7 @@ function ReportContent({ project }: { project: Project }) {
                         (analysis.screenshots?.length ?? 0) > 0 ? (
                           <div className="flex flex-col gap-1.5 border-t pt-3">
                             <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                              Evidence — {analysis.screenshots!.length} screen
+                              Evidence: {analysis.screenshots!.length} screen
                               {analysis.screenshots!.length === 1
                                 ? ""
                                 : "s"}{" "}
@@ -484,8 +484,8 @@ function ReportContent({ project }: { project: Project }) {
                                 <ScreenshotLightbox
                                   key={`${src}-${i}`}
                                   src={src}
-                                  alt={`${brand.name} — ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1}`}
-                                  caption={`${brand.name} — ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${analysis.screenshots!.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
+                                  alt={`${brand.name}: ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1}`}
+                                  caption={`${brand.name}: ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${analysis.screenshots!.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
                                   className="aspect-[8/5] w-24 shrink-0"
                                 />
                               ))}
@@ -502,13 +502,13 @@ function ReportContent({ project }: { project: Project }) {
         )}
       </section>
 
-      {/* 04 — Feature matrix */}
+      {/* 04, Feature matrix */}
       {featureRows.length > 0 ? (
         <section id="features" className="flex flex-col gap-6">
           <SectionHeading
             index={4}
             title="Feature matrix"
-            description="Every feature the analyst saw on screen, side by side. Each cell is backed by a screenshot in the app — nothing here is inferred from marketing pages."
+            description="Every feature the analyst saw on screen, side by side. Each cell is backed by a screenshot in the app, nothing here is inferred from marketing pages."
             sectionId="features"
             canModerate={isOwner}
           />
@@ -557,9 +557,7 @@ function ReportContent({ project }: { project: Project }) {
                                 {FEATURE_STATUS_LABEL[status]}
                               </span>
                             ) : (
-                              <span className="text-sm text-muted-foreground/60">
-                                —
-                              </span>
+                              <span className="text-sm text-muted-foreground/60">N/A</span>
                             )}
                           </TableCell>
                         );
@@ -586,13 +584,13 @@ function ReportContent({ project }: { project: Project }) {
               {featureRows.length > REPORT_FEATURE_ROWS ? (
                 <p className="mt-3 text-xs text-muted-foreground">
                   Showing the {REPORT_FEATURE_ROWS} highest-priority features of{" "}
-                  {featureRows.length} detected — the full matrix with
+                  {featureRows.length} detected, the full matrix with
                   screenshot evidence lives in the Features tab.
                 </p>
               ) : (
                 <p className="mt-3 text-xs text-muted-foreground">
-                  A dash means the feature was never observed for that brand —
-                  it may exist behind a login the agent couldn&apos;t reach.
+                  N/A means the feature was never observed for that brand. It
+                  may exist behind a login the agent couldn&apos;t reach.
                 </p>
               )}
             </CardContent>
@@ -600,13 +598,13 @@ function ReportContent({ project }: { project: Project }) {
         </section>
       ) : null}
 
-      {/* 05 — Voice of customer */}
+      {/* 05, Voice of customer */}
       {project.brands.some((b) => b.voc) ? (
         <section id="voc" className="flex flex-col gap-6">
           <SectionHeading
             index={5}
             title="Voice of customer"
-            description="What real players say in public reviews — and where that confirms or contradicts what we measured on the site."
+            description="What real players say in public reviews, and where that confirms or contradicts what we measured on the site."
             sectionId="voc"
             canModerate={isOwner}
           />
@@ -625,7 +623,7 @@ function ReportContent({ project }: { project: Project }) {
                       <BrandLabel brand={brand} />
                       <span className="inline-flex items-center gap-1 font-heading text-base font-semibold">
                         <Star className="size-4 fill-amber-400 text-amber-400" />
-                        {voc.trustScore?.toFixed(1) ?? "—"}
+                        {voc.trustScore?.toFixed(1) ?? "N/A"}
                       </span>
                       <span className="text-xs text-muted-foreground">
                         {voc.sampled} recent of{" "}
@@ -705,13 +703,13 @@ function ReportContent({ project }: { project: Project }) {
         </section>
       ) : null}
 
-      {/* 06 — Design review */}
+      {/* 06, Design review */}
       {project.brands.some((b) => b.design) ? (
         <section id="design" className="flex flex-col gap-6">
           <SectionHeading
             index={6}
             title="Design review"
-            description="What each site is built with, its real colour palette, and whether the design craft holds up — measured from the live rendered code."
+            description="What each site is built with, its real colour palette, and whether the design craft holds up, measured from the live rendered code."
             sectionId="design"
             canModerate={isOwner}
           />
@@ -747,7 +745,7 @@ function ReportContent({ project }: { project: Project }) {
                           key={`${s.hex}-${i}`}
                           className="min-w-0 flex-1"
                           style={{ backgroundColor: s.hex }}
-                          title={`${s.role} — ${s.hex}`}
+                          title={`${s.role}: ${s.hex}`}
                         />
                       ))}
                     </div>
@@ -759,19 +757,19 @@ function ReportContent({ project }: { project: Project }) {
                     design.stack.health !== "solid" ? (
                       <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs leading-relaxed text-amber-600 dark:text-amber-500/90">
                         {design.stack.health === "mixed"
-                          ? "Mixed foundation — "
-                          : "Fragile foundation — "}
+                          ? "Mixed foundation, "
+                          : "Fragile foundation, "}
                         {design.stack.verdict}
                       </p>
                     ) : null}
                     <div className="grid gap-x-6 gap-y-1 text-xs leading-relaxed text-muted-foreground md:grid-cols-2">
                       <span>
-                        Accessibility {design.accessibility.score}/100 —{" "}
+                        Accessibility {design.accessibility.score}/100, 
                         {design.accessibility.findings.find((f) => f.pass === false)
                           ?.note ?? "no measured failures"}
                       </span>
                       <span>
-                        Consistency {design.consistency.score}/100 —{" "}
+                        Consistency {design.consistency.score}/100, 
                         {design.consistency.note}
                       </span>
                     </div>
@@ -795,12 +793,12 @@ function ReportContent({ project }: { project: Project }) {
         </section>
       ) : null}
 
-      {/* 07 — Action plan */}
+      {/* 07, Action plan */}
       <section id="action-plan" className="flex flex-col gap-6">
         <SectionHeading
           index={7}
           title="Action plan"
-          description="Prioritised roadmap synthesised from every finding in this report — each action cites the evidence behind it."
+          description="Prioritised roadmap synthesised from every finding in this report, each action cites the evidence behind it."
           sectionId="action-plan"
           canModerate={isOwner}
         />
@@ -827,7 +825,7 @@ function ReportContent({ project }: { project: Project }) {
         )}
       </section>
 
-      {/* 08 — Coverage */}
+      {/* 08, Coverage */}
       <section id="coverage" className="flex flex-col gap-6">
         <SectionHeading
           index={8}
@@ -852,7 +850,7 @@ function ReportContent({ project }: { project: Project }) {
                 <span className="text-xs text-muted-foreground">
                   {coverage.captured} of {coverage.total} brand-areas captured
                   this cycle. Missing areas are shown as N/A rather than
-                  estimated — the score you see is the score that was
+                  estimated, the score you see is the score that was
                   observed.
                 </span>
               </div>
@@ -880,7 +878,7 @@ function ReportContent({ project }: { project: Project }) {
                 ))}
                 {coverage.gaps.length > 8 ? (
                   <span className="text-xs text-muted-foreground">
-                    +{coverage.gaps.length - 8} more gaps — see the Overview
+                    +{coverage.gaps.length - 8} more gaps, see the Overview
                     coverage card.
                   </span>
                 ) : null}
@@ -888,7 +886,7 @@ function ReportContent({ project }: { project: Project }) {
             ) : (
               <p className="flex items-center gap-2 text-sm text-muted-foreground">
                 <ShieldCheck className="size-4 text-brand" />
-                Full coverage — every area in scope was observed this cycle.
+                Full coverage, every area in scope was observed this cycle.
               </p>
             )}
 
@@ -908,7 +906,7 @@ function ReportContent({ project }: { project: Project }) {
 
       <p className="pb-10 text-center text-xs text-muted-foreground">
         Generated by Scuup · {reportDate} · All scores from real
-        analysed visits — no synthetic data.
+        analysed visits, no synthetic data.
       </p>
     </div>
   );

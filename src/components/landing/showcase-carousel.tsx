@@ -463,7 +463,7 @@ export function ShowcaseCarousel() {
             Every brand we&apos;ve scored
           </h2>
           <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-            Real Player CX scores from markets we audit — updated monthly.
+            Real Player CX scores from markets we audit, updated monthly.
             Filter by country, see who&apos;s moving up or down since last
             month, then sign up to walk the full journey evidence yourself.
           </p>
@@ -495,7 +495,7 @@ export function ShowcaseCarousel() {
         ) : entries.length === 0 ? (
           <div className="mx-6 rounded-xl border border-dashed py-16 text-center sm:mx-auto sm:max-w-7xl">
             <p className="text-muted-foreground">
-              No scores for this filter yet — run an audit and it&apos;ll
+              No scores for this filter yet, run an audit and it&apos;ll
               appear here.
             </p>
             <Button
@@ -531,7 +531,7 @@ export function ShowcaseCarousel() {
               See {gateBrand?.brandName}&apos;s full journey evidence
             </DialogTitle>
             <DialogDescription>
-              Screenshots, heuristics and scores for every journey — casino,
+              Screenshots, heuristics and scores for every journey, casino,
               sports, retention, reviews and design. Create a free account to
               open the full report for {gateBrand?.brandName} in{" "}
               {gateBrand?.market}.

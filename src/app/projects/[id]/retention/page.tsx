@@ -49,7 +49,7 @@ import type { Brand, JourneyAnalysis, Project } from "@/lib/types";
 const LOYALTY = "loyalty_rewards";
 
 /** Mechanics we can honestly evidence: public pages always, login-gated ones
- * when the agent's test account got in. Tracked-play mechanics are out — we
+ * when the agent's test account got in. Tracked-play mechanics are out, we
  * can't observe reward cadence over weeks, so we never show that row. */
 const DISPLAY_MECHANICS = RETENTION_MECHANIC_META.filter(
   (m) => m.requires !== "tracked_play"
@@ -81,7 +81,7 @@ function mechanicScore(
 }
 
 /** One brand's loyalty offer, read from its promo pages, tier tables and
- * help centre — the plain answer to "what do players actually get?". */
+ * help centre, the plain answer to "what do players actually get?". */
 function BrandOfferCard({
   brand,
   rank,
@@ -203,8 +203,8 @@ function BrandOfferCard({
                 <ScreenshotLightbox
                   key={`${src}-${i}`}
                   src={src}
-                  alt={`${brand.name} loyalty pages — captured screen ${i + 1} of ${shots.length}`}
-                  caption={`${brand.name} — loyalty & rewards · screen ${i + 1} of ${shots.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
+                  alt={`${brand.name} loyalty pages, captured screen ${i + 1} of ${shots.length}`}
+                  caption={`${brand.name}, loyalty & rewards · screen ${i + 1} of ${shots.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
                   className="aspect-[8/5] w-28 shrink-0"
                 />
               ))}
@@ -236,7 +236,7 @@ function BrandOfferCard({
             </>
           ) : (
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Not read yet — the agent runs automatically and fills this in on
+              Not read yet, the agent runs automatically and fills this in on
               its own.
             </p>
           )}
@@ -246,7 +246,7 @@ function BrandOfferCard({
   );
 }
 
-/** The top actionable gaps vs the best competitor — flat, no accordion. */
+/** The top actionable gaps vs the best competitor, flat, no accordion. */
 function ImproveFirst({
   ownBrand,
   competitors,
@@ -271,7 +271,7 @@ function ImproveFirst({
       <CardHeader>
         <CardTitle>Fix first</CardTitle>
         <CardDescription>
-          Where {ownBrand.name} trails the best competitor on rewards — each
+          Where {ownBrand.name} trails the best competitor on rewards, each
           one cites what the agent saw and what to change.
         </CardDescription>
       </CardHeader>
@@ -284,8 +284,8 @@ function ImproveFirst({
             {g.screenshotUrl ? (
               <ScreenshotLightbox
                 src={g.screenshotUrl}
-                alt={`Evidence — ${g.label}`}
-                caption={`${ownBrand.name} — ${g.label}`}
+                alt={`Evidence: ${g.label}`}
+                caption={`${ownBrand.name}: ${g.label}`}
                 className="aspect-[8/5] w-full shrink-0 sm:w-36"
               />
             ) : null}
@@ -325,7 +325,7 @@ function RetentionContent({ project }: { project: Project }) {
   const [captureBrand, setCaptureBrand] = useState<Brand | null>(null);
   const running = useRunningAgents();
 
-  // The agent fills missing loyalty reads by itself — one attempt per brand
+  // The agent fills missing loyalty reads by itself, one attempt per brand
   // per visit; a blocked run gets a Take control fallback, not a retry loop.
   const autoTried = useRef<Set<string>>(new Set());
   const autoJobs = project.brands.filter(
@@ -341,7 +341,7 @@ function RetentionContent({ project }: { project: Project }) {
       autoJobs.map((brand) => ({ brand, area: LOYALTY }))
     ).then((fails) => {
       for (const f of fails) {
-        toast.error(`${f.brand} — loyalty read failed`, {
+        toast.error(`${f.brand}, loyalty read failed`, {
           description: f.error,
         });
       }
@@ -349,7 +349,7 @@ function RetentionContent({ project }: { project: Project }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- autoJobsKey captures the job set
   }, [autoJobsKey, project.id]);
 
-  // Older analyses may be missing per-mechanic evidence notes — backfilled
+  // Older analyses may be missing per-mechanic evidence notes, backfilled
   // silently in the background.
   const pendingNotes = jobsNeedingRetentionNotes(project);
   const notesBackfillKey = useRef<string | null>(null);
@@ -368,7 +368,7 @@ function RetentionContent({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* What players actually get — the page lead */}
+      {/* What players actually get, the page lead */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -377,7 +377,7 @@ function RetentionContent({ project }: { project: Project }) {
           </div>
           <CardDescription>
             Read straight from each brand&apos;s promotions, VIP pages and help
-            centre — the first-deposit offer, what each loyalty level unlocks,
+            centre, the first-deposit offer, what each loyalty level unlocks,
             and how often rewards come back. Click a screenshot to see the
             evidence.
           </CardDescription>
@@ -397,7 +397,7 @@ function RetentionContent({ project }: { project: Project }) {
         </CardContent>
       </Card>
 
-      {/* Compact mechanic comparison — evidence-backed rows only */}
+      {/* Compact mechanic comparison, evidence-backed rows only */}
       {scoredMechanics.length > 0 ? (
         <Card>
           <CardHeader>
@@ -405,7 +405,7 @@ function RetentionContent({ project }: { project: Project }) {
             <CardDescription>
               Scored from what the agent could actually see on each
               brand&apos;s loyalty pages. N/A means the evidence isn&apos;t
-              there — not that the mechanic is missing.
+              there, not that the mechanic is missing.
             </CardDescription>
             <TierLegend className="mt-1" />
           </CardHeader>
@@ -459,7 +459,7 @@ function RetentionContent({ project }: { project: Project }) {
               <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
               Login-only mechanics (progress, personalisation, account
               integration) score automatically when the agent&apos;s test
-              account gets in — no action needed from you.
+              account gets in, no action needed from you.
             </p>
           </CardContent>
         </Card>

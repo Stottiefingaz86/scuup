@@ -6,7 +6,7 @@ import {
 import { LegalPage } from "@/components/landing/legal-page";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Scuup",
+  title: "Privacy Policy | Scuup",
 };
 
 export default function PrivacyPage() {

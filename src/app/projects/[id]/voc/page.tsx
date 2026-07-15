@@ -211,7 +211,7 @@ function BrandVoc({
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No review analysis yet — it starts automatically.
+            No review analysis yet, it starts automatically.
           </p>
         )}
       </div>
@@ -225,7 +225,7 @@ function BrandVoc({
           <div className="flex flex-col items-center gap-0.5">
             <span className="flex items-center gap-1.5 font-heading text-3xl font-semibold">
               <Star className="size-5 fill-amber-400 text-amber-400" />
-              {voc.trustScore?.toFixed(1) ?? "—"}
+              {voc.trustScore?.toFixed(1) ?? "N/A"}
             </span>
             <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
               TrustScore
@@ -373,7 +373,7 @@ function VocContent({ project }: { project: Project }) {
     }
   };
 
-  // Reviews load themselves — no buttons to click. One attempt per brand
+  // Reviews load themselves, no buttons to click. One attempt per brand
   // per visit; failures surface inline with a retry.
   const missing = project.brands.filter(
     (b) => !b.voc && !autoTried.current.has(b.id)
@@ -397,7 +397,7 @@ function VocContent({ project }: { project: Project }) {
           <CardTitle>Voice of Customer</CardTitle>
         </div>
         <CardDescription>
-          What real players say in public reviews — split into praise and
+          What real players say in public reviews, split into praise and
           problems, each theme backed by verbatim quotes, and cross-checked
           against what the agent measured on the site.
         </CardDescription>

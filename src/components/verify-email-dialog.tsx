@@ -60,7 +60,7 @@ export function VerifyEmailDialog({
       .then((res) => (res.ok ? res.json() : null))
       .then((data: { email?: string; emailVerified?: boolean } | null) => {
         if (data?.email) setEmail(data.email);
-        // Already verified (e.g. confirmed in another tab) — carry on.
+        // Already verified (e.g. confirmed in another tab), carry on.
         if (data?.emailVerified) {
           onOpenChange(false);
           onVerified?.();
@@ -113,7 +113,7 @@ export function VerifyEmailDialog({
                 to <span className="font-medium text-foreground">{email}</span>
               </>
             ) : null}
-            . Type it below — no need to leave this page.
+            . Type it below, no need to leave this page.
           </DialogDescription>
         </DialogHeader>
 
@@ -138,7 +138,7 @@ export function VerifyEmailDialog({
             {error ? <p className="text-destructive">{error}</p> : null}
             {!error && sent ? (
               <p className="text-muted-foreground">
-                Code sent — check your inbox and spam folder.
+                Code sent, check your inbox and spam folder.
               </p>
             ) : null}
             {!error && !sent && sending ? (

@@ -16,7 +16,7 @@ import { ProjectShell } from "@/components/project-shell";
 import { generateActionPlan } from "@/lib/project-store";
 import type { Project } from "@/lib/types";
 
-/** True when any analysis is newer than the plan — time for a refresh. */
+/** True when any analysis is newer than the plan, time for a refresh. */
 function planIsStale(project: Project): boolean {
   const plan = project.actionPlan;
   if (!plan) return false;
@@ -72,7 +72,7 @@ function ActionPlanContent({ project }: { project: Project }) {
               </CardTitle>
               <CardDescription>
                 Synthesised from {analysedCount} real analysed visit
-                {analysedCount === 1 ? "" : "s"} across your set — every action
+                {analysedCount === 1 ? "" : "s"} across your set, every action
                 cites the finding that justifies it.
                 {plan ? (
                   <>
@@ -83,7 +83,7 @@ function ActionPlanContent({ project }: { project: Project }) {
                       timeStyle: "short",
                     })}
                     {stale
-                      ? " — new analyses have landed since, refresh to fold them in."
+                      ? ", new analyses have landed since, refresh to fold them in."
                       : "."}
                   </>
                 ) : null}
@@ -122,7 +122,7 @@ function ActionPlanContent({ project }: { project: Project }) {
             </CardTitle>
             <CardDescription>
               The strategist is weighing every finding across{" "}
-              {project.brands.length} brands — prioritising by impact and
+              {project.brands.length} brands, prioritising by impact and
               effort. Takes about half a minute.
             </CardDescription>
           </CardHeader>
@@ -133,7 +133,7 @@ function ActionPlanContent({ project }: { project: Project }) {
             <CardTitle className="text-base">No plan yet</CardTitle>
             <CardDescription>
               {analysedCount === 0
-                ? "The plan is built from real analyses — run the agent on at least one area first."
+                ? "The plan is built from real analyses, run the agent on at least one area first."
                 : "Something went wrong building the plan automatically."}
             </CardDescription>
             {analysedCount > 0 ? (

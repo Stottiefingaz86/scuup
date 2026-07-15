@@ -44,7 +44,7 @@ export function VerifyEmailBanner() {
           <p>
             You can set up projects now. When you&apos;re ready to run an
             audit, we&apos;ll email a 6-digit code
-            {email ? ` to ${email}` : ""} — enter it here and you&apos;re done.
+            {email ? ` to ${email}` : ""}, enter it here and you&apos;re done.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => setDialogOpen(true)}>

@@ -6,7 +6,7 @@ import {
 import { LegalPage } from "@/components/landing/legal-page";
 
 export const metadata: Metadata = {
-  title: "Cookie Policy — Scuup",
+  title: "Cookie Policy | Scuup",
 };
 
 export default function CookiesPage() {

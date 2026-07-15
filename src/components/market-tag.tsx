@@ -2,7 +2,7 @@ import { CircleMarketFlag } from "@/components/circle-market-flag";
 import { marketOptionForLabel } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-/** Circle flag + market label — used on showcase cards and project chrome. */
+/** Circle flag + market label, used on showcase cards and project chrome. */
 export function MarketTag({
   market,
   className,

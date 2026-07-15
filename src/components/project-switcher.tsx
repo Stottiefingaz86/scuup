@@ -60,7 +60,7 @@ export function ProjectSwitcher({ project }: { project: Project }) {
       setConfirm(null);
       toast.success("Report archived", {
         description:
-          "It's paused — no more updates will run until you reactivate it.",
+          "It's paused, no more updates will run until you reactivate it.",
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to archive report");
@@ -117,7 +117,7 @@ export function ProjectSwitcher({ project }: { project: Project }) {
                 {project.name}
               </span>
               <span className="truncate text-xs text-muted-foreground">
-                {archived ? "Archived — paused" : project.market}
+                {archived ? "Archived, paused" : project.market}
               </span>
             </div>
             <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground group-data-[collapsible=icon]:hidden" />
@@ -219,7 +219,7 @@ export function ProjectSwitcher({ project }: { project: Project }) {
               <DialogTitle>Archive this report?</DialogTitle>
               <DialogDescription>
                 Archiving pauses <strong>{project.name}</strong>. No agent
-                runs, score updates or new evidence — everything captured so
+                runs, score updates or new evidence, everything captured so
                 far stays readable, and you can reactivate it anytime. Plans
                 currently include one active report, so archiving frees the
                 slot for a new one.
@@ -245,7 +245,7 @@ export function ProjectSwitcher({ project }: { project: Project }) {
             <DialogHeader>
               <DialogTitle>Delete this report?</DialogTitle>
               <DialogDescription>
-                This permanently deletes <strong>{project.name}</strong> —
+                This permanently deletes <strong>{project.name}</strong>,
                 every score, screenshot, session and action plan. No further
                 updates will ever run and nothing can be recovered. If you
                 just want to pause it, archive it instead.

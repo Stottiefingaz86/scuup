@@ -4,7 +4,7 @@ import { currentUser } from "@/lib/auth-server";
 import { acceptInvite } from "@/lib/collab-db";
 import { Button } from "@/components/ui/button";
 
-/** Invite landing — the proxy already forces login (with ?next back here),
+/** Invite landing, the proxy already forces login (with ?next back here),
  * so by the time this renders we have an account to attach the seat to. */
 export default async function InvitePage({
   params,

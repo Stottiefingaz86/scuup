@@ -26,7 +26,7 @@ const HEADLINES: Record<string, { title: string; description: string }> = {
   limit: {
     title: "You've used your free report",
     description:
-      "Free is one-and-done — your brand only, no re-runs. Upgrade for competitive benchmarks, logged-in journeys and monthly refreshes.",
+      "Free is one-and-done, your brand only, no re-runs. Upgrade for competitive benchmarks, logged-in journeys and monthly refreshes.",
   },
   competitors: {
     title: "See who's actually taking your players",
@@ -36,7 +36,7 @@ const HEADLINES: Record<string, { title: string; description: string }> = {
   default: {
     title: "Go beyond your own brand",
     description:
-      "Pro and Pro Plus walk the journeys that decide where players deposit — with evidence your whole team can review.",
+      "Pro and Pro Plus walk the journeys that decide where players deposit, with evidence your whole team can review.",
   },
 };
 
@@ -139,7 +139,7 @@ export default async function UpgradePage({
             </ul>
             <Button size="lg" className="w-full glow-primary" disabled>
               <Sparkles data-icon="inline-start" />
-              Upgrade to Pro — coming soon
+              Upgrade to Pro, coming soon
             </Button>
           </CardContent>
         </Card>
@@ -166,7 +166,7 @@ export default async function UpgradePage({
               ))}
             </ul>
             <Button size="lg" className="w-full" variant="outline" disabled>
-              Pro Plus — coming soon
+              Pro Plus, coming soon
             </Button>
           </CardContent>
         </Card>

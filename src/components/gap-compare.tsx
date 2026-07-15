@@ -35,7 +35,7 @@ function matchHeuristic(
 }
 
 /** Explains the score gap between the viewed brand and a rival, heuristic by
- * heuristic — the direct answer to "why does Stake score higher than me". */
+ * heuristic, the direct answer to "why does Stake score higher than me". */
 export function GapCompare({
   viewed,
   viewedName,
@@ -113,7 +113,7 @@ export function GapCompare({
         })}
         {drivers.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            No single heuristic separates them by more than a few points — the
+            No single heuristic separates them by more than a few points, the
             gap is spread evenly.
           </p>
         ) : even.length ? (

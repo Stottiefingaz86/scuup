@@ -6,7 +6,7 @@ import {
 import { LegalPage } from "@/components/landing/legal-page";
 
 export const metadata: Metadata = {
-  title: "Terms of Service — Scuup",
+  title: "Terms of Service | Scuup",
 };
 
 export default function TermsPage() {

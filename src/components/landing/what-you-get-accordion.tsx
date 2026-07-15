@@ -31,7 +31,7 @@ const PANELS: Panel[] = [
     icon: LayoutDashboard,
     tagline: "Live audit dashboard for your product team.",
     quote:
-      "Rank, Player CX Score, journey breakdowns, and screenshot evidence in one workspace — not another slide deck that goes stale the week you ship.",
+      "Rank, Player CX Score, journey breakdowns, and screenshot evidence in one workspace, not another slide deck that goes stale the week you ship.",
     footnote: "Overview, journeys, evidence, gaps, and action plan.",
     strip: "bg-[oklch(0.52_0.14_163)]",
     open: "bg-[oklch(0.38_0.11_163)]",
@@ -42,7 +42,7 @@ const PANELS: Panel[] = [
     icon: Presentation,
     tagline: "Board-ready executive read.",
     quote:
-      "Where you rank in the set, your overall score, and the biggest gap — written so leadership gets it in one pass.",
+      "Where you rank in the set, your overall score, and the biggest gap, written so leadership gets it in one pass.",
     footnote: "Rank, rollup score, and plain-language gap analysis.",
     strip: "bg-[oklch(0.44_0.07_250)]",
     open: "bg-[oklch(0.32_0.06_250)]",
@@ -53,7 +53,7 @@ const PANELS: Panel[] = [
     icon: Trophy,
     tagline: "Same heuristics on every brand.",
     quote:
-      "Every competitor ranked side-by-side on identical journeys — tier-coloured gauges that hold up when someone in the room pushes back.",
+      "Every competitor ranked side-by-side on identical journeys, tier-coloured gauges that hold up when someone in the room pushes back.",
     footnote: "Brand ranking table with journey and pillar scores.",
     strip: "bg-[oklch(0.58_0.17_38)]",
     open: "bg-[oklch(0.44_0.14_38)]",
@@ -64,7 +64,7 @@ const PANELS: Panel[] = [
     icon: Route,
     tagline: "Evidence behind every point.",
     quote:
-      "Heuristic scores, analyst notes, and captures per journey — open any finding and see the screen that earned it.",
+      "Heuristic scores, analyst notes, and captures per journey, open any finding and see the screen that earned it.",
     footnote: "Journey findings with inline screenshot proof.",
     strip: "bg-[oklch(0.42_0.11_285)]",
     open: "bg-[oklch(0.30_0.09_285)]",
@@ -75,7 +75,7 @@ const PANELS: Panel[] = [
     icon: Target,
     tagline: "Prioritised fix list.",
     quote:
-      "Fix now, improve next, and strategic bets — ordered by impact vs effort and tied back to the audit, not a consultant's gut feel.",
+      "Fix now, improve next, and strategic bets, ordered by impact vs effort and tied back to the audit, not a consultant's gut feel.",
     footnote: "Impact matrix plus coverage for missing sessions.",
     strip: "bg-[oklch(0.50_0.10_85)]",
     open: "bg-[oklch(0.36_0.09_85)]",
@@ -129,7 +129,7 @@ export function WhatYouGetAccordion() {
                 !isActive && "hover:brightness-110",
               )}
             >
-              {/* Collapsed — icon pinned to top */}
+              {/* Collapsed, icon pinned to top */}
               <div
                 className={cn(
                   "absolute inset-0 flex justify-center pt-7 transition-opacity duration-300",

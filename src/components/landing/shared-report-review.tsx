@@ -27,7 +27,7 @@ const TEAM_CURSORS = [
 
 type CursorPoint = { x: number; y: number };
 
-/** Where each role tends to read — small hops, not random ants. */
+/** Where each role tends to read, small hops, not random ants. */
 const HOTSPOTS: Record<(typeof TEAM_CURSORS)[number]["label"], CursorPoint[]> = {
   CEO: [
     { x: 16, y: 36 },
@@ -181,7 +181,7 @@ function ReportPreview() {
                   <span className="text-brand">{leader.brand.name}</span> leads the
                   set at {leader.score}
                   {ownScore !== null && leader.brand.id !== ownBrand.id
-                    ? ` — you're ${leader.score - ownScore} points behind on player experience.`
+                    ? `. You're ${leader.score - ownScore} points behind on player experience.`
                     : "."}
                 </>
               ) : null}
@@ -202,7 +202,7 @@ function ReportPreview() {
                 ownScore !== null ? tierTextClass(ownScore) : "text-muted-foreground"
               )}
             >
-              {ownScore ?? "—"}
+              {ownScore ?? "N/A"}
             </span>
             <span className="mt-1 text-xs text-muted-foreground">out of 100</span>
           </div>
@@ -248,10 +248,10 @@ function ReportPreview() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
-                        {pillars.journeys ?? "—"}
+                        {pillars.journeys ?? "N/A"}
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums text-muted-foreground">
-                        {pillars.retention ?? "—"}
+                        {pillars.retention ?? "N/A"}
                       </td>
                       <td
                         className={cn(
@@ -365,7 +365,7 @@ function ReportMultiplayerLayer() {
       <p className="pointer-events-none absolute inset-x-0 bottom-3 hidden text-center text-[11px] text-muted-foreground/70 sm:block">
         {inside
           ? "You're viewing live with the team"
-          : "Hover the report — your cursor joins the review"}
+          : "Hover the report, your cursor joins the review"}
       </p>
     </div>
   );
@@ -386,7 +386,7 @@ export function SharedReportReview() {
             One report the whole team reviews together
           </h2>
           <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-            Export a board-ready PDF or share a live link — leadership, product,
+            Export a board-ready PDF or share a live link, leadership, product,
             and design read the same evidence-backed scorecard, not five
             different decks.
           </p>

@@ -86,7 +86,7 @@ function AccessBadge({
 
 /** Every screenshot the score was measured from, plus the plain-language
  * method: real visit → captured screens → checks scored from them → average.
- * This is the trust story — the number is auditable, not a black box. */
+ * This is the trust story, the number is auditable, not a black box. */
 function ScoreEvidence({
   detail,
   brandName,
@@ -107,7 +107,7 @@ function ScoreEvidence({
         </h3>
         {shots.length > 0 ? (
           <span className="text-[11px] text-muted-foreground/70">
-            {shots.length} screen{shots.length === 1 ? "" : "s"} captured —
+            {shots.length} screen{shots.length === 1 ? "" : "s"} captured,
             click to inspect
           </span>
         ) : null}
@@ -116,7 +116,7 @@ function ScoreEvidence({
         The agent visited {brandName} live, walked this journey and captured
         the screens below. Each of the {checks} checks in the score breakdown
         was scored 0–100 from exactly what these screens show; the overall{" "}
-        {detail.score} is their average — nothing else feeds the number.
+        {detail.score} is their average, nothing else feeds the number.
       </p>
       {shots.length > 0 ? (
         <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1">
@@ -124,8 +124,8 @@ function ScoreEvidence({
             <ScreenshotLightbox
               key={`${src}-${i}`}
               src={src}
-              alt={`${brandName} — ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1} of ${shots.length}`}
-              caption={`${brandName} — ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${shots.length}, captured ${new Date(detail.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
+              alt={`${brandName}: ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1} of ${shots.length}`}
+              caption={`${brandName}: ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${shots.length}, captured ${new Date(detail.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
               className="aspect-[8/5] w-32 shrink-0"
             />
           ))}
@@ -268,10 +268,10 @@ function AreaDeepDive({
               ? (detail.blockReason ??
                 "The agent was blocked before it could observe this area.")
               : agentCanReach(area)
-                ? `No analysis captured for ${detailBrand.name} here yet. The agent runs automatically — this fills in on its own.`
+                ? `No analysis captured for ${detailBrand.name} here yet. The agent runs automatically, this fills in on its own.`
                 : agentCanReachLoggedIn(area)
-                  ? `No analysis captured for ${detailBrand.name} here yet. This journey needs the brand's test account — the agent logs in (or registers first) and walks it automatically.`
-                  : `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login — launch the site in a recorded session to score it.`}
+                  ? `No analysis captured for ${detailBrand.name} here yet. This journey needs the brand's test account, the agent logs in (or registers first) and walks it automatically.`
+                  : `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login, launch the site in a recorded session to score it.`}
           </p>
           <div className="flex items-center gap-2">
             {detail?.blocked && agentCanReachLoggedIn(area) ? (
@@ -320,7 +320,7 @@ function JourneysContent({ project }: { project: Project }) {
       .map((area) => ({ brand, area }))
   );
 
-  // The agent fills gaps by itself — no buttons to click. Each brand+area
+  // The agent fills gaps by itself, no buttons to click. Each brand+area
   // is attempted once per visit; what fails lands in the failure panel with
   // a Take control fallback instead of being retried in a loop.
   const autoTried = useRef<Set<string>>(new Set());
@@ -500,9 +500,7 @@ function JourneysContent({ project }: { project: Project }) {
                     ))}
                     <span className="text-right tabular-nums">
                       {gap === null ? (
-                        <span className="text-xs text-muted-foreground/60">
-                          —
-                        </span>
+                        <span className="text-xs text-muted-foreground/60">N/A</span>
                       ) : gap >= 0 ? (
                         <Badge variant="secondary">Leading</Badge>
                       ) : (
@@ -547,7 +545,7 @@ function JourneysContent({ project }: { project: Project }) {
                     >
                       <div className="flex min-w-0 flex-col gap-0.5">
                         <span className="text-sm font-medium">
-                          {f.brand} —{" "}
+                          {f.brand}, 
                           {ANALYSIS_AREA_LABELS[f.area] ?? f.area}
                         </span>
                         <span className="text-xs leading-relaxed text-muted-foreground">
@@ -574,7 +572,7 @@ function JourneysContent({ project }: { project: Project }) {
           {hasGaps ? (
             <p className="mt-3 flex items-start gap-1.5 text-xs text-muted-foreground">
               <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-              N/A areas fill automatically — the agent logs in with the
+              N/A areas fill automatically, the agent logs in with the
               brand&apos;s test account when one exists (registering on Sign
               Up if not) and walks every journey it can. Anything it
               can&apos;t reach shows why, with a Take control button to walk

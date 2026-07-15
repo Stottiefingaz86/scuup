@@ -206,15 +206,15 @@ export function CookiePolicyContent({ onContactClick }: LegalContentProps) {
       <h2>Cookies we use</h2>
       <ul>
         <li>
-          <strong className="text-foreground">Essential</strong> — authentication
+          <strong className="text-foreground">Essential</strong>, authentication
           session cookies so you can log in securely and stay signed in.
         </li>
         <li>
-          <strong className="text-foreground">Preference</strong> — storing choices
+          <strong className="text-foreground">Preference</strong>, storing choices
           such as cookie consent and UI settings.
         </li>
         <li>
-          <strong className="text-foreground">Analytics (if enabled)</strong> —
+          <strong className="text-foreground">Analytics (if enabled)</strong>,
           aggregated usage to improve performance and features. We do not use
           cookies for third-party advertising.
         </li>

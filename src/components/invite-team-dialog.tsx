@@ -80,9 +80,9 @@ function MemberRow({
         <span className="truncate text-sm font-medium">{label}</span>
         <span className="truncate text-xs text-muted-foreground">
           {member.role === "admin"
-            ? "Admin — full access"
+            ? "Admin, full access"
             : member.status === "pending"
-              ? "Invite sent — hasn't joined yet"
+              ? "Invite sent, hasn't joined yet"
               : member.viewedAt
                 ? `Viewed ${timeAgo(member.viewedAt)}`
                 : "Hasn't opened the report yet"}
@@ -157,7 +157,7 @@ export function InviteTeamDialog({ projectId }: { projectId: string }) {
       toast.success(
         payload.emailSent
           ? `Invite emailed to ${target}`
-          : `Invite created for ${target} — copy the link below`
+          : `Invite created for ${target}, copy the link below`
       );
       await refresh();
     } catch (e) {

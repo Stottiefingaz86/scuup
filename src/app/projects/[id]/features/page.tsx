@@ -60,8 +60,21 @@ const STATUS_LABEL: Record<FeatureStatus, string> = {
   partial: "Partial",
   yes: "Yes",
   no: "No",
-  hidden: "Hidden",
+  hidden: "Hard to find",
   promo_led: "Promo-led",
+};
+
+/** Plain-language meaning per status, shown as a tooltip on every cell. */
+const STATUS_MEANING: Record<FeatureStatus, string> = {
+  strong: "Present and executed at a best-in-class level",
+  yes: "Clearly present in the captured screens",
+  medium: "Present but middling execution",
+  partial: "Present but incomplete or weak execution",
+  promo_led: "Promotions carousel stands in for this feature",
+  weak: "Present but poorly executed",
+  no: "Provably absent in the captured screens",
+  hidden:
+    "Exists but is buried, the agent found it only in obscure navigation",
 };
 
 const STATUS_CLASS: Record<FeatureStatus, string> = {
@@ -118,7 +131,7 @@ function EvidenceStrip({
   if (withEvidence.length === 0) {
     return (
       <p className="py-2 text-sm text-muted-foreground">
-        No stored evidence for this feature — re-run the journeys to capture
+        No stored evidence for this feature, re-run the journeys to capture
         fresh screenshots.
       </p>
     );
@@ -149,7 +162,7 @@ function EvidenceStrip({
           {ev.screenshot ? (
             <ScreenshotLightbox
               src={ev.screenshot}
-              alt={`${brand.name} — ${row.feature} evidence`}
+              alt={`${brand.name}: ${row.feature} evidence`}
               className="h-28 w-full"
             />
           ) : (
@@ -235,11 +248,11 @@ function FeaturesContent({ project }: { project: Project }) {
             Feature matrix
           </CardTitle>
           <CardDescription>
-            A deep dive, not a score pillar — this matrix shows what each
+            A deep dive, not a score pillar, this matrix shows what each
             brand ships so you can see the gaps, but it never moves the
-            Player CX Score. Screenshot-detected features only — click a row
+            Player CX Score. Screenshot-detected features only, click a row
             to see the proof.
-            Most cells come from public (logged-out) visits; a &quot;—&quot;
+            Most cells come from public (logged-out) visits; a &quot;N/A&quot;
             means not seen in captured screenshots, so it may still exist
             behind login.{" "}
             {backfilling
@@ -275,7 +288,7 @@ function FeaturesContent({ project }: { project: Project }) {
             <div className="flex items-center gap-3 rounded-xl border border-dashed p-6">
               <LoaderCircle className="size-5 shrink-0 animate-spin text-primary" />
               <p className="text-sm leading-relaxed text-muted-foreground">
-                Reading features from your existing screenshot evidence — no
+                Reading features from your existing screenshot evidence, no
                 need to re-visit sites. {backfillLabel}
               </p>
             </div>
@@ -287,7 +300,7 @@ function FeaturesContent({ project }: { project: Project }) {
                   {pendingJobs.length > 0
                     ? "Feature extraction failed or returned no visible features. Try re-running the agent on casino and loyalty journeys."
                     : analysesNeedingFeatureExtract(project) > 0
-                      ? "Analyses exist but have no saved screenshots — re-run the agent to capture evidence."
+                      ? "Analyses exist but have no saved screenshots, re-run the agent to capture evidence."
                       : "Run the agent on casino, landing and loyalty to build the matrix. Journey coverage is " +
                         `${coverage.pct}%.`}
                 </p>
@@ -328,13 +341,19 @@ function FeaturesContent({ project }: { project: Project }) {
                     const value = row.values[brandId];
                     const ev = row.evidence[brandId];
                     if (!value)
-                      return <span className="text-muted-foreground/50">—</span>;
+                      return (
+                        <span
+                          className="text-muted-foreground/50"
+                          title="Not seen on the pages we captured, it may exist behind login"
+                        >N/A</span>
+                      );
                     return (
                       <span
                         className={cn(
                           "inline-flex items-center gap-1.5 font-medium",
                           STATUS_CLASS[value]
                         )}
+                        title={STATUS_MEANING[value]}
                       >
                         {STATUS_LABEL[value]}
                         {ev?.screenshot ? (
@@ -410,17 +429,31 @@ function FeaturesContent({ project }: { project: Project }) {
             </>
           ) : null}
           {!backfilling && matrix.length > 0 ? (
-            <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-              <Camera className="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                <Camera className="me-0.5 inline size-3 opacity-50" /> = a
-                screenshot proves this cell — click the row to see it.
-                &quot;—&quot; = not seen on the pages we captured (usually
-                logged out); it may exist behind login. Run deposit, withdraw
-                and account journeys with a saved test account to extend
-                coverage.
-              </span>
-            </p>
+            <div className="flex flex-col gap-2 text-xs text-muted-foreground">
+              <p className="flex items-start gap-1.5">
+                <Camera className="mt-0.5 size-3.5 shrink-0" />
+                <span>
+                  <Camera className="me-0.5 inline size-3 opacity-50" /> = a
+                  screenshot proves this cell, click the row to see it.
+                  &quot;N/A&quot; = not seen on the pages we captured (usually
+                  logged out); it may exist behind login. Run deposit,
+                  withdraw and account journeys with a saved test account to
+                  extend coverage.
+                </span>
+              </p>
+              <p>
+                <span className="font-medium text-score-strong">Strong / Yes</span>{" "}
+                = clearly present ·{" "}
+                <span className="font-medium text-score-mid">Medium / Partial</span>{" "}
+                = present, weaker execution ·{" "}
+                <span className="font-medium text-score-weak">Weak</span> =
+                present but poorly executed ·{" "}
+                <span className="font-medium text-score-weak">Hard to find</span>{" "}
+                = exists but buried in obscure navigation (evidence attached) ·{" "}
+                <span className="font-medium text-score-weak">No</span> =
+                provably absent. Hover any status for its meaning.
+              </p>
+            </div>
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

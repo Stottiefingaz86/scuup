@@ -1,4 +1,5 @@
 import { ANALYSIS_AREA_LABELS } from "./constants";
+import { PLAIN_PROSE_RULE, sanitizeActionPlan, sanitizeProse } from "./prose";
 import { toObservation, type ActionPlan, type Project, type Recommendation } from "./types";
 
 const PLAN_SCHEMA = {
@@ -76,7 +77,7 @@ export async function buildActionPlan(project: Project): Promise<ActionPlan> {
   const { text, count } = digestProject(project);
   if (count === 0) {
     throw new Error(
-      "No successful analyses yet — run the agent on at least one area first."
+      "No successful analyses yet. Run the agent on at least one area first."
     );
   }
   const own = project.brands.find((b) => b.role === "own_brand");
@@ -93,7 +94,9 @@ Produce 6-10 recommendations. Rules:
 - "area": the analysis area key the action belongs to (one of: ${Object.keys(ANALYSIS_AREA_LABELS).join(", ")}), or "cross_journey".
 - "owner": the team best placed to own it (Product, Design, CRM, Payments, VIP, Content, Engineering).
 - "impact"/"effort"/"confidence": your honest read. Confidence is high only when the evidence was directly observed on ${own?.name} or a competitor; medium/low when partly inferred.
-- Prioritise closing the gaps where competitors visibly outscore ${own?.name}, and stealing patterns that demonstrably work for the leaders.`;
+- Prioritise closing the gaps where competitors visibly outscore ${own?.name}, and stealing patterns that demonstrably work for the leaders.
+
+${PLAIN_PROSE_RULE}`;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -130,12 +133,12 @@ Produce 6-10 recommendations. Rules:
     recommendations: Omit<Recommendation, "id">[];
   };
 
-  return {
+  return sanitizeActionPlan({
     generatedAt: new Date().toISOString(),
     basedOnAnalyses: count,
     recommendations: parsed.recommendations.map((r, i) => ({
       ...r,
       id: `rec-${i + 1}`,
     })),
-  };
+  });
 }

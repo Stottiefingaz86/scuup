@@ -55,7 +55,7 @@ function textOn(hex: string): string {
   return lum > 150 ? "#111111" : "#ffffff";
 }
 
-/** 0-1 chroma — used to lead with the brand colours, not the neutrals. */
+/** 0-1 chroma, used to lead with the brand colours, not the neutrals. */
 function saturationOf(hex: string): number {
   const n = parseInt(hex.slice(1), 16);
   const r = (n >> 16) & 255;
@@ -66,7 +66,7 @@ function saturationOf(hex: string): number {
 }
 
 /** The visual centrepiece: designer swatch cards sampled from the live
- * site — brand accents lead, neutrals follow. */
+ * site, brand accents lead, neutrals follow. */
 function PaletteSwatches({ palette }: { palette: DesignReview["palette"] }) {
   if (palette.length === 0) return null;
   const ordered = [...palette].sort(
@@ -113,7 +113,7 @@ function PaletteSwatches({ palette }: { palette: DesignReview["palette"] }) {
 }
 
 /** Mood-board strip: one real screen per journey with the design lead's
- * critique underneath — the branding story told visually. */
+ * critique underneath, the branding story told visually. */
 function JourneyMoodBoard({
   brand,
   design,
@@ -149,13 +149,13 @@ function JourneyMoodBoard({
           {c.shot ? (
             <ScreenshotLightbox
               src={c.shot}
-              alt={`${brand.name} — ${ANALYSIS_AREA_LABELS[c.area] ?? c.area}`}
-              caption={`${brand.name} — ${ANALYSIS_AREA_LABELS[c.area] ?? c.area}`}
+              alt={`${brand.name}: ${ANALYSIS_AREA_LABELS[c.area] ?? c.area}`}
+              caption={`${brand.name}: ${ANALYSIS_AREA_LABELS[c.area] ?? c.area}`}
               className="aspect-[8/5] w-full rounded-none border-0"
             />
           ) : (
             <div className="flex aspect-[8/5] items-center justify-center bg-muted/40 px-3 text-center text-xs text-muted-foreground">
-              Login wall only — product screen not captured
+              Login wall only, product screen not captured
             </div>
           )}
           <div className="flex flex-col gap-1 px-3 py-2.5">
@@ -244,7 +244,7 @@ function BrandDesign({
           </>
         ) : (
           <p className="text-sm text-muted-foreground">
-            The design review runs automatically — this fills in on its own.
+            The design review runs automatically, this fills in on its own.
           </p>
         )}
       </div>
@@ -291,7 +291,7 @@ function BrandDesign({
               <span className="font-medium text-foreground">
                 Visual craft {design.craft.score}/100
               </span>{" "}
-              — {design.craft.note}
+             , {design.craft.note}
             </p>
           ) : null}
           <span className="text-xs text-muted-foreground">
@@ -326,7 +326,7 @@ function BrandDesign({
           <Palette className="size-4 text-brand" />
           Colour palette
           <span className="text-xs font-normal text-muted-foreground">
-            — measured from the live site, accents first
+           , measured from the live site, accents first
           </span>
         </h3>
         <PaletteSwatches palette={design.palette} />
@@ -338,7 +338,7 @@ function BrandDesign({
           <h3 className="text-sm font-medium">
             The design across the core journeys
             <span className="ms-2 text-xs font-normal text-muted-foreground">
-              — click a screen to inspect it
+             , click a screen to inspect it
             </span>
           </h3>
           <JourneyMoodBoard brand={brand} design={design} />
@@ -538,7 +538,7 @@ function DesignContent({ project }: { project: Project }) {
     }
   };
 
-  // Reviews run themselves — no buttons. One attempt per brand per visit;
+  // Reviews run themselves, no buttons. One attempt per brand per visit;
   // failures surface inline with a retry.
   const missing = project.brands.filter(
     (b) => !b.design && !autoTried.current.has(b.id)
@@ -563,7 +563,7 @@ function DesignContent({ project }: { project: Project }) {
         </div>
         <CardDescription>
           A designer&apos;s critique built from the live rendered code and the
-          captured journey screens — what each site is built with, its real
+          captured journey screens, what each site is built with, its real
           colour palette, dark-vs-light rationale, accessibility, and whether
           the branding holds up across the core journeys.
         </CardDescription>

@@ -22,7 +22,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Scuup — Competitor CX Intelligence for iGaming",
+  title: "Scuup | Competitor CX Intelligence for iGaming",
   description:
     "See where competitors beat you in the player journey, why they win, and what your brand should do next.",
 };

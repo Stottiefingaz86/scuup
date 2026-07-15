@@ -68,12 +68,12 @@ const METHODOLOGY = [
 
 function areaNote(area: string): string {
   if (area === "loyalty_rewards") {
-    return "Scores retention loop mechanics — reward visibility, progress meters, value-back, and reward cadence.";
+    return "Scores retention loop mechanics, reward visibility, progress meters, value-back, and reward cadence.";
   }
   if (journeyRequiresLogin(area)) {
-    return "Scored from a logged-in browser session in your market — same heuristic names on every brand.";
+    return "Scored from a logged-in browser session in your market, same heuristic names on every brand.";
   }
-  return "Vision-scored from captured screenshots — fixed names so every brand compares on the same axes.";
+  return "Vision-scored from captured screenshots, fixed names so every brand compares on the same axes.";
 }
 
 function JourneyPicker({
@@ -223,7 +223,7 @@ export function WhatWeMeasure() {
         <SectionIntro
           kicker="What we measure"
           title={`${MEASURE_AREAS.length} journey areas · ${HEURISTIC_COUNT} heuristics`}
-          description="Scuup scores acquisition, play, money, retention, and support on a fixed heuristic set — so every site in your audit is measured on the same axes."
+          description="Scuup scores acquisition, play, money, retention, and support on a fixed heuristic set, so every site in your audit is measured on the same axes."
         />
       </LandingReveal>
 
@@ -337,7 +337,7 @@ export function WhatYouGet() {
         <SectionIntro
           kicker="What you get"
           title="A live workspace and a report your board can read"
-          description="Every audit produces an interactive dashboard for your product team and a structured report for leadership — both built from the same scored visits."
+          description="Every audit produces an interactive dashboard for your product team and a structured report for leadership, both built from the same scored visits."
         />
       </LandingReveal>
 

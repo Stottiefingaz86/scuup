@@ -34,7 +34,7 @@ const KIND_ICON: Record<CaptureEvent["kind"], typeof Coins> = {
   info: MonitorPlay,
 };
 
-/** One recorded live session with its expandable event timeline —
+/** One recorded live session with its expandable event timeline,
  * deposits, bets, rewards and navigation, exactly as detected. */
 function SessionCard({ session }: { session: CaptureRecord }) {
   const [open, setOpen] = useState(false);
@@ -128,7 +128,7 @@ function EvidenceContent({ project }: { project: Project }) {
         <CardContent>
           {items.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">
-              No evidence yet — it appears when an analysis completes or a
+              No evidence yet, it appears when an analysis completes or a
               live session is saved.
             </p>
           ) : (
@@ -179,7 +179,7 @@ function EvidenceContent({ project }: { project: Project }) {
                           <ScreenshotLightbox
                             key={src}
                             src={src}
-                            alt={`${brand.name} — ${ANALYSIS_AREA_LABELS[analysis.area] ?? analysis.area} screenshot ${i + 1}`}
+                            alt={`${brand.name}: ${ANALYSIS_AREA_LABELS[analysis.area] ?? analysis.area} screenshot ${i + 1}`}
                             className="h-20 w-32"
                           />
                         ))}
@@ -200,7 +200,7 @@ function EvidenceContent({ project }: { project: Project }) {
             Live sessions
           </CardTitle>
           <CardDescription>
-            Every recorded capture session with its full event timeline —
+            Every recorded capture session with its full event timeline,
             deposits, bets, rewards and navigation, exactly as detected.
             Click a session to expand it.
           </CardDescription>
@@ -208,7 +208,7 @@ function EvidenceContent({ project }: { project: Project }) {
         <CardContent>
           {project.sessions.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">
-              No recorded sessions yet — launch any brand from a Take control
+              No recorded sessions yet, launch any brand from a Take control
               button to start one.
             </p>
           ) : (
