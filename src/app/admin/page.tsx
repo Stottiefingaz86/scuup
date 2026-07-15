@@ -6,16 +6,20 @@ import {
   Activity,
   ArrowLeft,
   BarChart3,
+  ChevronRight,
   Copy,
   CreditCard,
   Download,
   ExternalLink,
   FolderOpen,
   KeyRound,
+  Loader2,
   Lock,
+  Receipt,
   RefreshCw,
   Search,
   ShieldAlert,
+  Trash2,
   Users,
 } from "lucide-react";
 import {
@@ -171,41 +175,109 @@ function StatCard({
   );
 }
 
+interface AdminPayment {
+  id: string;
+  date: string;
+  amount: number;
+  currency: string;
+  status: string;
+  description: string;
+  receiptUrl: string | null;
+}
+
+/** "3 days", "5 months", "1y 2m" — how long the account has existed. */
+function tenureLabel(createdAt: string): string {
+  const days = Math.floor(
+    (Date.now() - new Date(createdAt).getTime()) / 86_400_000
+  );
+  if (days < 1) return "joined today";
+  if (days < 62) return `${days} day${days === 1 ? "" : "s"}`;
+  const months = Math.floor(days / 30.44);
+  if (months < 12) return `${months} months`;
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return rest > 0 ? `${years}y ${rest}m` : `${years} year${years === 1 ? "" : "s"}`;
+}
+
 function UserRow({
   user,
   onPlanChange,
+  onDeleted,
 }: {
   user: AdminUser;
   onPlanChange: (userId: string, plan: string) => void;
+  onDeleted: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [projects, setProjects] = useState<AdminProjectSummary[] | null>(null);
+  const [payments, setPayments] = useState<AdminPayment[] | null>(null);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   async function toggleProjects() {
     const next = !expanded;
     setExpanded(next);
+    setConfirmingDelete(false);
     if (next && projects === null) {
-      try {
-        const res = await fetch(`/api/admin/users/${user.id}/projects`);
-        const data = await res.json();
-        setProjects(data.projects ?? []);
-      } catch {
-        setProjects([]);
-      }
+      fetch(`/api/admin/users/${user.id}/projects`)
+        .then((r) => r.json())
+        .then((d) => setProjects(d.projects ?? []))
+        .catch(() => setProjects([]));
+      fetch(`/api/admin/users/${user.id}/payments`)
+        .then((r) => r.json())
+        .then((d) => setPayments(d.payments ?? []))
+        .catch(() => setPayments([]));
     }
   }
+
+  async function deleteUser() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      // Confirmation resets so a stray click later can't destroy an account.
+      setTimeout(() => setConfirmingDelete(false), 5000);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/admin/users/${user.id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "delete failed");
+      toast.success(`${user.email} deleted`);
+      onDeleted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed.");
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
+
+  const paidTotal = (payments ?? [])
+    .filter((p) => p.status === "paid")
+    .reduce((sum, p) => sum + p.amount, 0);
+  const paidCurrency = payments?.find((p) => p.status === "paid")?.currency;
 
   return (
     <>
       <TableRow>
         <TableCell>
-          <div className="min-w-0">
-            <p className="truncate font-medium">{user.email}</p>
-            <p className="truncate text-xs text-muted-foreground">
-              {[user.name, user.company].filter(Boolean).join(" · ") ||
-                "No details"}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={toggleProjects}
+            className="flex min-w-0 items-center gap-1.5 text-left"
+          >
+            <ChevronRight
+              className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${expanded ? "rotate-90" : ""}`}
+            />
+            <span className="min-w-0">
+              <span className="block truncate font-medium">{user.email}</span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {[user.name, user.company].filter(Boolean).join(" · ") ||
+                  "No details"}
+              </span>
+            </span>
+          </button>
         </TableCell>
         <TableCell>
           <Select
@@ -265,56 +337,188 @@ function UserRow({
       </TableRow>
       {expanded ? (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={7} className="py-3">
-            {projects === null ? (
-              <Skeleton className="h-5 w-48" />
-            ) : projects.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No reports yet.</p>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {projects.map((p) => (
-                  <div
-                    key={p.id}
-                    className="flex flex-wrap items-center gap-2 text-xs"
-                  >
-                    <FolderOpen className="size-3.5 text-muted-foreground" />
-                    <a
-                      href={`/projects/${p.id}/overview`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
-                      title="Open this report (admin access)"
-                    >
-                      {p.name}
-                      <ExternalLink className="size-3 text-muted-foreground" />
-                    </a>
-                    <span className="text-muted-foreground">{p.market}</span>
-                    <Badge
-                      variant={p.status === "archived" ? "outline" : "secondary"}
-                    >
-                      {p.status}
-                    </Badge>
-                    <span className="text-muted-foreground">
-                      created{" "}
-                      {new Date(p.createdAt).toLocaleDateString(undefined, {
-                        dateStyle: "medium",
-                      })}
+          <TableCell colSpan={7} className="py-4">
+            <div className="flex flex-col gap-4">
+              {/* Account facts */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>
+                  Customer for{" "}
+                  <span className="font-medium text-foreground">
+                    {tenureLabel(user.createdAt)}
+                  </span>{" "}
+                  (since{" "}
+                  {new Date(user.createdAt).toLocaleDateString(undefined, {
+                    dateStyle: "medium",
+                  })}
+                  )
+                </span>
+                <span>
+                  {user.runsTotal} agent runs · {user.projectCount} reports
+                </span>
+                {paidTotal > 0 ? (
+                  <span>
+                    Lifetime billed:{" "}
+                    <span className="font-medium text-foreground">
+                      {paidTotal.toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                      })}{" "}
+                      {paidCurrency}
                     </span>
-                    <button
-                      type="button"
-                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-                      title="Copy report ID"
-                      onClick={async () => {
-                        await navigator.clipboard.writeText(p.id);
-                        toast.success("Report ID copied");
-                      }}
-                    >
-                      {p.id}
-                    </button>
-                  </div>
-                ))}
+                  </span>
+                ) : null}
+                {user.stripeCustomerId ? (
+                  <a
+                    href={`https://dashboard.stripe.com/customers/${user.stripeCustomerId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                  >
+                    Stripe customer
+                    <ExternalLink className="size-3" />
+                  </a>
+                ) : null}
               </div>
-            )}
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                {/* Reports */}
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Reports
+                  </p>
+                  {projects === null ? (
+                    <Skeleton className="h-5 w-48" />
+                  ) : projects.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No reports yet.
+                    </p>
+                  ) : (
+                    projects.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex flex-wrap items-center gap-2 text-xs"
+                      >
+                        <FolderOpen className="size-3.5 text-muted-foreground" />
+                        <a
+                          href={`/projects/${p.id}/overview`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+                          title="Open this report (admin access)"
+                        >
+                          {p.name}
+                          <ExternalLink className="size-3 text-muted-foreground" />
+                        </a>
+                        <span className="text-muted-foreground">
+                          {p.market}
+                        </span>
+                        <Badge
+                          variant={
+                            p.status === "archived" ? "outline" : "secondary"
+                          }
+                        >
+                          {p.status}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          created{" "}
+                          {new Date(p.createdAt).toLocaleDateString(undefined, {
+                            dateStyle: "medium",
+                          })}
+                        </span>
+                        <button
+                          type="button"
+                          className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                          title="Copy report ID"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(p.id);
+                            toast.success("Report ID copied");
+                          }}
+                        >
+                          {p.id}
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Payments */}
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Payment history
+                  </p>
+                  {payments === null ? (
+                    <Skeleton className="h-5 w-48" />
+                  ) : payments.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      {user.stripeCustomerId
+                        ? "No invoices yet."
+                        : "Never checked out. No Stripe customer."}
+                    </p>
+                  ) : (
+                    payments.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex flex-wrap items-center gap-2 text-xs"
+                      >
+                        <Receipt className="size-3.5 text-muted-foreground" />
+                        <span className="text-muted-foreground">
+                          {new Date(p.date).toLocaleDateString(undefined, {
+                            dateStyle: "medium",
+                          })}
+                        </span>
+                        <span className="font-medium tabular-nums">
+                          {p.amount.toLocaleString(undefined, {
+                            minimumFractionDigits: 2,
+                          })}{" "}
+                          {p.currency}
+                        </span>
+                        <Badge
+                          variant={p.status === "paid" ? "secondary" : "outline"}
+                        >
+                          {p.status}
+                        </Badge>
+                        <span className="truncate text-muted-foreground">
+                          {p.description}
+                        </span>
+                        {p.receiptUrl ? (
+                          <a
+                            href={p.receiptUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                          >
+                            Invoice
+                            <ExternalLink className="size-3" />
+                          </a>
+                        ) : null}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Danger zone */}
+              <div className="flex items-center gap-3 border-t pt-3">
+                <Button
+                  size="sm"
+                  variant={confirmingDelete ? "destructive" : "outline"}
+                  disabled={deleting}
+                  onClick={deleteUser}
+                >
+                  {deleting ? (
+                    <Loader2 data-icon="inline-start" className="animate-spin" />
+                  ) : (
+                    <Trash2 data-icon="inline-start" />
+                  )}
+                  {confirmingDelete
+                    ? "Click again to permanently delete"
+                    : "Delete user"}
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Removes the account, all reports, evidence and usage history.
+                  This can&apos;t be undone.
+                </p>
+              </div>
+            </div>
           </TableCell>
         </TableRow>
       ) : null}
@@ -563,8 +767,8 @@ export default function AdminPage() {
             <div>
               <CardTitle className="text-base">Users</CardTitle>
               <CardDescription>
-                Change plans directly. Click a report count to see the
-                user&apos;s reports.
+                Change plans directly. Click a user to see their reports,
+                payment history and account controls.
               </CardDescription>
             </div>
             <div className="relative">
@@ -596,7 +800,14 @@ export default function AdminPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((u) => (
-                  <UserRow key={u.id} user={u} onPlanChange={changePlan} />
+                  <UserRow
+                    key={u.id}
+                    user={u}
+                    onPlanChange={changePlan}
+                    onDeleted={() =>
+                      setUsers((all) => all.filter((x) => x.id !== u.id))
+                    }
+                  />
                 ))}
                 {filtered.length === 0 ? (
                   <TableRow>

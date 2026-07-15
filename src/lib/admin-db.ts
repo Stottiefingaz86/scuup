@@ -242,3 +242,39 @@ export async function adminSetPlan(userId: string, plan: Plan): Promise<void> {
     .upsert({ user_id: userId, plan }, { onConflict: "user_id" });
   if (error) throw new Error(`plan update failed: ${error.message}`);
 }
+
+/** Permanently delete an account and everything it owns. Projects cascade
+ * to brands, analyses, sessions, credentials, members, comments and views
+ * at the DB level; the rest is removed explicitly, then the auth user. */
+export async function adminDeleteUser(userId: string): Promise<void> {
+  const db = supabase();
+  const steps: { name: string; error: { message: string } | null }[] = [
+    {
+      name: "projects",
+      error: (await db.from("ps_projects").delete().eq("user_id", userId))
+        .error,
+    },
+    {
+      name: "memberships",
+      error: (
+        await db.from("ps_project_members").delete().eq("user_id", userId)
+      ).error,
+    },
+    {
+      name: "run log",
+      error: (await db.from("ps_run_log").delete().eq("user_id", userId))
+        .error,
+    },
+    {
+      name: "profile",
+      error: (await db.from("ps_profiles").delete().eq("user_id", userId))
+        .error,
+    },
+  ];
+  const failed = steps.find((s) => s.error);
+  if (failed) {
+    throw new Error(`delete ${failed.name} failed: ${failed.error!.message}`);
+  }
+  const { error } = await db.auth.admin.deleteUser(userId);
+  if (error) throw new Error(`delete auth user failed: ${error.message}`);
+}
