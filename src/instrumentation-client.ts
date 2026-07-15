@@ -1,36 +1,26 @@
 import * as Sentry from "@sentry/nextjs";
 import posthog from "posthog-js";
+import {
+  POSTHOG_HOST,
+  POSTHOG_KEY,
+  SENTRY_DSN,
+} from "./lib/observability";
 
-/** Browser-side error monitoring. Does nothing until the DSN is set. */
-const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+Sentry.init({
+  dsn: SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: process.env.NODE_ENV === "development" ? 1.0 : 0.1,
+  // 10% of all sessions recorded, 100% of sessions that hit an error.
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1.0,
+  enableLogs: true,
+  integrations: [Sentry.replayIntegration()],
+});
 
-if (dsn) {
-  Sentry.init({
-    dsn,
-    environment: process.env.NODE_ENV,
-    tracesSampleRate: 0.1,
-    // Session replays only on errors — visual repro without the quota cost.
-    replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: 1.0,
-    integrations: [Sentry.replayIntegration()],
-  });
-}
+posthog.init(POSTHOG_KEY, {
+  api_host: POSTHOG_HOST,
+  defaults: "2025-05-24",
+  capture_exceptions: false, // Sentry owns errors.
+});
 
-/** Product analytics. Does nothing until the PostHog key is set. */
-const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-
-if (posthogKey) {
-  posthog.init(posthogKey, {
-    api_host:
-      process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://eu.i.posthog.com",
-    defaults: "2025-05-24",
-    capture_exceptions: false, // Sentry owns errors.
-  });
-}
-
-export function onRouterTransitionStart(
-  url: string,
-  navigationType: "push" | "replace" | "traverse"
-) {
-  Sentry.captureRouterTransitionStart(url, navigationType);
-}
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

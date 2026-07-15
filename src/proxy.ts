@@ -14,6 +14,8 @@ const PUBLIC_PATHS = [
   /^\/api\/contact(\/|$)/,
   // Stripe calls this from its servers; the signature check is the auth.
   /^\/api\/billing\/webhook$/,
+  // Sentry event tunnel — must work for logged-out visitors too.
+  /^\/monitoring(\/|$)/,
 ];
 
 export async function proxy(request: NextRequest) {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import * as Sentry from "@sentry/nextjs";
 import posthog from "posthog-js";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
@@ -61,13 +62,15 @@ export function useAuthUser() {
     };
   }, []);
 
-  // Tie PostHog events to the account so the funnel shows real users.
+  // Tie monitoring and analytics events to the account, so PostHog shows
+  // real people and Sentry errors name the affected user.
   useEffect(() => {
-    if (!user || !process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    if (!user) return;
     posthog.identify(user.id, {
       email: user.email,
       name: displayNameForUser(user),
     });
+    Sentry.setUser({ id: user.id, email: user.email ?? undefined });
   }, [user]);
 
   return {

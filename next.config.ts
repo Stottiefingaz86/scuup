@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const playwrightTrace = ["./node_modules/playwright-core/**/*"];
 
@@ -23,4 +24,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  org: "scuup",
+  project: "javascript-nextjs",
+  // Source map upload runs only when SENTRY_AUTH_TOKEN is set (CI/Vercel).
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  widenClientFileUpload: true,
+  // Proxy events through our own domain so ad-blockers don't eat them.
+  tunnelRoute: "/monitoring",
+  silent: !process.env.CI,
+});
