@@ -90,8 +90,8 @@ const TOOL_LINKS = [
   },
   {
     name: "PostHog",
-    href: "https://eu.posthog.com/project/224760",
-    note: "Product analytics, funnels, session recordings",
+    href: "https://eu.posthog.com/project/224760/dashboard/822320",
+    note: "Growth dashboard: signups, funnel, agent runs, recordings",
     credsKey: "posthog",
   },
   {
