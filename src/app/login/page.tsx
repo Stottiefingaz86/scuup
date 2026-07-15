@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
+import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupLogo } from "@/components/scuup-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +27,8 @@ function Field({
   value,
   onChange,
   autoComplete,
+  required = false,
+  hint,
 }: {
   id: string;
   label: string;
@@ -32,21 +36,99 @@ function Field({
   value: string;
   onChange: (v: string) => void;
   autoComplete: string;
+  required?: boolean;
+  hint?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-sm text-muted-foreground">
         {label}
+        {required ? (
+          <>
+            <span className="text-brand" aria-hidden="true">
+              {" "}
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </>
+        ) : null}
       </label>
       <input
         id={id}
         type={type}
         value={value}
-        required
+        required={required}
         autoComplete={autoComplete}
         onChange={(e) => onChange(e.target.value)}
-        className="rounded-md border border-input bg-transparent px-3 py-2 text-sm outline-none transition-colors focus:border-primary"
+        className="rounded-lg border border-border/80 bg-background/70 px-3 py-2.5 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/45 focus:border-primary/45 focus:ring-2 focus:ring-primary/15"
       />
+      {hint ? (
+        <p className="text-xs text-muted-foreground/80">{hint}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  autoComplete,
+  required = false,
+  hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete: string;
+  required?: boolean;
+  hint?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <label htmlFor={id} className="text-sm text-muted-foreground">
+        {label}
+        {required ? (
+          <>
+            <span className="text-brand" aria-hidden="true">
+              {" "}
+              *
+            </span>
+            <span className="sr-only"> (required)</span>
+          </>
+        ) : null}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={visible ? "text" : "password"}
+          value={value}
+          required={required}
+          autoComplete={autoComplete}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded-lg border border-border/80 bg-background/70 py-2.5 pe-10 ps-3 text-sm outline-none transition-[border-color,box-shadow] placeholder:text-muted-foreground/45 focus:border-primary/45 focus:ring-2 focus:ring-primary/15"
+        />
+        <button
+          type="button"
+          onClick={() => setVisible((v) => !v)}
+          className="absolute inset-y-0 end-0 flex w-10 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          aria-label={visible ? "Hide password" : "Show password"}
+          aria-pressed={visible}
+        >
+          {visible ? (
+            <EyeOff className="size-4" aria-hidden />
+          ) : (
+            <Eye className="size-4" aria-hidden />
+          )}
+        </button>
+      </div>
+      {hint ? (
+        <p className="text-xs text-muted-foreground/80">{hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -56,8 +138,11 @@ function LoginForm() {
   const search = useSearchParams();
   const next = search.get("next") ?? "/dashboard";
   const authError = search.get("error");
+  const modeParam = search.get("mode");
 
-  const [mode, setMode] = useState<Mode>("signin");
+  const [mode, setMode] = useState<Mode>(
+    modeParam === "signup" ? "signup" : "signin"
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [company, setCompany] = useState("");
@@ -125,9 +210,9 @@ function LoginForm() {
   }
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader>
-        <CardTitle>
+    <Card className="w-full max-w-md border-border/80 bg-card/50 shadow-[0_24px_80px_-36px_rgba(0,0,0,0.75)] backdrop-blur-sm">
+      <CardHeader className="gap-2 pb-2">
+        <CardTitle className="font-heading text-xl">
           {mode === "signin" ? "Welcome back" : "Create your account"}
         </CardTitle>
         <CardDescription>
@@ -136,8 +221,8 @@ function LoginForm() {
             : "Free accounts include one full audit report."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4">
-        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/50 p-1">
+      <CardContent className="flex flex-col gap-5">
+        <div className="grid grid-cols-2 gap-1 rounded-full bg-muted/25 p-1 ring-1 ring-border/60">
           {(["signin", "signup"] as const).map((m) => (
             <button
               key={m}
@@ -147,9 +232,9 @@ function LoginForm() {
                 setError(null);
               }}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                "rounded-full px-3 py-2 text-sm transition-colors",
                 mode === m
-                  ? "bg-background font-medium text-foreground shadow-sm"
+                  ? "bg-background font-medium text-foreground shadow-sm ring-1 ring-border/50"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -166,6 +251,7 @@ function LoginForm() {
             value={email}
             onChange={setEmail}
             autoComplete="email"
+            required
           />
           {mode === "signup" ? (
             <>
@@ -176,6 +262,7 @@ function LoginForm() {
                 value={company}
                 onChange={setCompany}
                 autoComplete="organization"
+                required
               />
               <Field
                 id="phone"
@@ -184,25 +271,43 @@ function LoginForm() {
                 value={phone}
                 onChange={setPhone}
                 autoComplete="tel"
+                required
               />
             </>
           ) : null}
-          <Field
+          <PasswordField
             id="password"
             label="Password"
-            type="password"
             value={password}
             onChange={setPassword}
-            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+            autoComplete={
+              mode === "signin" ? "current-password" : "new-password"
+            }
+            required
+            hint={mode === "signup" ? "At least 8 characters." : undefined}
           />
           {error || authError ? (
-            <p className="text-sm text-destructive">{error ?? authError}</p>
+            <p className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive ring-1 ring-destructive/20">
+              {error ?? authError}
+            </p>
           ) : null}
-          <Button type="submit" disabled={busy} className="mt-1">
-            {busy ? <Loader2 data-icon="inline-start" className="animate-spin" /> : null}
+          <Button
+            type="submit"
+            disabled={busy}
+            className={cn("mt-1", mode === "signup" && "glow-primary")}
+          >
+            {busy ? (
+              <Loader2 data-icon="inline-start" className="animate-spin" />
+            ) : null}
             {mode === "signin" ? "Log in" : "Create account"}
           </Button>
         </form>
+
+        {mode === "signup" ? (
+          <p className="text-center text-xs text-muted-foreground/80">
+            <span className="text-brand">*</span> Required fields
+          </p>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -210,11 +315,27 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 px-6">
-      <ScuupLogo />
-      <Suspense>
-        <LoginForm />
-      </Suspense>
-    </div>
+    <LandingShell>
+      <div className="landing-hero-glow landing-bg-dots relative flex min-h-screen flex-col overflow-hidden">
+        <div aria-hidden className="landing-grain-texture absolute inset-0" />
+
+        <header className="relative z-[2] px-6 py-5">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="size-3.5" />
+            Back to home
+          </Link>
+        </header>
+
+        <div className="relative z-[2] flex flex-1 flex-col items-center justify-center gap-8 px-6 pb-16 pt-4">
+          <ScuupLogo />
+          <Suspense>
+            <LoginForm />
+          </Suspense>
+        </div>
+      </div>
+    </LandingShell>
   );
 }

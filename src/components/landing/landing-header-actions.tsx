@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ChevronDown } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { AccountMenuContent } from "@/components/account-menu";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,8 +24,9 @@ export function LandingHeaderActions() {
         <Button variant="ghost" nativeButton={false} render={<Link href="/login" />}>
           Log in
         </Button>
-        <Button nativeButton={false} render={<Link href="/projects/new" />}>
-          Start audit
+        <Button nativeButton={false} render={<Link href="/login?mode=signup" />}>
+          Start
+          <ArrowRight data-icon="inline-end" />
         </Button>
       </>
     );
