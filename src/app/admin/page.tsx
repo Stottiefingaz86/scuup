@@ -18,6 +18,7 @@ import {
   Receipt,
   RefreshCw,
   Search,
+  Server,
   ShieldAlert,
   Trash2,
   Users,
@@ -68,6 +69,7 @@ import type {
   AdminStats,
   AdminUser,
 } from "@/lib/admin-db";
+import type { ServiceHealth } from "@/app/api/admin/health/route";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -526,6 +528,137 @@ function UserRow({
   );
 }
 
+/** Usage bar: green while comfortable, amber approaching the allocation,
+ * red at or past it (providers bill overage instead of cutting off). */
+function UsageBar({ percent }: { percent: number }) {
+  const color =
+    percent >= 90
+      ? "bg-destructive"
+      : percent >= 70
+        ? "bg-amber-500"
+        : "bg-emerald-500";
+  return (
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className={`h-full rounded-full ${color} transition-all`}
+        style={{ width: `${Math.min(percent, 100)}%` }}
+      />
+    </div>
+  );
+}
+
+function InfrastructureCard() {
+  const [services, setServices] = useState<ServiceHealth[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/health")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setServices(d.services ?? []))
+      .catch(() => setFailed(true));
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Server className="size-4 text-primary" />
+          Infrastructure health
+        </CardTitle>
+        <CardDescription>
+          Live usage against each provider&apos;s plan allocation. Green means
+          headroom, red means it&apos;s time to scale the plan.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {failed ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn&apos;t load usage data. Check the provider APIs and try a
+            refresh.
+          </p>
+        ) : services === null ? (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Skeleton className="h-28 w-full" />
+            <Skeleton className="h-28 w-full" />
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {services.map((svc) => (
+              <div
+                key={svc.service}
+                className="flex flex-col gap-3 rounded-lg border p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{svc.service}</p>
+                  {svc.ok ? (
+                    (() => {
+                      const worst = Math.max(
+                        0,
+                        ...svc.metrics.map((m) => m.percent ?? 0)
+                      );
+                      return worst >= 90 ? (
+                        <Badge variant="destructive">Scale up</Badge>
+                      ) : worst >= 70 ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                        >
+                          Watch
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+                        >
+                          Healthy
+                        </Badge>
+                      );
+                    })()
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Unavailable
+                    </Badge>
+                  )}
+                </div>
+                {svc.ok ? (
+                  svc.metrics.map((m) => (
+                    <div key={m.label} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground">
+                          {m.label}
+                        </span>
+                        <span className="tabular-nums">
+                          <span className="font-medium">{m.used}</span>
+                          {m.limit ? (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              / {m.limit} ({m.percent}%)
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                      {m.percent !== null ? (
+                        <UsageBar percent={m.percent} />
+                      ) : null}
+                      {m.detail ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          {m.detail}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground">{svc.error}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -824,6 +957,8 @@ export default function AdminPage() {
           )}
         </CardContent>
       </Card>
+
+      <InfrastructureCard />
 
       <Card>
         <CardHeader>
