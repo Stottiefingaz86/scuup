@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -44,6 +45,50 @@ import { MarketsMarquee } from "@/components/landing/markets-marquee";
 import { ScuupScrollHeadline } from "@/components/landing/scuup-scroll-headline";
 import { SharedReportReview } from "@/components/landing/shared-report-review";
 import { WhyScuupComparison } from "@/components/landing/why-scuup-comparison";
+
+/** Hero accent phrase rolls between the tagline and the brand line. */
+const HERO_ROLL_PHRASES = ["In an Instant", "Get The Scuup."] as const;
+
+function HeroRollingPhrase() {
+  const [index, setIndex] = useState(0);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    setReduceMotion(
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    );
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+    const t = setInterval(() => {
+      setIndex((i) => (i + 1) % HERO_ROLL_PHRASES.length);
+    }, 3200);
+    return () => clearInterval(t);
+  }, [reduceMotion]);
+
+  return (
+    <span className="relative mt-1 block">
+      <span className="sr-only">{HERO_ROLL_PHRASES.join(". ")}</span>
+      <span aria-hidden className="hero-roll-viewport block overflow-hidden">
+        <span
+          className="hero-roll-track block"
+          style={
+            reduceMotion
+              ? undefined
+              : { transform: `translate3d(0, calc(${index} * -1.2em), 0)` }
+          }
+        >
+          {HERO_ROLL_PHRASES.map((line) => (
+            <span key={line} className="hero-roll-line hero-roll-gradient block">
+              {line}
+            </span>
+          ))}
+        </span>
+      </span>
+    </span>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Hero visual: a real screenshot of the live workspace in a browser   */
@@ -248,9 +293,9 @@ export function LandingShowcase() {
               <span className="size-1.5 rounded-full bg-brand" />
               Quick competitor analysis for iGaming
             </Badge>
-            <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.06] tracking-tight text-balance sm:text-6xl">
-              Know where you stand{" "}
-              <span className="text-brand">in an instant</span>
+            <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.12] tracking-tight sm:text-6xl">
+              <span className="block text-foreground">Know where you stand,</span>
+              <HeroRollingPhrase />
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">
               Deep dives into casino, sports, retention and what players are

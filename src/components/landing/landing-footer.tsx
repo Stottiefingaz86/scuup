@@ -4,14 +4,27 @@ import { ShieldCheck } from "lucide-react";
 import { useAboutUs } from "@/components/landing/landing-about";
 import { LegalNavButton } from "@/components/landing/landing-legal-dialog";
 import type { LegalDocument } from "@/components/landing/legal-content";
+import {
+  openIntercomHelpCentre,
+  openIntercomLiveChat,
+} from "@/lib/intercom";
 import { cn } from "@/lib/utils";
 
 const RESOURCE_LINKS = [
   { label: "What we score", href: "#pillars" },
   { label: "How it works", href: "#how" },
   { label: "Pricing", href: "#pricing" },
+];
+
+const SUPPORT_LINKS = [
+  { label: "Contact", href: "#contact" },
   { label: "FAQ", href: "#faq" },
 ];
+
+const SUPPORT_INTERCOM = [
+  { label: "Help Centre", action: openIntercomHelpCentre },
+  { label: "Live chat", action: openIntercomLiveChat },
+] as const;
 
 const LEGAL_LINKS: { label: string; doc: LegalDocument }[] = [
   { label: "Privacy Policy", doc: "privacy" },
@@ -71,12 +84,32 @@ export function LandingFooter() {
                   >
                     About
                   </button>
-                  <a
-                    href="#contact"
-                    className="text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    Contact
-                  </a>
+                </nav>
+              </div>
+              <div className="min-w-[8.5rem]">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Support
+                </p>
+                <nav className="mt-3 flex flex-col items-start gap-2 text-sm">
+                  {SUPPORT_LINKS.map((link) => (
+                    <a
+                      key={link.href}
+                      href={link.href}
+                      className="text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {link.label}
+                    </a>
+                  ))}
+                  {SUPPORT_INTERCOM.map(({ label, action }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={action}
+                      className="text-muted-foreground transition-colors hover:text-foreground"
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </nav>
               </div>
               <div className="min-w-[8.5rem]">

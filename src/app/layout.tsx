@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { AuthHashRecovery } from "@/components/auth-hash-recovery";
+import { IntercomProvider } from "@/components/intercom-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -38,6 +39,7 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <AuthHashRecovery />
+        <IntercomProvider />
         <TooltipProvider>{children}</TooltipProvider>
         <Toaster />
       </body>

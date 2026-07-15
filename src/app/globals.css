@@ -299,6 +299,45 @@
     }
   }
 
+  /* Hero rolling accent phrase — vertical slot, full line width */
+  .hero-roll-viewport {
+    height: 1.2em;
+  }
+  .hero-roll-line {
+    height: 1.2em;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .hero-roll-track {
+    transition: transform 0.7s cubic-bezier(0.33, 1, 0.68, 1);
+    will-change: transform;
+    backface-visibility: hidden;
+  }
+  .hero-roll-gradient {
+    background-image: linear-gradient(
+      105deg,
+      oklch(0.72 0.14 163) 0%,
+      oklch(0.82 0.17 165) 35%,
+      oklch(0.78 0.12 200) 65%,
+      oklch(0.72 0.14 163) 100%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    animation: hero-roll-gradient 5s ease-in-out infinite;
+  }
+  @keyframes hero-roll-gradient {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+
   /* Image-filled display headline (Blask-style) */
   .landing-headline-fill {
     color: transparent;
@@ -313,8 +352,16 @@
     .animate-marquee,
     .animate-marquee-reverse,
     .landing-float-card,
-    .landing-orb {
+    .landing-orb,
+    .hero-roll-track,
+    .hero-roll-gradient {
       animation: none;
+      transition: none;
+    }
+    .hero-roll-gradient {
+      background-position: 0% 50%;
+      color: var(--brand);
+      -webkit-text-fill-color: var(--brand);
     }
     .landing-reveal {
       opacity: 1;
