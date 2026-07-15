@@ -1,8 +1,24 @@
 "use client";
 
 import { MessagesSquare, Palette, Star } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
 import { LandingReveal } from "@/components/landing/landing-reveal";
+import { faviconUrl } from "@/lib/constants";
+import type { BrandRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const SPOTLIGHT_BRANDS = {
+  rainbet: {
+    name: "Rainbet",
+    favicon: faviconUrl("https://rainbet.com", 64),
+    role: "competitor" as BrandRole,
+  },
+  stake: {
+    name: "Stake",
+    favicon: faviconUrl("https://stake.com", 64),
+    role: "competitor" as BrandRole,
+  },
+};
 
 /* ------------------------------------------------------------------ */
 /* Landing spotlights for the two pillars nobody else audits: voice of */
@@ -111,9 +127,7 @@ function VocCard() {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card/50 p-6 backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="flex size-6 items-center justify-center rounded-md border border-border/70 bg-background/60 font-heading text-[10px] font-semibold uppercase text-brand">
-          Rb
-        </span>
+        <BrandMark brand={SPOTLIGHT_BRANDS.rainbet} className="size-6" />
         <span className="font-medium">Rainbet</span>
         <span className="inline-flex items-center gap-1 font-heading text-base font-semibold text-foreground">
           <Star className="size-4 fill-brand/80 text-brand" />
@@ -205,9 +219,7 @@ function DesignCard() {
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border/80 bg-card/50 p-6 backdrop-blur-sm">
       <div className="flex flex-wrap items-center gap-3">
-        <span className="flex size-6 items-center justify-center rounded-md border border-border/70 bg-background/60 font-heading text-[10px] font-semibold uppercase text-brand">
-          St
-        </span>
+        <BrandMark brand={SPOTLIGHT_BRANDS.stake} className="size-6" />
         <span className="font-medium">Stake</span>
         <span className="font-heading text-base font-semibold tabular-nums">
           74/100
