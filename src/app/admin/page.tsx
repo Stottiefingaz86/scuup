@@ -7,13 +7,11 @@ import {
   ArrowLeft,
   BarChart3,
   ChevronRight,
-  Copy,
   CreditCard,
   Download,
   ExternalLink,
   FolderOpen,
   Globe,
-  KeyRound,
   Loader2,
   Lock,
   Receipt,
@@ -104,66 +102,54 @@ const EVENT_LABELS: Record<string, string> = {
   invite_sent: "Invites sent",
 };
 
-/** External tools — one place to jump into every system the business runs on.
- * credsKey matches the /api/admin/credentials response for copy buttons. */
+/** External tools — one place to jump into every system the business runs on. */
 const TOOL_LINKS = [
   {
     name: "Stripe",
     href: "https://dashboard.stripe.com",
     note: "Payments, subscriptions, invoices",
-    credsKey: "stripe",
   },
   {
     name: "PostHog",
     href: "https://eu.posthog.com/project/224760/dashboard/822320",
     note: "Growth dashboard: signups, funnel, agent runs, recordings",
-    credsKey: "posthog",
   },
   {
     name: "Sentry",
     href: "https://scuup.sentry.io/issues/",
     note: "Errors and crash reports",
-    credsKey: "sentry",
   },
   {
     name: "Supabase",
     href: "https://supabase.com/dashboard",
     note: "Database, auth, storage",
-    credsKey: "supabase",
   },
   {
     name: "Vercel",
     href: "https://vercel.com/dashboard",
     note: "Deploys, logs, domains",
-    credsKey: null,
   },
   {
     name: "Vercel Analytics",
     href: "https://vercel.com/chris-projects-e99bc8f6/scuup/analytics",
     note: "Traffic, page views, referrers",
-    credsKey: null,
   },
   {
     name: "Browserbase",
     href: "https://www.browserbase.com/overview",
     note: "Agent browser sessions and quota",
-    credsKey: "browserbase",
   },
   {
     name: "OpenAI",
     href: "https://platform.openai.com/usage",
     note: "Vision model spend and rate limits",
-    credsKey: "openai",
   },
   {
     name: "Resend",
     href: "https://resend.com/emails",
     note: "Transactional email delivery",
-    credsKey: "resend",
   },
 ];
-
-type ToolCredential = { label: string; value: string };
 
 function StatCard({
   icon: Icon,
@@ -872,10 +858,6 @@ function WebAnalyticsCard() {
 export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [credentials, setCredentials] = useState<Record<
-    string,
-    ToolCredential[]
-  > | null>(null);
   const [denied, setDenied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
@@ -900,23 +882,7 @@ export default function AdminPage() {
 
   useEffect(() => {
     void load();
-    // Keys load separately so a slow secrets fetch never delays the stats.
-    fetch("/api/admin/credentials")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (d?.credentials) setCredentials(d.credentials);
-      })
-      .catch(() => {});
   }, []);
-
-  async function copyCredential(tool: string, cred: ToolCredential) {
-    try {
-      await navigator.clipboard.writeText(cred.value);
-      toast.success(`${tool} ${cred.label.toLowerCase()} copied`);
-    } catch {
-      toast.error("Clipboard blocked by the browser.");
-    }
-  }
 
   async function changePlan(userId: string, plan: string) {
     const prev = users;
@@ -1176,54 +1142,26 @@ export default function AdminPage() {
         <CardHeader>
           <CardTitle className="text-base">Systems</CardTitle>
           <CardDescription>
-            Jump into the tools behind the product. Key buttons copy the live
-            credential to your clipboard.
+            Jump into the tools behind the product.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {TOOL_LINKS.map((tool) => {
-              const creds = tool.credsKey
-                ? (credentials?.[tool.credsKey] ?? [])
-                : [];
-              return (
-                <div
-                  key={tool.name}
-                  className="flex flex-col gap-2 rounded-lg border p-3"
-                >
-                  <a
-                    href={tool.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="group flex items-start justify-between gap-2"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{tool.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {tool.note}
-                      </p>
-                    </div>
-                    <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
-                  </a>
-                  {creds.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {creds.map((c) => (
-                        <button
-                          key={c.label}
-                          type="button"
-                          onClick={() => copyCredential(tool.name, c)}
-                          className="flex items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                        >
-                          <KeyRound className="size-3" />
-                          {c.label}
-                          <Copy className="size-2.5 opacity-60" />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
+            {TOOL_LINKS.map((tool) => (
+              <a
+                key={tool.name}
+                href={tool.href}
+                target="_blank"
+                rel="noreferrer"
+                className="group flex items-start justify-between gap-2 rounded-lg border p-3"
+              >
+                <div>
+                  <p className="text-sm font-medium">{tool.name}</p>
+                  <p className="text-xs text-muted-foreground">{tool.note}</p>
                 </div>
-              );
-            })}
+                <ExternalLink className="mt-0.5 size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+              </a>
+            ))}
           </div>
         </CardContent>
       </Card>
