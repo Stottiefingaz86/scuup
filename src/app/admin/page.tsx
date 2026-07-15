@@ -70,6 +70,11 @@ import type {
 } from "@/lib/admin-db";
 import type { ServiceHealth } from "@/app/api/admin/health/route";
 import type { AnalyticsOverview } from "@/app/api/admin/analytics/route";
+import {
+  type AdminSentryIssue,
+  type AdminSentryReport,
+  sentryIssuesDashboardUrl,
+} from "@/lib/sentry-admin";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -664,6 +669,143 @@ function InfrastructureCard() {
   );
 }
 
+function relativeTime(iso: string): string {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 48) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
+function levelVariant(
+  level: string
+): "destructive" | "secondary" | "outline" {
+  if (level === "error" || level === "fatal") return "destructive";
+  if (level === "warning") return "secondary";
+  return "outline";
+}
+
+function SentryIssueRow({ issue }: { issue: AdminSentryIssue }) {
+  return (
+    <div className="flex flex-col gap-1 rounded-lg border p-3 text-xs">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <a
+          href={issue.url}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex min-w-0 items-center gap-1 font-medium underline-offset-2 hover:underline"
+        >
+          <span className="truncate">{issue.title}</span>
+          <ExternalLink className="size-3 shrink-0 text-muted-foreground" />
+        </a>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Badge variant={levelVariant(issue.level)}>{issue.level}</Badge>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {issue.shortId}
+          </span>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-muted-foreground">
+        {issue.culprit ? <span>{issue.culprit}</span> : null}
+        <span>
+          {issue.eventCount.toLocaleString()} event
+          {issue.eventCount === 1 ? "" : "s"}
+        </span>
+        <span>
+          {issue.userCount.toLocaleString()} user
+          {issue.userCount === 1 ? "" : "s"}
+        </span>
+        <span>Last seen {relativeTime(issue.lastSeen)}</span>
+      </div>
+    </div>
+  );
+}
+
+function SentryReportsCard() {
+  const [report, setReport] = useState<
+    AdminSentryReport | { configured: false } | null
+  >(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/sentry")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setReport(d.report ?? { configured: false }))
+      .catch(() => setFailed(true));
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="size-4 text-primary" />
+              Error reports
+            </CardTitle>
+            <CardDescription>
+              Unresolved issues from Sentry, last 24 hours of activity.
+            </CardDescription>
+          </div>
+          <a
+            href={sentryIssuesDashboardUrl()}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Open in Sentry
+            <ExternalLink className="size-3" />
+          </a>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {failed ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn&apos;t load Sentry issues. Check the auth token and try a
+            refresh.
+          </p>
+        ) : report === null ? (
+          <Skeleton className="h-40 w-full" />
+        ) : !report.configured ? (
+          <p className="text-sm text-muted-foreground">
+            Add SENTRY_AUTH_TOKEN (Settings &gt; Developer Settings &gt; Auth
+            Tokens, with event:read scope) to Vercel to see error reports here.
+          </p>
+        ) : report.issues.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <Badge
+              variant="outline"
+              className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+            >
+              All clear
+            </Badge>
+            <p className="text-sm text-muted-foreground">
+              No unresolved issues in the last 24 hours.
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {report.unresolvedCount.toLocaleString()}
+              </span>{" "}
+              unresolved
+              {report.unresolvedCount > report.issues.length
+                ? ` (showing ${report.issues.length} most recent)`
+                : null}
+            </p>
+            {report.issues.map((issue) => (
+              <SentryIssueRow key={issue.id} issue={issue} />
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function WebAnalyticsCard() {
   const [analytics, setAnalytics] = useState<
     AnalyticsOverview | { configured: false } | null
@@ -1135,6 +1277,8 @@ export default function AdminPage() {
       </Card>
 
       <WebAnalyticsCard />
+
+      <SentryReportsCard />
 
       <InfrastructureCard />
 
