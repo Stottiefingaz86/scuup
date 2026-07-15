@@ -26,12 +26,12 @@ import { cn } from "@/lib/utils";
 import { AnimatedTabs } from "@/components/animated-tabs";
 import { BrandMark, BrandTabLabel } from "@/components/brand-mark";
 import { EvidenceObservations } from "@/components/evidence-observations";
+import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
 import { GapCompare } from "@/components/gap-compare";
 import { LiveCaptureDialog } from "@/components/live-capture-dialog";
 import { Verdict } from "@/components/verdict";
 import { ProjectShell } from "@/components/project-shell";
 import { RunAgentButton } from "@/components/run-agent-button";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { ScoreBar } from "@/components/score-bar";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import { ScoreGauge } from "@/components/score-gauge";
@@ -45,6 +45,7 @@ import { projectAreas } from "@/lib/coverage";
 import { agentKey, runAgentBatch, useRunningAgents } from "@/lib/run-agent";
 import {
   areaScore,
+  splitScreenshots,
   type Brand,
   type JourneyAnalysis,
   type Project,
@@ -96,6 +97,7 @@ function ScoreEvidence({
   brandName: string;
   area: string;
 }) {
+  const { desktop, mobile } = splitScreenshots(detail);
   const shots = detail.screenshots ?? [];
   const checks = detail.heuristics.length;
   return (
@@ -107,30 +109,26 @@ function ScoreEvidence({
         </h3>
         {shots.length > 0 ? (
           <span className="text-[11px] text-muted-foreground/70">
-            {shots.length} screen{shots.length === 1 ? "" : "s"} captured,
-            click to inspect
+            {mobile.length > 0
+              ? `${desktop.length} desktop + ${mobile.length} mobile screens captured, click to inspect`
+              : `${shots.length} screen${shots.length === 1 ? "" : "s"} captured, click to inspect`}
           </span>
         ) : null}
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
         The agent visited {brandName} live, walked this journey and captured
-        the screens below. Each of the {checks} checks in the score breakdown
-        was scored 0–100 from exactly what these screens show; the overall{" "}
-        {detail.score} is their average, nothing else feeds the number.
+        the screens below
+        {mobile.length > 0
+          ? ", on desktop and on a phone-size viewport. Because most players are on mobile, the checks weight the mobile experience first"
+          : ""}
+        . Each of the {checks} checks in the score breakdown was scored 0–100
+        from exactly what these screens show; the overall {detail.score} is
+        their average, nothing else feeds the number.
       </p>
-      {shots.length > 0 ? (
-        <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1">
-          {shots.map((src, i) => (
-            <ScreenshotLightbox
-              key={`${src}-${i}`}
-              src={src}
-              alt={`${brandName}: ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1} of ${shots.length}`}
-              caption={`${brandName}: ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${shots.length}, captured ${new Date(detail.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
-              className="aspect-[8/5] w-32 shrink-0"
-            />
-          ))}
-        </div>
-      ) : null}
+      <EvidenceShotStrip
+        analysis={detail}
+        label={`${brandName}: ${ANALYSIS_AREA_LABELS[area] ?? area}`}
+      />
     </div>
   );
 }

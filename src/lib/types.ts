@@ -38,6 +38,32 @@ export function toObservation(o: string | Observation): Observation {
   return typeof o === "string" ? { text: o, shot: null, region: null } : o;
 }
 
+/** Split an analysis's screenshots into the desktop and mobile captures.
+ * Legacy analyses (no mobileFrom) are all desktop. */
+export function splitScreenshots(analysis: {
+  screenshots?: string[];
+  mobileFrom?: number | null;
+}): { desktop: string[]; mobile: string[] } {
+  const shots = analysis.screenshots ?? [];
+  const from = analysis.mobileFrom;
+  if (from == null || from >= shots.length) {
+    return { desktop: shots, mobile: [] };
+  }
+  return { desktop: shots.slice(0, from), mobile: shots.slice(from) };
+}
+
+/** True when a shot index points at a mobile-viewport frame. */
+export function isMobileShot(
+  analysis: { mobileFrom?: number | null },
+  index: number | null | undefined
+): boolean {
+  return (
+    index != null &&
+    analysis.mobileFrom != null &&
+    index >= analysis.mobileFrom
+  );
+}
+
 export type FeatureStatus =
   | "strong"
   | "medium"
@@ -99,8 +125,12 @@ export interface JourneyAnalysis {
   summary: string;
   heuristics: HeuristicResult[];
   observations: (string | Observation)[];
-  /** URLs of the captured screenshots this analysis was scored from. */
+  /** URLs of the captured screenshots this analysis was scored from.
+   * Desktop frames first; mobile frames (if any) appended after them. */
   screenshots?: string[];
+  /** Index into screenshots where the mobile-viewport frames start.
+   * Missing/null = the visit captured desktop only (legacy analyses). */
+  mobileFrom?: number | null;
   /** Loyalty analyses only: the eight retention mechanics scored 0-100, or
    * null when a mechanic can't be observed from this visit alone. */
   retention?: Record<string, number | null>;

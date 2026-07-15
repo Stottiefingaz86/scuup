@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 import { formatElapsed } from "@/components/live-capture-dialog";
 import { ProjectShell } from "@/components/project-shell";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
+import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import type { CaptureEvent, CaptureRecord, Project } from "@/lib/types";
 
@@ -174,16 +174,11 @@ function EvidenceContent({ project }: { project: Project }) {
                       {analysis.finalUrl}
                     </a>
                     {analysis.screenshots?.length ? (
-                      <div className="mt-1 flex flex-wrap gap-2">
-                        {analysis.screenshots.map((src, i) => (
-                          <ScreenshotLightbox
-                            key={src}
-                            src={src}
-                            alt={`${brand.name}: ${ANALYSIS_AREA_LABELS[analysis.area] ?? analysis.area} screenshot ${i + 1}`}
-                            className="h-20 w-32"
-                          />
-                        ))}
-                      </div>
+                      <EvidenceShotStrip
+                        analysis={analysis}
+                        label={`${brand.name}: ${ANALYSIS_AREA_LABELS[analysis.area] ?? analysis.area}`}
+                        className="mt-1"
+                      />
                     ) : null}
                   </div>
                 </div>

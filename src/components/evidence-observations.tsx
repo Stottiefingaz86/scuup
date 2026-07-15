@@ -10,7 +10,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { toObservation, type JourneyAnalysis, type Observation } from "@/lib/types";
+import {
+  isMobileShot,
+  toObservation,
+  type JourneyAnalysis,
+  type Observation,
+} from "@/lib/types";
 
 /** Highlight box drawn over a screenshot at the observation's region. */
 function RegionBox({
@@ -89,8 +94,11 @@ export function EvidenceObservations({
   const shots = analysis.screenshots ?? [];
 
   const srcFor = (o: Observation) => shots[o.shot ?? 0] ?? shots[0] ?? null;
+  const mobileFor = (o: Observation) =>
+    isMobileShot(analysis, o.shot ?? 0);
   const open = openIdx !== null ? observations[openIdx] : null;
   const openSrc = open ? srcFor(open) : null;
+  const openMobile = open ? mobileFor(open) : false;
 
   return (
     <div className="flex flex-col gap-3">
@@ -118,9 +126,17 @@ export function EvidenceObservations({
                   {o.text}
                 </span>
                 {src ? (
-                  // aspect-[8/5] matches the 1440x900 capture viewport, so
-                  // the region overlay aligns 1:1 with the image.
-                  <span className="evidence-thumb relative mt-0.5 block aspect-[8/5] w-24 shrink-0 overflow-hidden rounded-md border transition-colors">
+                  // Thumb aspect matches the capture viewport (1440x900
+                  // desktop, 390x844 mobile) so the region overlay aligns
+                  // 1:1 with the image.
+                  <span
+                    className={cn(
+                      "evidence-thumb relative mt-0.5 block shrink-0 overflow-hidden rounded-md border transition-colors",
+                      mobileFor(o)
+                        ? "aspect-[390/844] w-12"
+                        : "aspect-[8/5] w-24"
+                    )}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
                     <img
                       src={src}
@@ -154,7 +170,17 @@ export function EvidenceObservations({
             <DialogDescription>{open?.text}</DialogDescription>
           </DialogHeader>
           {openSrc ? (
-            <EvidenceShot src={openSrc} region={open?.region ?? null} />
+            openMobile ? (
+              <div className="max-h-[70vh] overflow-y-auto">
+                <EvidenceShot
+                  src={openSrc}
+                  region={open?.region ?? null}
+                  className="mx-auto max-w-[340px]"
+                />
+              </div>
+            ) : (
+              <EvidenceShot src={openSrc} region={open?.region ?? null} />
+            )
           ) : null}
         </DialogContent>
       </Dialog>

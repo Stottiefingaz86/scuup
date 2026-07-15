@@ -55,7 +55,11 @@ export function pickDesignScreenshot(
   area: string,
   analysis: JourneyAnalysis
 ): string | undefined {
-  const shots = analysis.screenshots ?? [];
+  // Design craft is judged on the desktop frames — the appended mobile
+  // pass would otherwise become the "last product frame".
+  const all = analysis.screenshots ?? [];
+  const shots =
+    analysis.mobileFrom != null ? all.slice(0, analysis.mobileFrom) : all;
   if (shots.length === 0) return undefined;
 
   if (area === LANDING || area === "signup") {

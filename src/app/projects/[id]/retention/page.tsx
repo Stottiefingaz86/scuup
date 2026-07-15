@@ -30,6 +30,7 @@ import {
 import { BrandMark } from "@/components/brand-mark";
 import { LiveCaptureDialog } from "@/components/live-capture-dialog";
 import { ProjectShell } from "@/components/project-shell";
+import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
 import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import {
@@ -198,17 +199,10 @@ function BrandOfferCard({
           ) : null}
 
           {shots.length > 0 ? (
-            <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1">
-              {shots.map((src, i) => (
-                <ScreenshotLightbox
-                  key={`${src}-${i}`}
-                  src={src}
-                  alt={`${brand.name} loyalty pages, captured screen ${i + 1} of ${shots.length}`}
-                  caption={`${brand.name}, loyalty & rewards · screen ${i + 1} of ${shots.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
-                  className="aspect-[8/5] w-28 shrink-0"
-                />
-              ))}
-            </div>
+            <EvidenceShotStrip
+              analysis={analysis}
+              label={`${brand.name}, loyalty & rewards`}
+            />
           ) : null}
         </>
       ) : (

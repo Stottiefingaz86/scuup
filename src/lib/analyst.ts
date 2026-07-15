@@ -315,7 +315,8 @@ interface ScrollCapture {
 /** Capture top + incremental scroll positions through to the page bottom. */
 async function captureScrollSequence(
   sc: ScrollCapture,
-  maxShots = 6
+  maxShots = 6,
+  viewport = 900
 ): Promise<string[]> {
   const shots: string[] = [];
   await sc.scrollTo(0);
@@ -323,7 +324,6 @@ async function captureScrollSequence(
   shots.push(await sc.capture());
 
   const height = await sc.getHeight();
-  const viewport = 900;
   if (height <= viewport * 1.15) return shots;
 
   const step = Math.max(viewport, Math.floor((height - viewport) / (maxShots - 2)));
@@ -341,6 +341,55 @@ async function captureScrollSequence(
   }
 
   return shots.slice(0, maxShots);
+}
+
+/** ~80% of real players are on phones, so every journey also gets a
+ * mobile-viewport pass. iPhone 14/15-class dimensions. */
+const MOBILE_VIEWPORT = { width: 390, height: 844 };
+
+/** Re-capture the final page at a phone viewport via CDP device emulation.
+ * Runs in the same session (same login state, no extra Browserbase cost)
+ * and always restores the desktop viewport afterwards. Failing here must
+ * never sink an otherwise successful walk — worst case we score desktop
+ * only, like before. */
+async function captureMobileShots(
+  page: CookieDismissPage & {
+    sendCDP: <T>(method: string, params?: object) => Promise<T>;
+  },
+  capture: () => Promise<string>
+): Promise<string[]> {
+  try {
+    await page.sendCDP("Emulation.setDeviceMetricsOverride", {
+      width: MOBILE_VIEWPORT.width,
+      height: MOBILE_VIEWPORT.height,
+      deviceScaleFactor: 2,
+      mobile: true,
+    });
+    // Give responsive layouts a moment to reflow at the new width.
+    await sleep(2500);
+    return await captureScrollSequence(
+      {
+        capture,
+        scrollTo: async (y) => {
+          await page.evaluate(`window.scrollTo(0, ${y})`);
+        },
+        getHeight: async () =>
+          Number(await page.evaluate("document.documentElement.scrollHeight")),
+      },
+      4,
+      MOBILE_VIEWPORT.height
+    );
+  } catch (e) {
+    console.error(
+      "[analyst] mobile capture failed, continuing desktop-only:",
+      e instanceof Error ? e.message : e
+    );
+    return [];
+  } finally {
+    await page
+      .sendCDP("Emulation.clearDeviceMetricsOverride", {})
+      .catch(() => {});
+  }
 }
 
 /** Evenly-sampled original indices when we captured more frames than the
@@ -594,16 +643,37 @@ export async function scoreScreenshots(
   finalUrl: string,
   screenshots: string[],
   trail: string[] = [],
-  source: "agent" | "session" = "agent"
+  source: "agent" | "session" = "agent",
+  mobileFrom: number | null = null
 ): Promise<AnalysisResult> {
   const guidance = JOURNEY_GUIDANCE[journey] ?? JOURNEY_GUIDANCE.landing;
+  const hasMobile =
+    mobileFrom != null && mobileFrom > 0 && mobileFrom < screenshots.length;
+
+  // Sample desktop and mobile frames separately so the phone pass is always
+  // represented — even sampling over the combined list could drop it.
+  const desktopIndices = pickShotIndices(
+    hasMobile ? mobileFrom : screenshots.length,
+    hasMobile ? 5 : 8
+  );
+  const mobileIndices = hasMobile
+    ? pickShotIndices(screenshots.length - mobileFrom, 3).map(
+        (i) => i + mobileFrom
+      )
+    : [];
+  const shotIndices = [...desktopIndices, ...mobileIndices];
+  const visionShots = shotIndices.map((i) => screenshots[i]!);
+
   const sourceNote =
     source === "session"
       ? "The screenshots were captured at different moments of a REAL RECORDED USER SESSION, in chronological order — they are not a top/scrolled pair of one page. Judge the experience the user actually moved through."
       : screenshots.length > 2
         ? "The screenshots follow the agent's navigation and scroll in chronological order — each step and scroll position produced one screenshot. Judge everything revealed across ALL of them, especially content at the bottom of long lobby pages."
         : "Screenshot 0 = top of page, screenshot 1 = scrolled down.";
-  const prompt = `You are PlayerScope, an elite iGaming CX analyst with deep operator-side experience in crypto casinos and sportsbooks. You are scoring one journey of a casino/sportsbook site from screenshots. ${sourceNote}
+  const mobileNote = hasMobile
+    ? `\n\nDEVICE SPLIT — the images come in two groups. Images 0-${desktopIndices.length - 1} are DESKTOP captures (1440x900). Images ${desktopIndices.length}-${shotIndices.length - 1} are MOBILE captures (390x844 phone viewport) of the same journey, top to bottom. Roughly 80% of real players use this product on a phone, so judge MOBILE-FIRST: weight every heuristic about 70% on the mobile experience and 30% on desktop. A cramped or broken mobile layout, unreachable navigation, overlapping elements, or CTAs pushed out of reach must pull that heuristic down hard — desktop polish cannot rescue a poor mobile experience. Equally, credit genuinely great mobile execution (thumb-reachable bet slip, sticky deposit CTA, clean collapse of the desktop nav). Call out mobile-specific findings explicitly in observations and point their shot index at the mobile image that shows it.`
+    : "";
+  const prompt = `You are PlayerScope, an elite iGaming CX analyst with deep operator-side experience in crypto casinos and sportsbooks. You are scoring one journey of a casino/sportsbook site from screenshots. ${sourceNote}${mobileNote}
 
 ${expertiseFor(journey)}${knowledgeFor(journey)}
 
@@ -630,8 +700,6 @@ For each observation, point at the evidence: set "shot" to the screenshot index 
 If the screenshots show a bot-verification wall, geo-block, error page, or a loading/splash screen with no real product content, set blocked=true, explain in blockReason, and do NOT score the brand's product from it. A capture problem must never read as a bad product.
 
 ${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEATURE_PROMPT}`;
-
-  const visionShots = pickShots(screenshots);
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -694,8 +762,7 @@ ${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEA
       : parsed.retentionNotes;
   const derivedScore = overallFromHeuristics(parsed.heuristics);
   // The model's shot indices point at the sampled frames it was shown —
-  // map them back to the full persisted screenshot list.
-  const shotIndices = pickShotIndices(screenshots.length);
+  // shotIndices (computed above) maps them back to the full persisted list.
   return sanitizeAnalysisProse({
     ...parsed,
     score: derivedScore ?? parsed.score,
@@ -1404,8 +1471,22 @@ async function analyzeWithAgent(
       };
     }
 
+    // Mobile-first pass: re-capture the final page at a phone viewport in
+    // the same session, so scoring reflects where ~80% of players are.
+    const mobileFrom = shots.length;
+    shots.push(...(await captureMobileShots(page, capture)));
+    const hasMobile = shots.length > mobileFrom;
+
     const [result, screenshots] = await Promise.all([
-      scoreScreenshots(journey, pageTitle, finalUrl, shots, trail),
+      scoreScreenshots(
+        journey,
+        pageTitle,
+        finalUrl,
+        shots,
+        trail,
+        "agent",
+        hasMobile ? mobileFrom : null
+      ),
       persistShots(shots),
     ]);
     const analysis: JourneyAnalysis = {
@@ -1413,6 +1494,7 @@ async function analyzeWithAgent(
       area: journey,
       analysedAt: new Date().toISOString(),
       screenshots,
+      ...(hasMobile ? { mobileFrom } : {}),
       finalUrl,
       ...(authenticated !== undefined ? { authenticated } : {}),
       // What the session actually was: pre-walk login, a registration that
@@ -1578,8 +1660,23 @@ async function walkPlaybookAndScore(
 
   const pageTitle = await page.title().catch(() => "");
   const finalUrl = page.url();
+
+  // Mobile-first pass — same session, phone viewport, restored afterwards
+  // so the next chained journey starts back on desktop.
+  const mobileFrom = shots.length;
+  shots.push(...(await captureMobileShots(page, capture)));
+  const hasMobile = shots.length > mobileFrom;
+
   const [result, screenshots] = await Promise.all([
-    scoreScreenshots(journey, pageTitle, finalUrl, shots, trail),
+    scoreScreenshots(
+      journey,
+      pageTitle,
+      finalUrl,
+      shots,
+      trail,
+      "agent",
+      hasMobile ? mobileFrom : null
+    ),
     persistShots(shots),
   ]);
   return {
@@ -1587,6 +1684,7 @@ async function walkPlaybookAndScore(
     area: journey,
     analysedAt: new Date().toISOString(),
     screenshots,
+    ...(hasMobile ? { mobileFrom } : {}),
     finalUrl,
     // Chained walks only run inside the authenticated session from signup.
     loggedIn: true,
@@ -1645,6 +1743,24 @@ async function analyzeLanding(
         page.evaluate(() => document.documentElement.scrollHeight),
     });
 
+    // Mobile-first pass over the same page before the session closes.
+    const mobileFrom = shots.length;
+    shots.push(
+      ...(await captureMobileShots(
+        {
+          evaluate: (expr) => page.evaluate(expr),
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+          sendCDP: async <T,>(method: string, params?: object) =>
+            (await cdp.send(
+              method as Parameters<typeof cdp.send>[0],
+              params
+            )) as T,
+        },
+        capture
+      ))
+    );
+    const hasMobile = shots.length > mobileFrom;
+
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
     const bodyText = await readBodyText({
@@ -1671,7 +1787,15 @@ async function analyzeLanding(
     }
 
     const [result, screenshots] = await Promise.all([
-      scoreScreenshots(journey, pageTitle, finalUrl, shots),
+      scoreScreenshots(
+        journey,
+        pageTitle,
+        finalUrl,
+        shots,
+        [],
+        "agent",
+        hasMobile ? mobileFrom : null
+      ),
       persistShots(shots),
     ]);
     return {
@@ -1679,6 +1803,7 @@ async function analyzeLanding(
       area: journey,
       analysedAt: new Date().toISOString(),
       screenshots,
+      ...(hasMobile ? { mobileFrom } : {}),
       finalUrl,
     };
   } finally {

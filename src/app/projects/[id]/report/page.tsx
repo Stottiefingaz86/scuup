@@ -40,7 +40,7 @@ import {
   SectionCommentsButton,
   SectionCommentsThread,
 } from "@/components/section-comments";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
+import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import { ScoreGauge } from "@/components/score-gauge";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
@@ -478,18 +478,14 @@ function ReportContent({ project }: { project: Project }) {
                                 ? ""
                                 : "s"}{" "}
                               captured on this visit
+                              {analysis.mobileFrom != null
+                                ? " (desktop + mobile)"
+                                : ""}
                             </span>
-                            <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-1">
-                              {analysis.screenshots!.map((src, i) => (
-                                <ScreenshotLightbox
-                                  key={`${src}-${i}`}
-                                  src={src}
-                                  alt={`${brand.name}: ${ANALYSIS_AREA_LABELS[area] ?? area}, captured screen ${i + 1}`}
-                                  caption={`${brand.name}: ${ANALYSIS_AREA_LABELS[area] ?? area} · screen ${i + 1} of ${analysis.screenshots!.length}, captured ${new Date(analysis.analysedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}`}
-                                  className="aspect-[8/5] w-24 shrink-0"
-                                />
-                              ))}
-                            </div>
+                            <EvidenceShotStrip
+                              analysis={analysis}
+                              label={`${brand.name}: ${ANALYSIS_AREA_LABELS[area] ?? area}`}
+                            />
                           </div>
                         ) : null}
                       </div>
