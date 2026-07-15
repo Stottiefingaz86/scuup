@@ -87,15 +87,43 @@ function costBrowserbase(
   );
 }
 
-/** Average working-session duration and proxy from completed Browserbase sessions. */
+export function fallbackUnitCost(
+  assumptions: CogsAssumptions = DEFAULT_COGS_ASSUMPTIONS
+): SessionUnitCost {
+  return {
+    browserMinutes: assumptions.fallbackBrowserMinutes,
+    proxyMb: assumptions.fallbackProxyMb,
+    browserbaseUsd: costBrowserbase(
+      assumptions.fallbackBrowserMinutes,
+      assumptions.fallbackProxyMb,
+      assumptions
+    ),
+    sampleSize: 0,
+    sampled: false,
+  };
+}
+
+/**
+ * Average working-session cost from a small Browserbase sample.
+ * Hard-capped so mission control never stalls waiting on hundreds of sessions.
+ */
 export async function sampleBrowserbaseUnitCost(
   apiKey: string,
   assumptions: CogsAssumptions = DEFAULT_COGS_ASSUMPTIONS
 ): Promise<SessionUnitCost> {
+  if (!apiKey) return fallbackUnitCost(assumptions);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+
   try {
     const res = await fetch(
       "https://api.browserbase.com/v1/sessions?status=COMPLETED",
-      { headers: { "X-BB-API-Key": apiKey }, cache: "no-store" }
+      {
+        headers: { "X-BB-API-Key": apiKey },
+        cache: "no-store",
+        signal: controller.signal,
+      }
     );
     if (!res.ok) throw new Error(`sessions ${res.status}`);
     const raw = (await res.json()) as Array<{
@@ -105,7 +133,8 @@ export async function sampleBrowserbaseUnitCost(
     }>;
 
     const working: { minutes: number; proxyMb: number }[] = [];
-    for (const s of raw) {
+    // Newest sessions first — enough for a stable average without scanning all.
+    for (const s of raw.slice(0, 80)) {
       if (!s.startedAt || !s.endedAt) continue;
       const sec =
         (new Date(s.endedAt).getTime() - new Date(s.startedAt).getTime()) /
@@ -133,17 +162,9 @@ export async function sampleBrowserbaseUnitCost(
       sampled: true,
     };
   } catch {
-    return {
-      browserMinutes: assumptions.fallbackBrowserMinutes,
-      proxyMb: assumptions.fallbackProxyMb,
-      browserbaseUsd: costBrowserbase(
-        assumptions.fallbackBrowserMinutes,
-        assumptions.fallbackProxyMb,
-        assumptions
-      ),
-      sampleSize: 0,
-      sampled: false,
-    };
+    return fallbackUnitCost(assumptions);
+  } finally {
+    clearTimeout(timer);
   }
 }
 

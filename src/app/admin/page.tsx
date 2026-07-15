@@ -68,17 +68,17 @@ import type {
   AdminStats,
   AdminUser,
 } from "@/lib/admin-db";
-import type {
-  ReportCogsOverview,
-  ServiceHealth,
-} from "@/app/api/admin/health/route";
+import type { ServiceHealth } from "@/app/api/admin/health/route";
 import type { AnalyticsOverview } from "@/app/api/admin/analytics/route";
 import {
   type AdminSentryIssue,
   type AdminSentryReport,
   sentryIssuesDashboardUrl,
 } from "@/lib/sentry-admin";
-import { formatUsd } from "@/lib/report-cogs";
+import {
+  formatUsd,
+  type ReportCogsOverview,
+} from "@/lib/report-cogs";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -782,7 +782,14 @@ function InfrastructureCard() {
             ))}
           </div>
 
-          {cogs ? <ReportCogsPanel cogs={cogs} /> : null}
+          {cogs ? (
+            <ReportCogsPanel cogs={cogs} />
+          ) : (
+            <div className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+              Estimated COGS will appear once Browserbase usage is available
+              for this cycle.
+            </div>
+          )}
         </div>
       )}
     </MissionCollapsibleCard>

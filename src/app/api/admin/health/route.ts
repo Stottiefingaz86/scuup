@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { AuthError, isAdminUser, requireUser } from "@/lib/auth-server";
 import {
   buildReportCogs,
+  fallbackUnitCost,
   sampleBrowserbaseUnitCost,
   type ReportCogsOverview,
 } from "@/lib/report-cogs";
@@ -117,25 +118,35 @@ function browserbaseHealthFromUsage(
   };
 }
 
+async function countKind(kind: string): Promise<number> {
+  const { count, error } = await supabase()
+    .from("ps_run_log")
+    .select("id", { count: "exact", head: true })
+    .eq("kind", kind);
+  if (error) return 0;
+  return count ?? 0;
+}
+
 async function runKindCounts(): Promise<{
   analyze: number;
   voc: number;
   design: number;
   projects: number;
 }> {
-  const db = supabase();
-  const [runs, projects] = await Promise.all([
-    db.from("ps_run_log").select("kind"),
-    db.from("ps_projects").select("id", { count: "exact", head: true }),
-  ]);
-  const counts = { analyze: 0, voc: 0, design: 0 };
-  for (const row of runs.data ?? []) {
-    const kind = row.kind as string;
-    if (kind === "analyze" || kind === "voc" || kind === "design") {
-      counts[kind] += 1;
-    }
+  try {
+    const [analyze, voc, design, projects] = await Promise.all([
+      countKind("analyze"),
+      countKind("voc"),
+      countKind("design"),
+      supabase()
+        .from("ps_projects")
+        .select("id", { count: "exact", head: true })
+        .then((r) => r.count ?? 0),
+    ]);
+    return { analyze, voc, design, projects };
+  } catch {
+    return { analyze: 0, voc: 0, design: 0, projects: 0 };
   }
-  return { ...counts, projects: projects.count ?? 0 };
 }
 
 async function buildCogs(
@@ -143,8 +154,10 @@ async function buildCogs(
 ): Promise<ReportCogsOverview | null> {
   if (!usage) return null;
   const apiKey = process.env.BROWSERBASE_API_KEY ?? "";
+
+  // Unit sampling is best-effort; never block or blank the COGS panel.
   const [unit, runs] = await Promise.all([
-    sampleBrowserbaseUnitCost(apiKey),
+    sampleBrowserbaseUnitCost(apiKey).catch(() => fallbackUnitCost()),
     runKindCounts(),
   ]);
 
