@@ -68,13 +68,17 @@ import type {
   AdminStats,
   AdminUser,
 } from "@/lib/admin-db";
-import type { ServiceHealth } from "@/app/api/admin/health/route";
+import type {
+  ReportCogsOverview,
+  ServiceHealth,
+} from "@/app/api/admin/health/route";
 import type { AnalyticsOverview } from "@/app/api/admin/analytics/route";
 import {
   type AdminSentryIssue,
   type AdminSentryReport,
   sentryIssuesDashboardUrl,
 } from "@/lib/sentry-admin";
+import { formatUsd } from "@/lib/report-cogs";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -660,36 +664,41 @@ function UsageBar({ percent }: { percent: number }) {
 
 function InfrastructureCard() {
   const [services, setServices] = useState<ServiceHealth[] | null>(null);
+  const [cogs, setCogs] = useState<ReportCogsOverview | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     fetch("/api/admin/health")
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => setServices(d.services ?? []))
+      .then((d) => {
+        setServices(d.services ?? []);
+        setCogs(d.cogs ?? null);
+      })
       .catch(() => setFailed(true));
   }, []);
+
+  const collapsedHint = (() => {
+    if (cogs) {
+      return `Free ~${formatUsd(cogs.free.totalUsd)} · Full Pro ~${formatUsd(cogs.fullPro.totalUsd)} · cycle ${formatUsd(cogs.cycle.totalUsd)}`;
+    }
+    if (!services?.every((s) => s.ok)) return undefined;
+    return services
+      .map((s) => {
+        const worst = Math.max(0, ...s.metrics.map((m) => m.percent ?? 0));
+        const status =
+          worst >= 90 ? "scale up" : worst >= 70 ? "watch" : "healthy";
+        return `${s.service}: ${status}`;
+      })
+      .join(" · ");
+  })();
 
   return (
     <MissionCollapsibleCard
       sectionId="infrastructure"
       title="Infrastructure health"
-      description="Live usage against each provider's plan allocation. Green means headroom, red means it's time to scale the plan."
+      description="Live usage against each provider's plan allocation, plus estimated COGS per report from Browserbase averages and OpenAI models."
       icon={Server}
-      collapsedHint={
-        services?.every((s) => s.ok)
-          ? services
-              .map((s) => {
-                const worst = Math.max(
-                  0,
-                  ...s.metrics.map((m) => m.percent ?? 0)
-                );
-                const status =
-                  worst >= 90 ? "scale up" : worst >= 70 ? "watch" : "healthy";
-                return `${s.service}: ${status}`;
-              })
-              .join(" · ")
-          : undefined
-      }
+      collapsedHint={collapsedHint}
     >
       {failed ? (
         <p className="text-sm text-muted-foreground">
@@ -702,77 +711,163 @@ function InfrastructureCard() {
           <Skeleton className="h-28 w-full" />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {services.map((svc) => (
-            <div
-              key={svc.service}
-              className="flex flex-col gap-3 rounded-lg border p-4"
-            >
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">{svc.service}</p>
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            {services.map((svc) => (
+              <div
+                key={svc.service}
+                className="flex flex-col gap-3 rounded-lg border p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{svc.service}</p>
+                  {svc.ok ? (
+                    (() => {
+                      const worst = Math.max(
+                        0,
+                        ...svc.metrics.map((m) => m.percent ?? 0)
+                      );
+                      return worst >= 90 ? (
+                        <Badge variant="destructive">Scale up</Badge>
+                      ) : worst >= 70 ? (
+                        <Badge
+                          variant="outline"
+                          className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                        >
+                          Watch
+                        </Badge>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+                        >
+                          Healthy
+                        </Badge>
+                      );
+                    })()
+                  ) : (
+                    <Badge variant="outline" className="text-muted-foreground">
+                      Unavailable
+                    </Badge>
+                  )}
+                </div>
                 {svc.ok ? (
-                  (() => {
-                    const worst = Math.max(
-                      0,
-                      ...svc.metrics.map((m) => m.percent ?? 0)
-                    );
-                    return worst >= 90 ? (
-                      <Badge variant="destructive">Scale up</Badge>
-                    ) : worst >= 70 ? (
-                      <Badge
-                        variant="outline"
-                        className="border-amber-500/50 text-amber-600 dark:text-amber-400"
-                      >
-                        Watch
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
-                      >
-                        Healthy
-                      </Badge>
-                    );
-                  })()
+                  svc.metrics.map((m) => (
+                    <div key={m.label} className="flex flex-col gap-1">
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="text-muted-foreground">{m.label}</span>
+                        <span className="tabular-nums">
+                          <span className="font-medium">{m.used}</span>
+                          {m.limit ? (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              / {m.limit} ({m.percent}%)
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                      {m.percent !== null ? (
+                        <UsageBar percent={m.percent} />
+                      ) : null}
+                      {m.detail ? (
+                        <p className="text-[11px] text-muted-foreground">
+                          {m.detail}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))
                 ) : (
-                  <Badge variant="outline" className="text-muted-foreground">
-                    Unavailable
-                  </Badge>
+                  <p className="text-xs text-muted-foreground">{svc.error}</p>
                 )}
               </div>
-              {svc.ok ? (
-                svc.metrics.map((m) => (
-                  <div key={m.label} className="flex flex-col gap-1">
-                    <div className="flex items-baseline justify-between gap-2 text-xs">
-                      <span className="text-muted-foreground">{m.label}</span>
-                      <span className="tabular-nums">
-                        <span className="font-medium">{m.used}</span>
-                        {m.limit ? (
-                          <span className="text-muted-foreground">
-                            {" "}
-                            / {m.limit} ({m.percent}%)
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                    {m.percent !== null ? (
-                      <UsageBar percent={m.percent} />
-                    ) : null}
-                    {m.detail ? (
-                      <p className="text-[11px] text-muted-foreground">
-                        {m.detail}
-                      </p>
-                    ) : null}
-                  </div>
-                ))
-              ) : (
-                <p className="text-xs text-muted-foreground">{svc.error}</p>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
+
+          {cogs ? <ReportCogsPanel cogs={cogs} /> : null}
         </div>
       )}
     </MissionCollapsibleCard>
+  );
+}
+
+function ReportCogsPanel({ cogs }: { cogs: ReportCogsOverview }) {
+  const estimates = [cogs.free, cogs.fullPro];
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-medium">
+            <Receipt className="size-4 text-primary" />
+            Estimated COGS per report
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{cogs.note}</p>
+        </div>
+        {cogs.cycle.effectivePerReportUsd != null ? (
+          <Badge variant="outline" className="tabular-nums">
+            Cycle avg {formatUsd(cogs.cycle.effectivePerReportUsd)}/report
+          </Badge>
+        ) : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {estimates.map((est) => (
+          <div
+            key={est.label}
+            className="flex flex-col gap-1 rounded-md bg-muted/40 px-3 py-2.5"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-xs font-medium">{est.label}</span>
+              <span className="text-base font-semibold tabular-nums">
+                {formatUsd(est.totalUsd)}
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">{est.detail}</p>
+            <p className="text-[11px] tabular-nums text-muted-foreground">
+              BB {formatUsd(est.browserbaseUsd)} · OpenAI{" "}
+              {formatUsd(est.openaiUsd)} · {est.sessions} sessions
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-2 border-t pt-3 text-xs sm:grid-cols-4">
+        <div>
+          <p className="text-muted-foreground">This cycle (est.)</p>
+          <p className="font-medium tabular-nums">
+            {formatUsd(cogs.cycle.totalUsd)}
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Browserbase</p>
+          <p className="font-medium tabular-nums">
+            {formatUsd(cogs.cycle.browserbaseUsd)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {cogs.cycle.proxyGb.toFixed(2)} GB ·{" "}
+            {(cogs.cycle.browserMinutes / 60).toFixed(1)} hrs
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">OpenAI (modeled)</p>
+          <p className="font-medium tabular-nums">
+            {formatUsd(cogs.cycle.openaiUsd)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {cogs.cycle.analyzeRuns} analyze · {cogs.cycle.vocRuns} voc ·{" "}
+            {cogs.cycle.designRuns} design
+          </p>
+        </div>
+        <div>
+          <p className="text-muted-foreground">Per working session</p>
+          <p className="font-medium tabular-nums">
+            {formatUsd(cogs.unit.browserbaseUsd)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {cogs.unit.browserMinutes.toFixed(1)} min ·{" "}
+            {cogs.unit.proxyMb.toFixed(1)} MB
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 

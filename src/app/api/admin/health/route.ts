@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { AuthError, isAdminUser, requireUser } from "@/lib/auth-server";
+import {
+  buildReportCogs,
+  sampleBrowserbaseUnitCost,
+  type ReportCogsOverview,
+} from "@/lib/report-cogs";
 import { supabase } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -16,7 +21,10 @@ export const dynamic = "force-dynamic";
  *   BROWSERBASE_PLAN_PROXY_GB  (default 1   = Developer)
  *   SUPABASE_PLAN_DB_MB        (default 500 = Free tier)
  *   SUPABASE_PLAN_STORAGE_MB   (default 1024 = Free tier)
+ *   BROWSERBASE_USD_PER_HOUR / BROWSERBASE_USD_PER_GB for COGS rates
  */
+
+export type { ReportCogsOverview };
 
 export interface HealthMetric {
   label: string;
@@ -50,10 +58,28 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
-async function browserbaseHealth(): Promise<ServiceHealth> {
+async function browserbaseUsage(): Promise<{
+  browserMinutes: number;
+  proxyBytes: number;
+} | null> {
   const apiKey = process.env.BROWSERBASE_API_KEY;
   const projectId = process.env.BROWSERBASE_PROJECT_ID;
-  if (!apiKey || !projectId) {
+  if (!apiKey || !projectId) return null;
+  const res = await fetch(
+    `https://api.browserbase.com/v1/projects/${projectId}/usage`,
+    { headers: { "X-BB-API-Key": apiKey }, cache: "no-store" }
+  );
+  if (!res.ok) return null;
+  return (await res.json()) as {
+    browserMinutes: number;
+    proxyBytes: number;
+  };
+}
+
+function browserbaseHealthFromUsage(
+  usage: { browserMinutes: number; proxyBytes: number } | null
+): ServiceHealth {
+  if (!usage) {
     return {
       service: "Browserbase",
       ok: false,
@@ -61,22 +87,6 @@ async function browserbaseHealth(): Promise<ServiceHealth> {
       error: "Not configured (missing API key or project ID).",
     };
   }
-  const res = await fetch(
-    `https://api.browserbase.com/v1/projects/${projectId}/usage`,
-    { headers: { "X-BB-API-Key": apiKey }, cache: "no-store" }
-  );
-  if (!res.ok) {
-    return {
-      service: "Browserbase",
-      ok: false,
-      metrics: [],
-      error: `Usage API returned ${res.status}.`,
-    };
-  }
-  const usage = (await res.json()) as {
-    browserMinutes: number;
-    proxyBytes: number;
-  };
 
   const planMinutes = envNumber("BROWSERBASE_PLAN_MINUTES", 6000);
   const planProxyGb = envNumber("BROWSERBASE_PLAN_PROXY_GB", 1);
@@ -105,6 +115,48 @@ async function browserbaseHealth(): Promise<ServiceHealth> {
       },
     ],
   };
+}
+
+async function runKindCounts(): Promise<{
+  analyze: number;
+  voc: number;
+  design: number;
+  projects: number;
+}> {
+  const db = supabase();
+  const [runs, projects] = await Promise.all([
+    db.from("ps_run_log").select("kind"),
+    db.from("ps_projects").select("id", { count: "exact", head: true }),
+  ]);
+  const counts = { analyze: 0, voc: 0, design: 0 };
+  for (const row of runs.data ?? []) {
+    const kind = row.kind as string;
+    if (kind === "analyze" || kind === "voc" || kind === "design") {
+      counts[kind] += 1;
+    }
+  }
+  return { ...counts, projects: projects.count ?? 0 };
+}
+
+async function buildCogs(
+  usage: { browserMinutes: number; proxyBytes: number } | null
+): Promise<ReportCogsOverview | null> {
+  if (!usage) return null;
+  const apiKey = process.env.BROWSERBASE_API_KEY ?? "";
+  const [unit, runs] = await Promise.all([
+    sampleBrowserbaseUnitCost(apiKey),
+    runKindCounts(),
+  ]);
+
+  return buildReportCogs({
+    unit,
+    browserMinutes: usage.browserMinutes,
+    proxyBytes: usage.proxyBytes,
+    analyzeRuns: runs.analyze,
+    vocRuns: runs.voc,
+    designRuns: runs.design,
+    projects: runs.projects,
+  });
 }
 
 async function supabaseHealth(): Promise<ServiceHealth> {
@@ -160,15 +212,8 @@ export async function GET() {
     }
 
     // One slow/broken provider must not blank out the other.
-    const [browserbase, supabaseUsage] = await Promise.all([
-      browserbaseHealth().catch(
-        (e): ServiceHealth => ({
-          service: "Browserbase",
-          ok: false,
-          metrics: [],
-          error: e instanceof Error ? e.message : "fetch failed",
-        })
-      ),
+    const [usage, supabaseUsage] = await Promise.all([
+      browserbaseUsage().catch(() => null),
       supabaseHealth().catch(
         (e): ServiceHealth => ({
           service: "Supabase",
@@ -179,7 +224,16 @@ export async function GET() {
       ),
     ]);
 
-    return NextResponse.json({ services: [browserbase, supabaseUsage] });
+    const browserbase = browserbaseHealthFromUsage(usage);
+    const cogs = await buildCogs(usage).catch((e) => {
+      console.error("[admin/health] cogs failed:", e);
+      return null;
+    });
+
+    return NextResponse.json({
+      services: [browserbase, supabaseUsage],
+      cogs,
+    });
   } catch (e) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: 401 });
