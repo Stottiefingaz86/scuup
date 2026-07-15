@@ -7,10 +7,19 @@ import type { Plan } from "./plan";
 export { EmailNotVerifiedError, isEmailVerified, markEmailVerified, requireEmailVerified } from "./email-verification";
 export { PLAN_ACTIVE_PROJECT_LIMIT, PLAN_COMPETITOR_LIMIT, PLAN_PROJECT_LIMIT, type Plan } from "./plan";
 
-const ADMIN_EMAILS = (process.env.SCUUP_ADMIN_EMAILS ?? "admin@scuup.app")
-  .split(",")
-  .map((e) => e.trim().toLowerCase())
-  .filter(Boolean);
+/** Always-admin accounts, merged with SCUUP_ADMIN_EMAILS from the env. */
+const BASELINE_ADMIN_EMAILS = [
+  "admin@scuup.app",
+  "christopher.hunt86@gmail.com",
+];
+
+const ADMIN_EMAILS = [
+  ...BASELINE_ADMIN_EMAILS,
+  ...(process.env.SCUUP_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean),
+];
 
 /** Internal accounts that bypass the one-active-report cap. */
 export function isAdminUser(user: Pick<User, "email">): boolean {

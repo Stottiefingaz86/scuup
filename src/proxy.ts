@@ -74,7 +74,12 @@ export async function proxy(request: NextRequest) {
 
   if (user && pathname.startsWith("/login")) {
     const url = request.nextUrl.clone();
-    url.pathname = await appHomePathForUser(user.id);
+    // Honor ?next= so "log in, then go to /admin" style links work.
+    const next = url.searchParams.get("next");
+    url.pathname =
+      next?.startsWith("/") && !next.startsWith("//")
+        ? next
+        : await appHomePathForUser(user.id);
     url.search = "";
     return NextResponse.redirect(url);
   }
