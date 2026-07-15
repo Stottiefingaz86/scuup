@@ -12,6 +12,7 @@ import {
   Download,
   ExternalLink,
   FolderOpen,
+  Globe,
   KeyRound,
   Loader2,
   Lock,
@@ -70,6 +71,7 @@ import type {
   AdminUser,
 } from "@/lib/admin-db";
 import type { ServiceHealth } from "@/app/api/admin/health/route";
+import type { AnalyticsOverview } from "@/app/api/admin/analytics/route";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Free",
@@ -84,6 +86,23 @@ const signupsConfig = {
 const runsConfig = {
   count: { label: "Agent runs", color: "var(--chart-2)" },
 } satisfies ChartConfig;
+
+const trafficConfig = {
+  visitors: { label: "Visitors", color: "var(--chart-1)" },
+  pageviews: { label: "Page views", color: "var(--chart-3)" },
+} satisfies ChartConfig;
+
+/** Friendly names for the product events tracked via lib/track.ts. */
+const EVENT_LABELS: Record<string, string> = {
+  signup_completed: "Signups",
+  logged_in: "Logins",
+  report_created: "Reports created",
+  agent_run_started: "Agent runs",
+  agent_run_failed: "Agent failures",
+  checkout_started: "Checkouts started",
+  billing_portal_opened: "Billing portal opens",
+  invite_sent: "Invites sent",
+};
 
 /** External tools — one place to jump into every system the business runs on.
  * credsKey matches the /api/admin/credentials response for copy buttons. */
@@ -659,6 +678,197 @@ function InfrastructureCard() {
   );
 }
 
+function WebAnalyticsCard() {
+  const [analytics, setAnalytics] = useState<
+    AnalyticsOverview | { configured: false } | null
+  >(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/analytics")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setAnalytics(d.analytics ?? { configured: false }))
+      .catch(() => setFailed(true));
+  }, []);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Globe className="size-4 text-primary" />
+              Traffic and product analytics
+            </CardTitle>
+            <CardDescription>
+              Live from PostHog: visitors, top pages, referrers and key product
+              events, last 30 days.
+            </CardDescription>
+          </div>
+          <a
+            href="https://eu.posthog.com/project/224760/dashboard/822320"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Open in PostHog
+            <ExternalLink className="size-3" />
+          </a>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {failed ? (
+          <p className="text-sm text-muted-foreground">
+            Couldn&apos;t load PostHog data. Check the personal API key and try
+            a refresh.
+          </p>
+        ) : analytics === null ? (
+          <Skeleton className="h-48 w-full" />
+        ) : !analytics.configured ? (
+          <p className="text-sm text-muted-foreground">
+            Add POSTHOG_PERSONAL_API_KEY (Settings &gt; Personal API keys, with
+            Query Read scope) to Vercel to see PostHog stats here.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Unique visitors (30d)
+                </p>
+                <p className="font-heading text-2xl font-semibold tabular-nums">
+                  {analytics.visitors30d.toLocaleString()}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {analytics.visitorsToday.toLocaleString()} today
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Page views (30d)
+                </p>
+                <p className="font-heading text-2xl font-semibold tabular-nums">
+                  {analytics.pageviews30d.toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">
+                  Top referrer (30d)
+                </p>
+                <p className="truncate font-heading text-2xl font-semibold">
+                  {analytics.referrers[0]?.domain ?? "Direct only"}
+                </p>
+                {analytics.referrers[0] ? (
+                  <p className="text-xs text-muted-foreground">
+                    {analytics.referrers[0].visitors.toLocaleString()} visitors
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            <ChartContainer config={trafficConfig} className="h-44 w-full">
+              <AreaChart data={analytics.byDay}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="day"
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(d: string) => d.slice(5)}
+                  minTickGap={24}
+                />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Area
+                  dataKey="pageviews"
+                  type="monotone"
+                  fill="var(--color-pageviews)"
+                  fillOpacity={0.15}
+                  stroke="var(--color-pageviews)"
+                />
+                <Area
+                  dataKey="visitors"
+                  type="monotone"
+                  fill="var(--color-visitors)"
+                  fillOpacity={0.25}
+                  stroke="var(--color-visitors)"
+                />
+              </AreaChart>
+            </ChartContainer>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Top pages
+                </p>
+                {analytics.topPages.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">No data yet.</p>
+                ) : (
+                  analytics.topPages.map((p) => (
+                    <div
+                      key={p.path}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="truncate font-mono">{p.path}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {p.views.toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Referrers
+                </p>
+                {analytics.referrers.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    All traffic is direct so far.
+                  </p>
+                ) : (
+                  analytics.referrers.map((r) => (
+                    <div
+                      key={r.domain}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="truncate">{r.domain}</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {r.visitors.toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Product events (30d)
+                </p>
+                {analytics.events.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No product events yet.
+                  </p>
+                ) : (
+                  analytics.events.map((e) => (
+                    <div
+                      key={e.event}
+                      className="flex items-center justify-between gap-2 text-xs"
+                    >
+                      <span className="truncate">
+                        {EVENT_LABELS[e.event] ?? e.event}
+                      </span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {e.count.toLocaleString()}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -957,6 +1167,8 @@ export default function AdminPage() {
           )}
         </CardContent>
       </Card>
+
+      <WebAnalyticsCard />
 
       <InfrastructureCard />
 
