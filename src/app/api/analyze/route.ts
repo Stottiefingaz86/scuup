@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
   if (brandId) {
     try {
       let creds = await getCredentialsForLogin(brandId);
-      if (journey === "signup" && (!creds.persona || !creds.password)) {
+      if (!creds.persona || !creds.password) {
         await seedTestPersona(brandId, {
           market,
           brandName: brandName || new URL(url).hostname,

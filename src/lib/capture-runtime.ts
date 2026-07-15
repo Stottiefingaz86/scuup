@@ -20,6 +20,7 @@ import {
   releaseSession,
   type Viewport,
 } from "./browserbase";
+import { preparePageAfterNavigation } from "./dismiss-site-cookies";
 
 /**
  * Live capture on serverless: every API call may land on a different
@@ -124,6 +125,7 @@ export async function startCapture(
   await page
     .goto(url, { waitUntil: "domcontentloaded", timeout: 25000 })
     .catch(() => {});
+  await preparePageAfterNavigation(page);
 
   return { sessionId: id, liveViewUrl };
 }

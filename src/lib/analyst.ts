@@ -8,6 +8,14 @@ import {
 } from "./browserbase";
 import { JOURNEY_HEURISTICS, RETENTION_MECHANICS } from "./constants";
 import { persistShots } from "./evidence-storage";
+import {
+  checkAgentLoggedIn,
+  performAgentLogin,
+} from "./agent-login";
+import {
+  dismissSiteCookiesWithAgent,
+  preparePageAfterNavigation,
+} from "./dismiss-site-cookies";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
 import {
@@ -893,16 +901,9 @@ export async function analyzeJourney(
   return analyzeLanding(url, contextId, proxyCountry);
 }
 
-/** "LOGGED_IN" check the registration walk uses to know it's done. */
+/** @deprecated Use checkAgentLoggedIn from agent-login.ts */
 async function agentIsLoggedIn(stagehand: Stagehand): Promise<boolean> {
-  try {
-    const result = await stagehand.extract(
-      "Answer with exactly LOGGED_IN or LOGGED_OUT. LOGGED_IN means a player avatar, account menu, deposit button, or wallet balance for an authenticated user is visible. Prominent Sign Up / Register CTAs mean LOGGED_OUT."
-    );
-    return result.extraction.toUpperCase().includes("LOGGED_IN");
-  } catch {
-    return false;
-  }
+  return checkAgentLoggedIn(stagehand);
 }
 
 /** Fill and submit the (possibly multi-step) registration form with the
@@ -976,7 +977,11 @@ async function runRegistrationWalk(
     }
   }
 
-  if (await tryAgentLogin(stagehand, page, vars, trail, shots, capture)) {
+  if (await performAgentLogin(stagehand, page, {
+    email: vars.email,
+    username: vars.username,
+    password: vars.password,
+  }, { trail, shots, capture, dismissCookies: false })) {
     return true;
   }
 
@@ -991,45 +996,28 @@ async function runRegistrationWalk(
   return false;
 }
 
-/** Open the login form and sign in with the saved test credentials. Used
- * after registration (verify-first sites) and to restore an expired session
- * before a login-gated journey. */
+/** Open the login form and sign in with the saved test credentials. */
 async function tryAgentLogin(
   stagehand: Stagehand,
-  page: { waitForTimeout: (ms: number) => Promise<void> },
+  page: {
+    waitForTimeout: (ms: number) => Promise<void>;
+    evaluate: (expr: string) => Promise<unknown>;
+  },
   vars: Record<string, string>,
   trail: string[],
   shots: string[],
   capture: () => Promise<string>
 ): Promise<boolean> {
-  trail.push("trying login with test credentials after registration");
-  try {
-    const open = await stagehand.act(
-      "click Log In or Sign In (not Register or Sign Up) to open the login form"
-    );
-    if (!open.success) return false;
-    await page.waitForTimeout(2500);
-    shots.push(await capture());
-
-    await stagehand.act(
-      "type %email% into the email or username field of the login form",
-      { variables: vars }
-    );
-    await stagehand.act(
-      "type %password% into the password field of the login form",
-      { variables: vars }
-    );
-    const submit = await stagehand.act(
-      "click the Log In or Sign In button to submit the login form"
-    );
-    if (!submit.success) return false;
-    trail.push("login submitted with test credentials");
-    await page.waitForTimeout(8000);
-    shots.push(await capture());
-    return agentIsLoggedIn(stagehand);
-  } catch {
-    return false;
-  }
+  return performAgentLogin(
+    stagehand,
+    page,
+    {
+      email: vars.email,
+      username: vars.username,
+      password: vars.password,
+    },
+    { trail, shots, capture }
+  );
 }
 
 /** The agent path: navigate from the homepage to the target area with
@@ -1043,7 +1031,7 @@ async function analyzeWithAgent(
   signupVars?: Record<string, string> | null,
   chainLoginJourneys?: string[],
   loginVars?: Record<string, string> | null,
-  accountExists?: boolean
+  _accountExists?: boolean
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
@@ -1088,6 +1076,7 @@ async function analyzeWithAgent(
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
       .catch(() => {});
+    await preparePageAfterNavigation(page, stagehand);
     await waitForPageContent(page);
 
     const trail: string[] = [];
@@ -1103,10 +1092,9 @@ async function analyzeWithAgent(
     let sessionLoggedIn = false;
     if (contextId || loginVars) {
       sessionLoggedIn = await agentIsLoggedIn(stagehand);
-      // Signup only pre-logs-in when an account is known to exist —
-      // otherwise its whole job is registering one.
-      const shouldLogin =
-        !sessionLoggedIn && loginVars != null && (!isSignup || accountExists);
+      // Always try stored credentials first — reuse an existing account before
+      // walking signup again (stottiefingaz@gmail.com + saved password).
+      const shouldLogin = !sessionLoggedIn && loginVars != null;
       if (shouldLogin) {
         sessionLoggedIn = await tryAgentLogin(
           stagehand,
@@ -1123,6 +1111,7 @@ async function analyzeWithAgent(
           await page
             .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
             .catch(() => {});
+          await preparePageAfterNavigation(page, stagehand);
           await page.waitForTimeout(3000);
         }
       }
@@ -1150,26 +1139,35 @@ async function analyzeWithAgent(
       };
     }
 
-    // Signup with an authenticated session (persisted context or an account
-    // that already exists): there is no register button to walk — report the
-    // unlocked state instead of a bogus block.
-    if (isSignup && signupVars && sessionLoggedIn) {
-      const screenshots = await persistShots([await capture()]);
+    // Signup when the stored account already works: score the logged-in
+    // state instead of opening registration again.
+    if (isSignup && sessionLoggedIn) {
+      const pageTitle = await page.title().catch(() => "");
+      const finalUrl = page.url();
+      const shot = await capture();
+      const [result, screenshots] = await Promise.all([
+        scoreScreenshots(
+          journey,
+          pageTitle,
+          finalUrl,
+          [shot],
+          [...trail, "registration skipped — existing test account logged in"]
+        ),
+        persistShots([shot]),
+      ]);
       return {
+        ...result,
         area: journey,
         analysedAt: new Date().toISOString(),
-        score: 0,
-        blocked: true,
-        blockReason:
-          "This brand already has an authenticated test session — the signup form can't be re-walked while logged in. Logged-in journeys (deposit, withdraw, account) are unlocked.",
-        summary: "",
-        heuristics: [],
-        observations: [],
-        features: [],
         screenshots,
-        finalUrl: page.url(),
+        finalUrl,
         authenticated: true,
         loggedIn: true,
+        blocked: false,
+        blockReason: null,
+        summary:
+          result.summary ||
+          "Existing test account logged in successfully — registration skipped.",
       };
     }
     for (const step of playbook) {
@@ -1196,7 +1194,8 @@ async function analyzeWithAgent(
               waitUntil: "domcontentloaded",
               timeoutMs: 20000,
             });
-            await page.waitForTimeout(5000);
+            await preparePageAfterNavigation(page, stagehand);
+            await page.waitForTimeout(3500);
             const bodyText = String(
               await page.evaluate("document.body?.innerText ?? ''")
             );
@@ -1254,6 +1253,7 @@ async function analyzeWithAgent(
 
     // Navigation steps often land on SPAs that need extra time to paint
     // the lobby/content after the chrome loads (Betonline casino, etc.).
+    await dismissSiteCookiesWithAgent(page, stagehand);
     await waitForPageContent(page);
 
     if (DEEP_SCROLL_JOURNEYS.has(journey)) {
@@ -1327,7 +1327,8 @@ async function analyzeWithAgent(
           await page
             .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
             .catch(() => {});
-          await page.waitForTimeout(5000);
+          await preparePageAfterNavigation(page, stagehand);
+          await page.waitForTimeout(3500);
           if (!(await agentIsLoggedIn(stagehand))) {
             trail.push(
               `skipped ${loginJourney} — session lost before logged-in pass`
@@ -1381,6 +1382,8 @@ async function walkPlaybookAndScore(
   const trail = [...trailPrefix];
   const shots: string[] = [];
 
+  await preparePageAfterNavigation(page, stagehand);
+
   for (const step of playbook) {
     let ok = false;
     let message = "";
@@ -1401,7 +1404,8 @@ async function walkPlaybookAndScore(
             waitUntil: "domcontentloaded",
             timeoutMs: 20000,
           });
-          await page.waitForTimeout(5000);
+          await preparePageAfterNavigation(page, stagehand);
+          await page.waitForTimeout(3500);
           const bodyText = String(
             await page.evaluate("document.body?.innerText ?? ''")
           );
@@ -1441,6 +1445,8 @@ async function walkPlaybookAndScore(
       };
     }
   }
+
+  await dismissSiteCookiesWithAgent(page, stagehand);
 
   if (DEEP_SCROLL_JOURNEYS.has(journey)) {
     const scrollShots = await captureScrollSequence({
@@ -1497,6 +1503,10 @@ async function analyzeLanding(
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeout: 25000 })
       .catch(() => {});
+    await preparePageAfterNavigation({
+      evaluate: (expr) => page.evaluate(expr),
+      waitForTimeout: (ms) => page.waitForTimeout(ms),
+    });
     await waitForPageContent({
       evaluate: (expr) => page.evaluate(expr),
       waitForTimeout: (ms) => page.waitForTimeout(ms),

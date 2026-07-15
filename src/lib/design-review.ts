@@ -3,6 +3,7 @@ import path from "node:path";
 import { chromium } from "playwright-core";
 import { createSession, proxyCountryFor, releaseSession } from "./browserbase";
 import { auditUrlForMarket } from "./brand-markets";
+import { preparePageAfterNavigation } from "./dismiss-site-cookies";
 import {
   ANALYSIS_AREA_LABELS,
   MARKET_PROXY_COUNTRY,
@@ -338,6 +339,7 @@ export async function extractDesignSignals(
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeout: 45000 })
       .catch(() => {});
+    await preparePageAfterNavigation(page);
     // SPAs paint after hydration; poll until the page has real content.
     for (let i = 0; i < 10; i++) {
       const textLen = await page

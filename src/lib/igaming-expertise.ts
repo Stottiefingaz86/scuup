@@ -52,7 +52,7 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - Within 3 seconds a player should know: what products (casino/sports), why here (rakeback, VIP, originals), and how to start (one primary CTA).
 - Trust cues that count: licence number/regulator seal in footer, RG links, visible payment rails. "Trusted by millions" is noise.
 - Live wins feed, jackpot ticker, player counts = category-correct social proof, not clutter.
-- Watch for: competing hero promos with no hierarchy, welcome-bonus-first messaging with buried terms, dead nav items, cookie/CTA walls hiding the product.`,
+- Watch for: competing hero promos with no hierarchy, welcome-bonus-first messaging with buried terms, dead nav items, cookie/CTA walls hiding the product. Standard cookie banners are dismissed before capture — only penalise cookie friction if a consent wall still blocks the product in the screenshots.`,
   casino: `CASINO LOBBY EXPERTISE — the lobby is a routing engine for intent:
 - A returning player must reach "their" game in ≤2 interactions: recently played row, favourites, working search with fuzzy matching.
 - Provider filters, category rows (Originals, Slots, Live, Game Shows), and jackpot/leaderboard sections signal depth.

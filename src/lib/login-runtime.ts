@@ -10,6 +10,8 @@ import {
   markLoggedIn,
   saveBrandContext,
 } from "./credentials-db";
+import { preparePageAfterNavigation } from "./dismiss-site-cookies";
+import { checkAgentLoggedIn, performAgentLogin } from "./agent-login";
 
 export interface LoginJob {
   brandId: string;
@@ -114,11 +116,12 @@ export async function startLogin(
       await page
         .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 30000 })
         .catch(() => {});
-      await page.waitForTimeout(6000);
+      await preparePageAfterNavigation(page, stagehand);
+      await page.waitForTimeout(4500);
       push(job, "Site opened");
 
       // Already logged in from a previous context session?
-      const already = await checkLoggedIn(stagehand);
+      const already = await checkAgentLoggedIn(stagehand);
       if (already) {
         push(job, "Session already authenticated from saved context");
         await markLoggedIn(brandId);
@@ -126,43 +129,17 @@ export async function startLogin(
         return;
       }
 
-      const loginId = creds.email ?? creds.username!;
-      const open = await stagehand.act(
-        "click the log in / sign in button to open the login form (not sign up / register)"
+      const loggedIn = await performAgentLogin(
+        stagehand,
+        page,
+        {
+          email: creds.email,
+          username: creds.username,
+          password: creds.password!,
+        },
+        { dismissCookies: false }
       );
-      if (!open.success) {
-        throw new Error(`Couldn't open the login form: ${open.message}`);
-      }
-      push(job, "Login form opened");
-      await page.waitForTimeout(2500);
 
-      const fill = await stagehand.act(
-        "type %loginId% into the email or username field of the login form",
-        { variables: { loginId } }
-      );
-      if (!fill.success) throw new Error(`Couldn't fill login id: ${fill.message}`);
-
-      const pass = await stagehand.act(
-        "type %password% into the password field of the login form",
-        { variables: { password: creds.password! } }
-      );
-      if (!pass.success) throw new Error(`Couldn't fill password: ${pass.message}`);
-      push(job, "Credentials entered");
-
-      const submit = await stagehand.act(
-        "submit the login form (click the log in button inside the form)"
-      );
-      if (!submit.success) throw new Error(`Couldn't submit login: ${submit.message}`);
-      push(job, "Login submitted — waiting for the site to authenticate");
-
-      // Give the site time to authenticate; captchas/2FA can be solved by
-      // the user in the live view while we poll for a logged-in state.
-      let loggedIn = false;
-      for (let i = 0; i < 24; i++) {
-        await page.waitForTimeout(5000);
-        loggedIn = await checkLoggedIn(stagehand);
-        if (loggedIn) break;
-      }
       if (!loggedIn) {
         throw new Error(
           "Login didn't complete — a captcha, 2FA prompt, or wrong credentials may be blocking it. Open the live view and finish the login manually, then retry."
@@ -182,16 +159,4 @@ export async function startLogin(
   })();
 
   return { liveViewUrl: job.liveViewUrl };
-}
-
-/** Evidence-based logged-in check: look for account UI, not marketing. */
-async function checkLoggedIn(stagehand: Stagehand): Promise<boolean> {
-  try {
-    const result = await stagehand.extract(
-      "Answer with exactly LOGGED_IN or LOGGED_OUT. LOGGED_IN means a player avatar, account menu, or wallet balance for an authenticated user is visible in the header. Prominent Sign Up / Log In / Register buttons mean LOGGED_OUT."
-    );
-    return result.extraction.toUpperCase().includes("LOGGED_IN");
-  } catch {
-    return false;
-  }
 }

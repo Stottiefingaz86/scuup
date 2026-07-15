@@ -1,6 +1,5 @@
 import {
   DEFAULT_TEST_EMAIL,
-  defaultTestEmailForBrand,
 } from "./constants";
 
 /** Address + identity bundle for registration forms — varies by project market. */
@@ -195,9 +194,7 @@ export function buildSignupPersona(opts: {
 }): SignupPersona {
   const region = personaRegionForMarket(opts.market);
   const base = PERSONA_BY_REGION[region];
-  const email = opts.ownBrand
-    ? DEFAULT_TEST_EMAIL
-    : defaultTestEmailForBrand(opts.brandName);
+  const email = DEFAULT_TEST_EMAIL;
   const firstName = pick(FIRST_NAMES);
   const lastName = pick(LAST_NAMES);
   const dob = randomDob(region);
@@ -220,6 +217,7 @@ export function personaVariables(
 ): Record<string, string> {
   return {
     email: persona.email,
+    loginId: persona.email,
     password,
     username:
       persona.username ??

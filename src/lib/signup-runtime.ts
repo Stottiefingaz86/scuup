@@ -17,6 +17,7 @@ import {
   personaVariables,
   type SignupPersona,
 } from "./test-persona";
+import { preparePageAfterNavigation } from "./dismiss-site-cookies";
 
 export interface SignupJob {
   brandId: string;
@@ -152,7 +153,8 @@ export async function startSignup(
       await page
         .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 30000 })
         .catch(() => {});
-      await page.waitForTimeout(5000);
+      await preparePageAfterNavigation(page, stagehand);
+      await page.waitForTimeout(3500);
       push(job, "Site opened");
 
       if (await checkLoggedIn(stagehand)) {
