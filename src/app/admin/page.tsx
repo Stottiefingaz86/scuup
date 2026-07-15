@@ -86,12 +86,12 @@ const TOOL_LINKS = [
   },
   {
     name: "PostHog",
-    href: "https://app.posthog.com",
+    href: "https://eu.posthog.com/project/224760",
     note: "Product analytics, funnels, session recordings",
   },
   {
     name: "Sentry",
-    href: "https://sentry.io",
+    href: "https://scuup.sentry.io/issues/",
     note: "Errors and crash reports",
   },
   {
@@ -103,6 +103,11 @@ const TOOL_LINKS = [
     name: "Vercel",
     href: "https://vercel.com/dashboard",
     note: "Deploys, logs, domains",
+  },
+  {
+    name: "Vercel Analytics",
+    href: "https://vercel.com/chris-projects-e99bc8f6/scuup/analytics",
+    note: "Traffic, page views, referrers",
   },
   {
     name: "Browserbase",

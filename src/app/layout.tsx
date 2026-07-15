@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { AuthHashRecovery } from "@/components/auth-hash-recovery";
 import { IntercomProvider } from "@/components/intercom-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -42,6 +43,7 @@ export default function RootLayout({
         <IntercomProvider />
         <TooltipProvider>{children}</TooltipProvider>
         <Toaster />
+        <Analytics />
       </body>
     </html>
   );
