@@ -70,6 +70,29 @@ interface PlaybookStep {
   /** URL paths tried directly when every phrasing fails (e.g. /sports).
    * Only useful for section-navigation steps. */
   fallbackPaths?: string[];
+  /** Description of what the destination must show. After the step lands,
+   * a vision check confirms it — Tipico's "Games" is the casino while its
+   * homepage is the sportsbook, so a successful click is not proof the
+   * agent is in the right area. Failing the check moves on to the next
+   * phrasing/fallback path instead of capturing the wrong product. */
+  verify?: string;
+}
+
+/** YES/NO vision check that the current page matches what the step wanted.
+ * Extraction failures pass — better a wrong-area screenshot than a false
+ * block on a page the model couldn't read. */
+async function verifyLandedArea(
+  stagehand: Stagehand,
+  expected: string
+): Promise<boolean> {
+  try {
+    const result = await stagehand.extract(
+      `Answer with exactly YES or NO. Does the current page show ${expected}?`
+    );
+    return !result.extraction.toUpperCase().includes("NO");
+  } catch {
+    return true;
+  }
 }
 
 /** Navigation the agent performs on its own from the public homepage.
@@ -86,17 +109,25 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   casino: [
     {
       instruction:
-        "open the casino games lobby from the main navigation (it may be labelled Casino, Games, or Slots)",
+        "open the casino games lobby from the main navigation — brands label it Casino, Games, Vegas, Slots, or Live Casino, sometimes only a slot-machine/cards/dice icon. Do NOT open the sportsbook, sports betting, or live betting section",
       required: true,
-      fallbackPaths: ["/casino", "/games", "/slots"],
+      alternatives: [
+        "click the navigation entry that leads to slot games or live casino tables — try labels like Games, Vegas, Casino, Slots, Live Casino, or a games controller / playing-cards icon",
+        "open the site menu (hamburger or category menu) and choose the casino / games / slots section from it",
+      ],
+      fallbackPaths: ["/casino", "/games", "/vegas", "/slots", "/live-casino"],
+      verify:
+        "a casino games lobby — a grid or rows of casino game tiles (slots, live casino tables, game shows), NOT sports matches, odds buttons, or a betslip",
     },
   ],
   sports_betslip: [
     {
       instruction:
-        "open the sports betting or sportsbook section from the main navigation (it may be labelled Sports, Sportsbook, or Betting)",
+        "open the sports betting or sportsbook section from the main navigation (it may be labelled Sports, Sportsbook, Betting, or Live Betting)",
       required: true,
       fallbackPaths: ["/sports", "/sportsbook", "/sport", "/sports-betting"],
+      verify:
+        "a sportsbook — sports matches or events with numeric betting odds, NOT a casino games grid",
     },
     {
       instruction:
@@ -132,9 +163,24 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   loyalty_rewards: [
     {
       instruction:
-        "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — it may be a nav item, a footer link, an icon-only menu entry, or open as a modal",
+        "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — brands label it VIP, VIP Club, Rewards, Loyalty, Rakeback, Bonuses, or Club, sometimes only a crown / gift / trophy / gem icon in the nav; it may be a nav item, a footer link, an icon-only menu entry, or open as a modal",
       required: true,
-      fallbackPaths: ["/vip", "/rewards", "/loyalty", "/vip-rewards", "/rakeback"],
+      alternatives: [
+        "click the crown, gift, trophy, star, or gem icon in the header or navigation — icon-only entries usually lead to the VIP or rewards hub",
+        "open the site menu (hamburger or account menu) and choose the VIP, Rewards, Loyalty, or Bonuses entry from it",
+        "scroll to the footer and click the VIP, Loyalty, Rewards, or Rakeback link",
+      ],
+      fallbackPaths: [
+        "/vip",
+        "/rewards",
+        "/loyalty",
+        "/vip-rewards",
+        "/rakeback",
+        "/vip-club",
+        "/club",
+      ],
+      verify:
+        "a loyalty, VIP, rewards, or rakeback page — tier levels, perks, cashback rates, or reward mechanics, NOT a generic promotions list, casino lobby, or sportsbook",
     },
     {
       instruction:
@@ -818,15 +864,25 @@ const LOGIN_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   deposit: [
     {
       instruction:
-        "open the deposit or cashier screen — usually a Deposit or Wallet button in the header for logged-in players",
+        "open the deposit or cashier screen — usually a Deposit, Wallet, Cashier, or Buy Crypto button in the header for logged-in players",
       required: true,
+      alternatives: [
+        "open the account or wallet menu and choose Deposit or Cashier from it",
+      ],
+      verify:
+        "a deposit or cashier screen — payment methods, amount input, or crypto addresses for adding funds",
     },
   ],
   withdraw: [
     {
       instruction:
-        "open the withdrawal screen — usually inside the cashier or wallet area, labelled Withdraw or Cash Out",
+        "open the withdrawal screen — usually inside the cashier or wallet area, labelled Withdraw, Cash Out, or Payout",
       required: true,
+      alternatives: [
+        "open the cashier or wallet, then switch to the Withdraw / Cash Out tab",
+      ],
+      verify:
+        "a withdrawal screen — payout methods, amount input, or withdrawal address fields",
     },
   ],
   my_account: [
@@ -834,6 +890,8 @@ const LOGIN_PLAYBOOKS: Record<string, PlaybookStep[]> = {
       instruction:
         "open the account, profile, or settings area from the user avatar or account menu in the header",
       required: true,
+      verify:
+        "an account, profile, or settings area for a logged-in player — personal details, verification status, limits, or preferences",
     },
   ],
 };
@@ -1096,24 +1154,26 @@ async function analyzeWithAgent(
       // walking signup again (stottiefingaz@gmail.com + saved password).
       const shouldLogin = !sessionLoggedIn && loginVars != null;
       if (shouldLogin) {
+        // Login shots stay out of the evidence for public journeys — a
+        // login modal with a red error box is not casino lobby evidence.
+        const loginShots: string[] = [];
         sessionLoggedIn = await tryAgentLogin(
           stagehand,
           page,
           loginVars!,
           trail,
-          shots,
+          isLoginJourney || isSignup ? shots : loginShots,
           capture
         );
-        if (sessionLoggedIn) {
-          await page.waitForTimeout(3000);
-          // Restart from the homepage so the playbook walks the product
-          // the way a player would, not from wherever login dropped us.
-          await page
-            .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
-            .catch(() => {});
-          await preparePageAfterNavigation(page, stagehand);
-          await page.waitForTimeout(3000);
-        }
+        // Whether login worked or not, restart from a clean homepage so the
+        // playbook walks the product the way a player would — not from a
+        // login-error modal or wherever authentication dropped us.
+        await page.waitForTimeout(2000);
+        await page
+          .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+          .catch(() => {});
+        await preparePageAfterNavigation(page, stagehand);
+        await page.waitForTimeout(3000);
       }
       if (sessionLoggedIn) {
         trail.push("logged in with the brand's test account before the walk");
@@ -1183,6 +1243,16 @@ async function analyzeWithAgent(
         } catch (e) {
           message = e instanceof Error ? e.message : String(e);
         }
+        // A successful click isn't proof of the right destination — Tipico's
+        // homepage IS its sportsbook, so "opened sports" can land on the same
+        // page the casino click should have left. Verify before accepting.
+        if (ok && step.verify) {
+          await page.waitForTimeout(3500);
+          if (!(await verifyLandedArea(stagehand, step.verify))) {
+            ok = false;
+            message = "landed on the wrong area — trying another route";
+          }
+        }
         if (ok) break;
       }
       // Section navigation can fall back to well-known URL paths when the
@@ -1204,7 +1274,11 @@ async function analyzeWithAgent(
               /404|not found|page (doesn'?t|does not) exist/i.test(
                 bodyText.slice(0, 2000)
               );
-            if (!dead) {
+            if (
+              !dead &&
+              (!step.verify ||
+                (await verifyLandedArea(stagehand, step.verify)))
+            ) {
               ok = true;
               message = `opened ${path} directly after the nav lookup failed`;
               break;
@@ -1395,6 +1469,13 @@ async function walkPlaybookAndScore(
       } catch (e) {
         message = e instanceof Error ? e.message : String(e);
       }
+      if (ok && step.verify) {
+        await page.waitForTimeout(3500);
+        if (!(await verifyLandedArea(stagehand, step.verify))) {
+          ok = false;
+          message = "landed on the wrong area — trying another route";
+        }
+      }
       if (ok) break;
     }
     if (!ok && step.fallbackPaths?.length) {
@@ -1414,7 +1495,10 @@ async function walkPlaybookAndScore(
             /404|not found|page (doesn'?t|does not) exist/i.test(
               bodyText.slice(0, 2000)
             );
-          if (!dead) {
+          if (
+            !dead &&
+            (!step.verify || (await verifyLandedArea(stagehand, step.verify)))
+          ) {
             ok = true;
             message = `opened ${path} directly after the nav lookup failed`;
             break;
