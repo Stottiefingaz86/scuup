@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -106,6 +106,107 @@ const EVENT_LABELS: Record<string, string> = {
   billing_portal_opened: "Billing portal opens",
   invite_sent: "Invites sent",
 };
+
+const MC_COLLAPSE_KEY = "mc-collapsed-sections";
+
+/** Remembers which mission-control panels are collapsed (per browser). */
+function useMissionSectionOpen(sectionId: string, defaultOpen = true) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(MC_COLLAPSE_KEY);
+      if (!raw) return;
+      const map = JSON.parse(raw) as Record<string, boolean>;
+      if (sectionId in map) setOpen(map[sectionId]);
+    } catch {
+      // Ignore corrupt storage.
+    }
+  }, [sectionId]);
+
+  function toggle() {
+    setOpen((prev) => {
+      const next = !prev;
+      try {
+        const raw = localStorage.getItem(MC_COLLAPSE_KEY);
+        const map = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+        map[sectionId] = next;
+        localStorage.setItem(MC_COLLAPSE_KEY, JSON.stringify(map));
+      } catch {
+        // Ignore quota errors.
+      }
+      return next;
+    });
+  }
+
+  return { open, toggle };
+}
+
+function MissionCollapsibleCard({
+  sectionId,
+  title,
+  description,
+  icon: Icon,
+  href,
+  hrefLabel,
+  collapsedHint,
+  children,
+}: {
+  sectionId: string;
+  title: string;
+  description: string;
+  icon: typeof Users;
+  href?: string;
+  hrefLabel?: string;
+  collapsedHint?: string;
+  children: ReactNode;
+}) {
+  const { open, toggle } = useMissionSectionOpen(sectionId);
+
+  return (
+    <Card>
+      <CardHeader className={open ? undefined : "pb-4"}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            className="flex min-w-0 flex-1 items-start gap-2 text-left"
+          >
+            <ChevronRight
+              className={`mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+            />
+            <div className="min-w-0">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Icon className="size-4 text-primary" />
+                {title}
+              </CardTitle>
+              <CardDescription>{description}</CardDescription>
+              {!open && collapsedHint ? (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {collapsedHint}
+                </p>
+              ) : null}
+            </div>
+          </button>
+          {href ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              {hrefLabel}
+              <ExternalLink className="size-3" />
+            </a>
+          ) : null}
+        </div>
+      </CardHeader>
+      {open ? <CardContent>{children}</CardContent> : null}
+    </Card>
+  );
+}
 
 /** External tools — one place to jump into every system the business runs on. */
 const TOOL_LINKS = [
@@ -569,103 +670,109 @@ function InfrastructureCard() {
   }, []);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Server className="size-4 text-primary" />
-          Infrastructure health
-        </CardTitle>
-        <CardDescription>
-          Live usage against each provider&apos;s plan allocation. Green means
-          headroom, red means it&apos;s time to scale the plan.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {failed ? (
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t load usage data. Check the provider APIs and try a
-            refresh.
-          </p>
-        ) : services === null ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Skeleton className="h-28 w-full" />
-            <Skeleton className="h-28 w-full" />
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {services.map((svc) => (
-              <div
-                key={svc.service}
-                className="flex flex-col gap-3 rounded-lg border p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium">{svc.service}</p>
-                  {svc.ok ? (
-                    (() => {
-                      const worst = Math.max(
-                        0,
-                        ...svc.metrics.map((m) => m.percent ?? 0)
-                      );
-                      return worst >= 90 ? (
-                        <Badge variant="destructive">Scale up</Badge>
-                      ) : worst >= 70 ? (
-                        <Badge
-                          variant="outline"
-                          className="border-amber-500/50 text-amber-600 dark:text-amber-400"
-                        >
-                          Watch
-                        </Badge>
-                      ) : (
-                        <Badge
-                          variant="outline"
-                          className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
-                        >
-                          Healthy
-                        </Badge>
-                      );
-                    })()
-                  ) : (
-                    <Badge variant="outline" className="text-muted-foreground">
-                      Unavailable
-                    </Badge>
-                  )}
-                </div>
+    <MissionCollapsibleCard
+      sectionId="infrastructure"
+      title="Infrastructure health"
+      description="Live usage against each provider's plan allocation. Green means headroom, red means it's time to scale the plan."
+      icon={Server}
+      collapsedHint={
+        services?.every((s) => s.ok)
+          ? services
+              .map((s) => {
+                const worst = Math.max(
+                  0,
+                  ...s.metrics.map((m) => m.percent ?? 0)
+                );
+                const status =
+                  worst >= 90 ? "scale up" : worst >= 70 ? "watch" : "healthy";
+                return `${s.service}: ${status}`;
+              })
+              .join(" · ")
+          : undefined
+      }
+    >
+      {failed ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load usage data. Check the provider APIs and try a
+          refresh.
+        </p>
+      ) : services === null ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="h-28 w-full" />
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {services.map((svc) => (
+            <div
+              key={svc.service}
+              className="flex flex-col gap-3 rounded-lg border p-4"
+            >
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">{svc.service}</p>
                 {svc.ok ? (
-                  svc.metrics.map((m) => (
-                    <div key={m.label} className="flex flex-col gap-1">
-                      <div className="flex items-baseline justify-between gap-2 text-xs">
-                        <span className="text-muted-foreground">
-                          {m.label}
-                        </span>
-                        <span className="tabular-nums">
-                          <span className="font-medium">{m.used}</span>
-                          {m.limit ? (
-                            <span className="text-muted-foreground">
-                              {" "}
-                              / {m.limit} ({m.percent}%)
-                            </span>
-                          ) : null}
-                        </span>
-                      </div>
-                      {m.percent !== null ? (
-                        <UsageBar percent={m.percent} />
-                      ) : null}
-                      {m.detail ? (
-                        <p className="text-[11px] text-muted-foreground">
-                          {m.detail}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))
+                  (() => {
+                    const worst = Math.max(
+                      0,
+                      ...svc.metrics.map((m) => m.percent ?? 0)
+                    );
+                    return worst >= 90 ? (
+                      <Badge variant="destructive">Scale up</Badge>
+                    ) : worst >= 70 ? (
+                      <Badge
+                        variant="outline"
+                        className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+                      >
+                        Watch
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
+                      >
+                        Healthy
+                      </Badge>
+                    );
+                  })()
                 ) : (
-                  <p className="text-xs text-muted-foreground">{svc.error}</p>
+                  <Badge variant="outline" className="text-muted-foreground">
+                    Unavailable
+                  </Badge>
                 )}
               </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+              {svc.ok ? (
+                svc.metrics.map((m) => (
+                  <div key={m.label} className="flex flex-col gap-1">
+                    <div className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="text-muted-foreground">{m.label}</span>
+                      <span className="tabular-nums">
+                        <span className="font-medium">{m.used}</span>
+                        {m.limit ? (
+                          <span className="text-muted-foreground">
+                            {" "}
+                            / {m.limit} ({m.percent}%)
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                    {m.percent !== null ? (
+                      <UsageBar percent={m.percent} />
+                    ) : null}
+                    {m.detail ? (
+                      <p className="text-[11px] text-muted-foreground">
+                        {m.detail}
+                      </p>
+                    ) : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">{svc.error}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </MissionCollapsibleCard>
   );
 }
 
@@ -737,72 +844,62 @@ function SentryReportsCard() {
   }, []);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <ShieldAlert className="size-4 text-primary" />
-              Error reports
-            </CardTitle>
-            <CardDescription>
-              Unresolved issues from Sentry, last 24 hours of activity.
-            </CardDescription>
-          </div>
-          <a
-            href={sentryIssuesDashboardUrl()}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
+    <MissionCollapsibleCard
+      sectionId="sentry"
+      title="Error reports"
+      description="Unresolved issues from Sentry, last 24 hours of activity."
+      icon={ShieldAlert}
+      href={sentryIssuesDashboardUrl()}
+      hrefLabel="Open in Sentry"
+      collapsedHint={
+        report?.configured && report.issues.length > 0
+          ? `${report.unresolvedCount} unresolved issue${report.unresolvedCount === 1 ? "" : "s"}`
+          : report?.configured
+            ? "All clear"
+            : undefined
+      }
+    >
+      {failed ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load Sentry issues. Check the auth token and try a
+          refresh.
+        </p>
+      ) : report === null ? (
+        <Skeleton className="h-40 w-full" />
+      ) : !report.configured ? (
+        <p className="text-sm text-muted-foreground">
+          Add SENTRY_AUTH_TOKEN (Settings &gt; Developer Settings &gt; Auth
+          Tokens, with event:read scope) to Vercel to see error reports here.
+        </p>
+      ) : report.issues.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 py-8 text-center">
+          <Badge
+            variant="outline"
+            className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
           >
-            Open in Sentry
-            <ExternalLink className="size-3" />
-          </a>
+            All clear
+          </Badge>
+          <p className="text-sm text-muted-foreground">
+            No unresolved issues in the last 24 hours.
+          </p>
         </div>
-      </CardHeader>
-      <CardContent>
-        {failed ? (
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t load Sentry issues. Check the auth token and try a
-            refresh.
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">
+              {report.unresolvedCount.toLocaleString()}
+            </span>{" "}
+            unresolved
+            {report.unresolvedCount > report.issues.length
+              ? ` (showing ${report.issues.length} most recent)`
+              : null}
           </p>
-        ) : report === null ? (
-          <Skeleton className="h-40 w-full" />
-        ) : !report.configured ? (
-          <p className="text-sm text-muted-foreground">
-            Add SENTRY_AUTH_TOKEN (Settings &gt; Developer Settings &gt; Auth
-            Tokens, with event:read scope) to Vercel to see error reports here.
-          </p>
-        ) : report.issues.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-8 text-center">
-            <Badge
-              variant="outline"
-              className="border-emerald-500/50 text-emerald-600 dark:text-emerald-400"
-            >
-              All clear
-            </Badge>
-            <p className="text-sm text-muted-foreground">
-              No unresolved issues in the last 24 hours.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">
-                {report.unresolvedCount.toLocaleString()}
-              </span>{" "}
-              unresolved
-              {report.unresolvedCount > report.issues.length
-                ? ` (showing ${report.issues.length} most recent)`
-                : null}
-            </p>
-            {report.issues.map((issue) => (
-              <SentryIssueRow key={issue.id} issue={issue} />
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          {report.issues.map((issue) => (
+            <SentryIssueRow key={issue.id} issue={issue} />
+          ))}
+        </div>
+      )}
+    </MissionCollapsibleCard>
   );
 }
 
@@ -820,180 +917,165 @@ function WebAnalyticsCard() {
   }, []);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Globe className="size-4 text-primary" />
-              Traffic and product analytics
-            </CardTitle>
-            <CardDescription>
-              Live from PostHog: visitors, top pages, referrers and key product
-              events, last 30 days.
-            </CardDescription>
+    <MissionCollapsibleCard
+      sectionId="posthog"
+      title="Traffic and product analytics"
+      description="Live from PostHog: visitors, top pages, referrers and key product events, last 30 days."
+      icon={Globe}
+      href="https://eu.posthog.com/project/224760/dashboard/822320"
+      hrefLabel="Open in PostHog"
+      collapsedHint={
+        analytics?.configured
+          ? `${analytics.visitors30d.toLocaleString()} visitors · ${analytics.pageviews30d.toLocaleString()} page views (30d)`
+          : undefined
+      }
+    >
+      {failed ? (
+        <p className="text-sm text-muted-foreground">
+          Couldn&apos;t load PostHog data. Check the personal API key and try a
+          refresh.
+        </p>
+      ) : analytics === null ? (
+        <Skeleton className="h-48 w-full" />
+      ) : !analytics.configured ? (
+        <p className="text-sm text-muted-foreground">
+          Add POSTHOG_PERSONAL_API_KEY (Settings &gt; Personal API keys, with
+          Query Read scope) to Vercel to see PostHog stats here.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">
+                Unique visitors (30d)
+              </p>
+              <p className="font-heading text-2xl font-semibold tabular-nums">
+                {analytics.visitors30d.toLocaleString()}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {analytics.visitorsToday.toLocaleString()} today
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">Page views (30d)</p>
+              <p className="font-heading text-2xl font-semibold tabular-nums">
+                {analytics.pageviews30d.toLocaleString()}
+              </p>
+            </div>
+            <div className="rounded-lg border p-3">
+              <p className="text-xs text-muted-foreground">
+                Top referrer (30d)
+              </p>
+              <p className="truncate font-heading text-2xl font-semibold">
+                {analytics.referrers[0]?.domain ?? "Direct only"}
+              </p>
+              {analytics.referrers[0] ? (
+                <p className="text-xs text-muted-foreground">
+                  {analytics.referrers[0].visitors.toLocaleString()} visitors
+                </p>
+              ) : null}
+            </div>
           </div>
-          <a
-            href="https://eu.posthog.com/project/224760/dashboard/822320"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-          >
-            Open in PostHog
-            <ExternalLink className="size-3" />
-          </a>
+
+          <ChartContainer config={trafficConfig} className="h-44 w-full">
+            <AreaChart data={analytics.byDay}>
+              <CartesianGrid vertical={false} />
+              <XAxis
+                dataKey="day"
+                tickLine={false}
+                axisLine={false}
+                tickFormatter={(d: string) => d.slice(5)}
+                minTickGap={24}
+              />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Area
+                dataKey="pageviews"
+                type="monotone"
+                fill="var(--color-pageviews)"
+                fillOpacity={0.15}
+                stroke="var(--color-pageviews)"
+              />
+              <Area
+                dataKey="visitors"
+                type="monotone"
+                fill="var(--color-visitors)"
+                fillOpacity={0.25}
+                stroke="var(--color-visitors)"
+              />
+            </AreaChart>
+          </ChartContainer>
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Top pages
+              </p>
+              {analytics.topPages.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No data yet.</p>
+              ) : (
+                analytics.topPages.map((p) => (
+                  <div
+                    key={p.path}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate font-mono">{p.path}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {p.views.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Referrers
+              </p>
+              {analytics.referrers.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  All traffic is direct so far.
+                </p>
+              ) : (
+                analytics.referrers.map((r) => (
+                  <div
+                    key={r.domain}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate">{r.domain}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {r.visitors.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                Product events (30d)
+              </p>
+              {analytics.events.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No product events yet.
+                </p>
+              ) : (
+                analytics.events.map((e) => (
+                  <div
+                    key={e.event}
+                    className="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span className="truncate">
+                      {EVENT_LABELS[e.event] ?? e.event}
+                    </span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {e.count.toLocaleString()}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
-      </CardHeader>
-      <CardContent>
-        {failed ? (
-          <p className="text-sm text-muted-foreground">
-            Couldn&apos;t load PostHog data. Check the personal API key and try
-            a refresh.
-          </p>
-        ) : analytics === null ? (
-          <Skeleton className="h-48 w-full" />
-        ) : !analytics.configured ? (
-          <p className="text-sm text-muted-foreground">
-            Add POSTHOG_PERSONAL_API_KEY (Settings &gt; Personal API keys, with
-            Query Read scope) to Vercel to see PostHog stats here.
-          </p>
-        ) : (
-          <div className="flex flex-col gap-5">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Unique visitors (30d)
-                </p>
-                <p className="font-heading text-2xl font-semibold tabular-nums">
-                  {analytics.visitors30d.toLocaleString()}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {analytics.visitorsToday.toLocaleString()} today
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Page views (30d)
-                </p>
-                <p className="font-heading text-2xl font-semibold tabular-nums">
-                  {analytics.pageviews30d.toLocaleString()}
-                </p>
-              </div>
-              <div className="rounded-lg border p-3">
-                <p className="text-xs text-muted-foreground">
-                  Top referrer (30d)
-                </p>
-                <p className="truncate font-heading text-2xl font-semibold">
-                  {analytics.referrers[0]?.domain ?? "Direct only"}
-                </p>
-                {analytics.referrers[0] ? (
-                  <p className="text-xs text-muted-foreground">
-                    {analytics.referrers[0].visitors.toLocaleString()} visitors
-                  </p>
-                ) : null}
-              </div>
-            </div>
-
-            <ChartContainer config={trafficConfig} className="h-44 w-full">
-              <AreaChart data={analytics.byDay}>
-                <CartesianGrid vertical={false} />
-                <XAxis
-                  dataKey="day"
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(d: string) => d.slice(5)}
-                  minTickGap={24}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Area
-                  dataKey="pageviews"
-                  type="monotone"
-                  fill="var(--color-pageviews)"
-                  fillOpacity={0.15}
-                  stroke="var(--color-pageviews)"
-                />
-                <Area
-                  dataKey="visitors"
-                  type="monotone"
-                  fill="var(--color-visitors)"
-                  fillOpacity={0.25}
-                  stroke="var(--color-visitors)"
-                />
-              </AreaChart>
-            </ChartContainer>
-
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Top pages
-                </p>
-                {analytics.topPages.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No data yet.</p>
-                ) : (
-                  analytics.topPages.map((p) => (
-                    <div
-                      key={p.path}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="truncate font-mono">{p.path}</span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {p.views.toLocaleString()}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Referrers
-                </p>
-                {analytics.referrers.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    All traffic is direct so far.
-                  </p>
-                ) : (
-                  analytics.referrers.map((r) => (
-                    <div
-                      key={r.domain}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="truncate">{r.domain}</span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {r.visitors.toLocaleString()}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Product events (30d)
-                </p>
-                {analytics.events.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No product events yet.
-                  </p>
-                ) : (
-                  analytics.events.map((e) => (
-                    <div
-                      key={e.event}
-                      className="flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="truncate">
-                        {EVENT_LABELS[e.event] ?? e.event}
-                      </span>
-                      <span className="tabular-nums text-muted-foreground">
-                        {e.count.toLocaleString()}
-                      </span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+    </MissionCollapsibleCard>
   );
 }
 
