@@ -15,7 +15,9 @@ import {
 import {
   dismissSiteCookiesWithAgent,
   preparePageAfterNavigation,
+  type CookieDismissPage,
 } from "./dismiss-site-cookies";
+import { waitForPageReady } from "./page-ready";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
 import {
@@ -117,7 +119,7 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
       ],
       fallbackPaths: ["/casino", "/games", "/vegas", "/slots", "/live-casino"],
       verify:
-        "a casino games lobby — a grid or rows of casino game tiles (slots, live casino tables, game shows), NOT sports matches, odds buttons, or a betslip",
+        "a casino games lobby with VISIBLE game tiles — a populated grid or rows of casino games (slots, live casino tables, game shows). NOT sports matches, odds buttons, or a betslip; NOT an empty or still-loading grid of blank placeholders; NOT a search page without results",
     },
   ],
   sports_betslip: [
@@ -163,12 +165,13 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   loyalty_rewards: [
     {
       instruction:
-        "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — brands label it VIP, VIP Club, Rewards, Loyalty, Rakeback, Bonuses, or Club, sometimes only a crown / gift / trophy / gem icon in the nav; it may be a nav item, a footer link, an icon-only menu entry, or open as a modal",
+        "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — brands label it VIP, VIP Club, Rewards, Loyalty, Rakeback, Bonuses, or Club, sometimes only a crown / gift / trophy / gem icon in the nav; it may be a nav item, a footer link, an icon-only menu entry, or open as a modal. If the brand has NO such area, open its promotions or offers page instead — that IS the brand's retention surface",
       required: true,
       alternatives: [
         "click the crown, gift, trophy, star, or gem icon in the header or navigation — icon-only entries usually lead to the VIP or rewards hub",
         "open the site menu (hamburger or account menu) and choose the VIP, Rewards, Loyalty, or Bonuses entry from it",
         "scroll to the footer and click the VIP, Loyalty, Rewards, or Rakeback link",
+        "open the Promotions, Offers, or Bonuses page — when a brand has no VIP or loyalty programme, its promotions page is what a player sees as ongoing value",
       ],
       fallbackPaths: [
         "/vip",
@@ -178,9 +181,13 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "/rakeback",
         "/vip-club",
         "/club",
+        "/promotions",
+        "/promos",
+        "/offers",
+        "/bonuses",
       ],
       verify:
-        "a loyalty, VIP, rewards, or rakeback page — tier levels, perks, cashback rates, or reward mechanics, NOT a generic promotions list, casino lobby, or sportsbook",
+        "a loyalty, VIP, rewards, rakeback, or members' club page (tier levels, points, perks, cashback rates, or reward mechanics — a branded club or player-rewards programme page counts), OR a promotions/offers/bonuses page showing the brand's current offers when no dedicated loyalty area exists. NOT a casino lobby, sportsbook, or error page",
     },
     {
       instruction:
@@ -260,19 +267,27 @@ function geoBlockReason(finalUrl: string, pageText = ""): string | null {
 
 /** Poll until a heavy SPA has rendered real content — not just a splash
  * screen, blank shell or wordy loading interstitial. */
-async function waitForPageContent(
-  page: { evaluate: (expr: string) => Promise<unknown>; waitForTimeout: (ms: number) => Promise<void> },
-  minChars = 400,
-  maxPolls = 8
-): Promise<void> {
-  await page.waitForTimeout(6000);
-  for (let i = 0; i < maxPolls; i++) {
-    const text = String(
-      await page.evaluate("document.body?.innerText ?? ''").catch(() => "")
+async function waitForPageContent(page: CookieDismissPage): Promise<void> {
+  await waitForPageReady(page, { minChars: 400, initialMs: 2000 });
+}
+
+function createScreenshotCapture(
+  page: CookieDismissPage & {
+    sendCDP: <T>(method: string, params?: object) => Promise<T>;
+  },
+  opts?: { relaxed?: boolean }
+): () => Promise<string> {
+  return async () => {
+    await waitForPageReady(page, {
+      relaxed: opts?.relaxed ?? true,
+      initialMs: opts?.relaxed ? 900 : 2000,
+    });
+    const { data } = await page.sendCDP<{ data: string }>(
+      "Page.captureScreenshot",
+      { format: "jpeg", quality: 60 }
     );
-    if (text.trim().length > minChars && !looksLikeInterstitial(text)) return;
-    await page.waitForTimeout(2500);
-  }
+    return data;
+  };
 }
 
 /** Body text at scoring time — feeds the text-based geo/interstitial check. */
@@ -297,7 +312,7 @@ async function captureScrollSequence(
 ): Promise<string[]> {
   const shots: string[] = [];
   await sc.scrollTo(0);
-  await sleep(1200);
+  await sleep(2000);
   shots.push(await sc.capture());
 
   const height = await sc.getHeight();
@@ -314,7 +329,7 @@ async function captureScrollSequence(
   for (const y of positions) {
     if (shots.length >= maxShots) break;
     await sc.scrollTo(y);
-    await sleep(1200);
+    await sleep(2000);
     shots.push(await sc.capture());
   }
 
@@ -357,7 +372,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   sports_betslip:
     "This is the sportsbook/betslip experience, captured while the agent walked a real betting flow: sportsbook → match view → adding a selection → the betslip with a stake entered. Judge usability across that flow: market depth visibility (how many markets per match and how discoverable), odds presentation, how clearly the slip shows the selection, stake input and potential returns, single/multi/bet-builder access, and cash-out cues. If the agent's trail shows a selection was added, score the betslip UX from the screenshots that show it; if no selection could be added, judge what that friction says about the product and note it.",
   loyalty_rewards:
-    "This is the loyalty/VIP/rewards area, walked across the rewards hub, tier pages, promotions page, and help centre articles. The review must answer two concrete player questions above all: (1) What does a FIRST-TIME DEPOSITOR actually get — welcome bonus, free spins, cashback, and on what terms? (2) What does each loyalty level actually offer — daily spins, rakeback %, weekly/monthly bonuses, VIP host, withdrawal perks? Extract the real numbers and perk names you can read in the screenshots (including help centre text). Then judge the craft: is this value easy to find and understand, does the next reward feel near, are earning rules documented? Compare mentally against Stake's VIP club — the category benchmark.",
+    "This is the loyalty/VIP/rewards area, walked across the rewards hub, tier pages, promotions page, and help centre articles. The review must answer two concrete player questions above all: (1) What does a FIRST-TIME DEPOSITOR actually get — welcome bonus, free spins, cashback, and on what terms? (2) What does each loyalty level actually offer — daily spins, rakeback %, weekly/monthly bonuses, VIP host, withdrawal perks? Extract the real numbers and perk names you can read in the screenshots (including help centre text). Then judge the craft: is this value easy to find and understand, does the next reward feel near, are earning rules documented? Compare mentally against Stake's VIP club — the category benchmark. IMPORTANT: if the brand has NO dedicated VIP/loyalty programme and the screenshots show its promotions or offers page instead, that is NOT a capture failure — do not set blocked. Score what the brand actually offers: classify it as promo-led, answer question (1) from the visible offers, and score the retention-loop heuristics low to reflect the missing ongoing-value layer.",
   support:
     "This is the support experience. Judge access: live chat availability, response time promises, help content quality for money issues, contact channel breadth.",
   my_account:
@@ -995,7 +1010,7 @@ async function runRegistrationWalk(
         `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
       );
     }
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(800);
     shots.push(await capture());
 
     try {
@@ -1123,13 +1138,7 @@ async function analyzeWithAgent(
   try {
     const page =
       stagehand.context.activePage() ?? (await stagehand.context.newPage());
-    const capture = async () => {
-      const { data } = await page.sendCDP<{ data: string }>(
-        "Page.captureScreenshot",
-        { format: "jpeg", quality: 60 }
-      );
-      return data;
-    };
+    const capture = createScreenshotCapture(page);
 
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
@@ -1151,8 +1160,9 @@ async function analyzeWithAgent(
     if (contextId || loginVars) {
       sessionLoggedIn = await agentIsLoggedIn(stagehand);
       // Always try stored credentials first — reuse an existing account before
-      // walking signup again (stottiefingaz@gmail.com + saved password).
-      const shouldLogin = !sessionLoggedIn && loginVars != null;
+      // walking the journey. Signup is the exception: it must walk the real
+      // registration form, so it never pre-authenticates.
+      const shouldLogin = !sessionLoggedIn && loginVars != null && !isSignup;
       if (shouldLogin) {
         // Login shots stay out of the evidence for public journeys — a
         // login modal with a red error box is not casino lobby evidence.
@@ -1199,36 +1209,22 @@ async function analyzeWithAgent(
       };
     }
 
-    // Signup when the stored account already works: score the logged-in
-    // state instead of opening registration again.
+    // Signup must always show the real registration flow. A persisted
+    // context can arrive already authenticated, which hides the Join CTA —
+    // drop to a logged-out state so the form itself becomes the evidence.
+    // The registration walk's login fallback restores the session when the
+    // account already exists, so gated journeys keep working afterwards.
     if (isSignup && sessionLoggedIn) {
-      const pageTitle = await page.title().catch(() => "");
-      const finalUrl = page.url();
-      const shot = await capture();
-      const [result, screenshots] = await Promise.all([
-        scoreScreenshots(
-          journey,
-          pageTitle,
-          finalUrl,
-          [shot],
-          [...trail, "registration skipped — existing test account logged in"]
-        ),
-        persistShots([shot]),
-      ]);
-      return {
-        ...result,
-        area: journey,
-        analysedAt: new Date().toISOString(),
-        screenshots,
-        finalUrl,
-        authenticated: true,
-        loggedIn: true,
-        blocked: false,
-        blockReason: null,
-        summary:
-          result.summary ||
-          "Existing test account logged in successfully — registration skipped.",
-      };
+      await page.sendCDP("Network.clearBrowserCookies", {}).catch(() => {});
+      await page
+        .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+        .catch(() => {});
+      await preparePageAfterNavigation(page, stagehand);
+      await waitForPageReady(page, { initialMs: 2000 });
+      sessionLoggedIn = false;
+      trail.push(
+        "cleared the existing session so the real registration form could be walked"
+      );
     }
     for (const step of playbook) {
       let ok = false;
@@ -1247,7 +1243,7 @@ async function analyzeWithAgent(
         // homepage IS its sportsbook, so "opened sports" can land on the same
         // page the casino click should have left. Verify before accepting.
         if (ok && step.verify) {
-          await page.waitForTimeout(3500);
+          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (!(await verifyLandedArea(stagehand, step.verify))) {
             ok = false;
             message = "landed on the wrong area — trying another route";
@@ -1265,13 +1261,13 @@ async function analyzeWithAgent(
               timeoutMs: 20000,
             });
             await preparePageAfterNavigation(page, stagehand);
-            await page.waitForTimeout(3500);
+            await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
             const bodyText = String(
               await page.evaluate("document.body?.innerText ?? ''")
             );
             const dead =
               bodyText.length < 300 ||
-              /404|not found|page (doesn'?t|does not) exist/i.test(
+              /404|not found|page (doesn'?t|does not) exist|having a few issues|something went wrong|temporarily unavailable/i.test(
                 bodyText.slice(0, 2000)
               );
             if (
@@ -1290,9 +1286,6 @@ async function analyzeWithAgent(
       }
       if (ok) {
         trail.push(message || step.instruction);
-        // Let the destination render (SPA transitions, lazy content), then
-        // capture it — every step's screen becomes scoring evidence.
-        await page.waitForTimeout(4000);
         shots.push(await capture());
       } else if (step.required) {
         const screenshots = await persistShots([await capture()]);
@@ -1343,7 +1336,6 @@ async function analyzeWithAgent(
       shots.push(...scrollShots);
     } else {
       await page.scroll(720, 450, 0, 900);
-      await page.waitForTimeout(1500);
       shots.push(await capture());
     }
 
@@ -1402,7 +1394,7 @@ async function analyzeWithAgent(
             .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
             .catch(() => {});
           await preparePageAfterNavigation(page, stagehand);
-          await page.waitForTimeout(3500);
+          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (!(await agentIsLoggedIn(stagehand))) {
             trail.push(
               `skipped ${loginJourney} — session lost before logged-in pass`
@@ -1445,13 +1437,7 @@ async function walkPlaybookAndScore(
   playbook: PlaybookStep[],
   trailPrefix: string[] = []
 ): Promise<JourneyAnalysis> {
-  const capture = async () => {
-    const { data } = await page.sendCDP<{ data: string }>(
-      "Page.captureScreenshot",
-      { format: "jpeg", quality: 60 }
-    );
-    return data;
-  };
+  const capture = createScreenshotCapture(page);
 
   const trail = [...trailPrefix];
   const shots: string[] = [];
@@ -1470,7 +1456,7 @@ async function walkPlaybookAndScore(
         message = e instanceof Error ? e.message : String(e);
       }
       if (ok && step.verify) {
-        await page.waitForTimeout(3500);
+        await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
         if (!(await verifyLandedArea(stagehand, step.verify))) {
           ok = false;
           message = "landed on the wrong area — trying another route";
@@ -1486,13 +1472,13 @@ async function walkPlaybookAndScore(
             timeoutMs: 20000,
           });
           await preparePageAfterNavigation(page, stagehand);
-          await page.waitForTimeout(3500);
+          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           const bodyText = String(
             await page.evaluate("document.body?.innerText ?? ''")
           );
           const dead =
             bodyText.length < 300 ||
-            /404|not found|page (doesn'?t|does not) exist/i.test(
+            /404|not found|page (doesn'?t|does not) exist|having a few issues|something went wrong|temporarily unavailable/i.test(
               bodyText.slice(0, 2000)
             );
           if (
@@ -1510,7 +1496,6 @@ async function walkPlaybookAndScore(
     }
     if (ok) {
       trail.push(message || step.instruction);
-      await page.waitForTimeout(4000);
       shots.push(await capture());
     } else if (step.required) {
       const screenshots = await persistShots([await capture()]);
@@ -1545,7 +1530,6 @@ async function walkPlaybookAndScore(
     shots.push(...scrollShots);
   } else {
     await page.scroll(720, 450, 0, 900);
-    await page.waitForTimeout(1500);
     shots.push(await capture());
   }
 
@@ -1591,15 +1575,17 @@ async function analyzeLanding(
       evaluate: (expr) => page.evaluate(expr),
       waitForTimeout: (ms) => page.waitForTimeout(ms),
     });
-    await waitForPageContent({
+    const pageReady: CookieDismissPage = {
       evaluate: (expr) => page.evaluate(expr),
       waitForTimeout: (ms) => page.waitForTimeout(ms),
-    });
+    };
+    await waitForPageReady(pageReady, { initialMs: 2000 });
 
     // Raw CDP capture: unlike page.screenshot() it doesn't wait for page
     // stability, so bot-challenge pages that never settle can't stall us.
     const cdp = await context.newCDPSession(page);
     const capture = async () => {
+      await waitForPageReady(pageReady, { relaxed: true, initialMs: 900 });
       const { data } = (await cdp.send("Page.captureScreenshot", {
         format: "jpeg",
         quality: 60,
