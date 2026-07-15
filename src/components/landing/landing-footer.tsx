@@ -1,6 +1,7 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { Lock, ShieldCheck } from "lucide-react";
 import { useAboutUs } from "@/components/landing/landing-about";
 import { LegalNavButton } from "@/components/landing/landing-legal-dialog";
 import type { LegalDocument } from "@/components/landing/legal-content";
@@ -131,8 +132,15 @@ export function LandingFooter() {
             </div>
           </div>
 
-          <p className="mt-10 text-xs text-muted-foreground/70">
-            © {year} Scuup. All rights reserved.
+          <p className="mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground/70">
+            <span>© {year} Scuup. All rights reserved.</span>
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 transition-colors hover:text-foreground"
+            >
+              <Lock className="size-3" />
+              Admin
+            </Link>
           </p>
         </div>
 

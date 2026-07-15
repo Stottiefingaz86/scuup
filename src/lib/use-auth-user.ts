@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import posthog from "posthog-js";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 export function displayNameForUser(user: User): string {
@@ -59,6 +60,15 @@ export function useAuthUser() {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Tie PostHog events to the account so the funnel shows real users.
+  useEffect(() => {
+    if (!user || !process.env.NEXT_PUBLIC_POSTHOG_KEY) return;
+    posthog.identify(user.id, {
+      email: user.email,
+      name: displayNameForUser(user),
+    });
+  }, [user]);
 
   return {
     user,
