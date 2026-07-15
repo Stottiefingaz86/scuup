@@ -109,126 +109,148 @@ function ShowcaseFilters({
   const sortLabel =
     SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "Sort";
   const monthLabel = month ? formatMonthLabel(month) : "Latest month";
+  const latestMonth = months[0] ?? "";
+  const marketActive = market !== "all";
+  const monthActive = month !== "" && month !== latestMonth;
+  const sortActive = sort !== "score";
 
-  const triggerClass =
-    "h-9 w-full min-w-0 justify-start gap-2 bg-background/80 px-2.5 sm:h-8 sm:w-auto sm:min-w-[148px]";
+  const desktopTriggerClass =
+    "h-8 w-auto min-w-[148px] justify-start gap-2 bg-background/80 px-2.5 max-sm:size-9 max-sm:min-w-0 max-sm:shrink-0 max-sm:justify-center max-sm:gap-0 max-sm:px-0 max-sm:[&>svg:last-child]:hidden";
+  const mobileActiveClass = "max-sm:bg-primary/10 max-sm:ring-1 max-sm:ring-primary/35";
+
+  const marketMobileIcon =
+    market === "all" ? (
+      <Globe className="size-4 text-muted-foreground" />
+    ) : (
+      <CircleMarketFlag
+        market={marketOptionForLabel(market)}
+        size={18}
+        className="ring-1 ring-black/10"
+      />
+    );
 
   return (
-    <div className="rounded-xl border border-border/80 bg-muted/15 p-2 sm:p-2.5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-1 sm:flex-wrap sm:items-center sm:gap-2">
-          <Select value={market} onValueChange={(v) => onMarketChange(v ?? "all")}>
-            <SelectTrigger className={triggerClass} aria-label="Filter by market">
+    <div className="flex items-center gap-1.5 sm:flex-wrap sm:rounded-xl sm:border sm:border-border/80 sm:bg-muted/15 sm:p-2.5 sm:gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-wrap sm:gap-2">
+        <Select value={market} onValueChange={(v) => onMarketChange(v ?? "all")}>
+          <SelectTrigger
+            className={cn(
+              desktopTriggerClass,
+              marketActive && mobileActiveClass
+            )}
+            aria-label={
+              market === "all"
+                ? "Filter by market: all markets"
+                : `Filter by market: ${market}`
+            }
+          >
+            <span className="sm:hidden">{marketMobileIcon}</span>
+            <span className="hidden sm:flex">
               <MarketFilterLabel market={market} />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectItem value="all">
-                <Globe className="size-3.5 text-muted-foreground" />
-                All markets
-              </SelectItem>
-              {markets.map((m) => {
-                const opt = marketOptionForLabel(m);
-                return (
-                  <SelectItem key={m} value={m}>
-                    <CircleMarketFlag
-                      market={opt}
-                      size={16}
-                      className="ring-1 ring-black/10"
-                    />
-                    {m}
-                  </SelectItem>
-                );
-              })}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={month || months[0] || ""}
-            onValueChange={(v) => v && onMonthChange(v)}
-          >
-            <SelectTrigger className={triggerClass} aria-label="Filter by month">
-              <Calendar className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{monthLabel}</span>
-            </SelectTrigger>
-            <SelectContent align="start">
-              {months.map((m) => (
-                <SelectItem key={m} value={m}>
-                  {formatMonthLabel(m)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select
-            value={sort}
-            onValueChange={(v) => v && onSortChange(v as ShowcaseSort)}
-          >
-            <SelectTrigger className={triggerClass} aria-label="Sort benchmarks">
-              <ArrowUpDown className="size-3.5 shrink-0 text-muted-foreground" />
-              <span className="truncate">{sortLabel}</span>
-            </SelectTrigger>
-            <SelectContent align="start">
-              {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 sm:ms-auto sm:border-t-0 sm:pt-0">
-          {hasActiveFilters ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 px-2 text-muted-foreground sm:hidden"
-              onClick={onReset}
-            >
-              <RotateCcw data-icon="inline-start" />
-              Reset
-            </Button>
-          ) : (
-            <span className="text-xs text-muted-foreground sm:hidden">
-              {markets.length} markets · {months.length} months
             </span>
-          )}
-          <div className="ms-auto flex items-center gap-1 sm:ms-0">
-            {hasActiveFilters ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="hidden h-8 shrink-0 px-2 text-muted-foreground sm:inline-flex"
-                onClick={onReset}
-              >
-                <RotateCcw data-icon="inline-start" />
-                Reset
-              </Button>
-            ) : null}
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              className="size-9 sm:size-8"
-              aria-label="Scroll left"
-              onClick={onScrollLeft}
-            >
-              <ChevronLeft />
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon-sm"
-              className="size-9 sm:size-8"
-              aria-label="Scroll right"
-              onClick={onScrollRight}
-            >
-              <ChevronRight />
-            </Button>
-          </div>
-        </div>
+          </SelectTrigger>
+          <SelectContent align="start">
+            <SelectItem value="all">
+              <Globe className="size-3.5 text-muted-foreground" />
+              All markets
+            </SelectItem>
+            {markets.map((m) => {
+              const opt = marketOptionForLabel(m);
+              return (
+                <SelectItem key={m} value={m}>
+                  <CircleMarketFlag
+                    market={opt}
+                    size={16}
+                    className="ring-1 ring-black/10"
+                  />
+                  {m}
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={month || months[0] || ""}
+          onValueChange={(v) => v && onMonthChange(v)}
+        >
+          <SelectTrigger
+            className={cn(
+              desktopTriggerClass,
+              monthActive && mobileActiveClass
+            )}
+            aria-label={`Filter by month: ${monthLabel}`}
+          >
+            <Calendar className="size-4 shrink-0 text-muted-foreground sm:size-3.5" />
+            <span className="hidden truncate sm:inline">{monthLabel}</span>
+          </SelectTrigger>
+          <SelectContent align="start">
+            {months.map((m) => (
+              <SelectItem key={m} value={m}>
+                {formatMonthLabel(m)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={sort}
+          onValueChange={(v) => v && onSortChange(v as ShowcaseSort)}
+        >
+          <SelectTrigger
+            className={cn(
+              desktopTriggerClass,
+              sortActive && mobileActiveClass
+            )}
+            aria-label={`Sort benchmarks: ${sortLabel}`}
+          >
+            <ArrowUpDown className="size-4 shrink-0 text-muted-foreground sm:size-3.5" />
+            <span className="hidden truncate sm:inline">{sortLabel}</span>
+          </SelectTrigger>
+          <SelectContent align="start">
+            {SORT_OPTIONS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {hasActiveFilters ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-9 shrink-0 text-muted-foreground sm:size-8 sm:w-auto sm:px-2"
+            aria-label="Reset filters"
+            onClick={onReset}
+          >
+            <RotateCcw className="size-4" />
+            <span className="hidden sm:inline">Reset</span>
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="size-9 sm:size-8"
+          aria-label="Scroll left"
+          onClick={onScrollLeft}
+        >
+          <ChevronLeft />
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon-sm"
+          className="size-9 sm:size-8"
+          aria-label="Scroll right"
+          onClick={onScrollRight}
+        >
+          <ChevronRight />
+        </Button>
       </div>
     </div>
   );
@@ -288,7 +310,10 @@ function ShowcaseCard({
   const pendingPillars = pillars.filter((p) => p.score === null);
 
   return (
-    <Card className="group/score flex w-[min(100%,300px)] shrink-0 snap-start flex-col gap-4 overflow-hidden py-4">
+    <Card
+      data-showcase-card
+      className="group/score flex w-[calc(100vw-3rem)] shrink-0 snap-center flex-col gap-4 overflow-hidden py-4 sm:w-[300px] sm:snap-start"
+    >
       <CardHeader className="px-4">
         <div className="flex items-center gap-2.5">
           <BrandMark brand={brand} className="size-8 text-sm" />
@@ -394,7 +419,12 @@ export function ShowcaseCarousel() {
   }, [load]);
 
   const scroll = (dir: -1 | 1) => {
-    scrollRef.current?.scrollBy({ left: dir * 300, behavior: "smooth" });
+    const el = scrollRef.current;
+    if (!el) return;
+    const card = el.querySelector<HTMLElement>("[data-showcase-card]");
+    const gap = 16;
+    const step = card ? card.offsetWidth + gap : 316;
+    el.scrollBy({ left: dir * step, behavior: "smooth" });
   };
 
   const latestMonth = months[0] ?? "";
@@ -408,7 +438,7 @@ export function ShowcaseCarousel() {
   };
 
   return (
-    <section id="showcase" className="border-t border-border bg-card/30 py-20 sm:py-28">
+    <section id="showcase" className="border-t border-border bg-background py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
         <div className="max-w-2xl">
           <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
@@ -424,57 +454,59 @@ export function ShowcaseCarousel() {
           </p>
         </div>
 
-        <ShowcaseFilters
-          markets={markets}
-          months={months}
-          market={market}
-          month={month}
-          sort={sort}
-          onMarketChange={setMarket}
-          onMonthChange={setMonth}
-          onSortChange={setSort}
-          onReset={resetFilters}
-          hasActiveFilters={hasActiveFilters}
-          onScrollLeft={() => scroll(-1)}
-          onScrollRight={() => scroll(1)}
-        />
-
-        <div className="relative mt-6 sm:mt-8">
-          {loading ? (
-            <p className="py-12 text-center text-sm text-muted-foreground">
-              Loading benchmarks…
-            </p>
-          ) : entries.length === 0 ? (
-            <div className="rounded-xl border border-dashed py-16 text-center">
-              <p className="text-muted-foreground">
-                No scores for this filter yet — run an audit and it&apos;ll
-                appear here.
-              </p>
-              <Button
-                className="mt-4 glow-primary"
-                nativeButton={false}
-                render={<Link href="/projects/new" />}
-              >
-                Run your free audit
-                <ArrowRight data-icon="inline-end" />
-              </Button>
-            </div>
-          ) : (
-            <div
-              ref={scrollRef}
-              className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {entries.map((entry, index) => (
-                <ShowcaseCard
-                  key={`${entry.brandSlug}-${entry.market}-${entry.month}`}
-                  entry={entry}
-                  rank={index + 1}
-                  onViewJourneys={setGateBrand}
-                />
-              ))}
-            </div>
-          )}
+        <div className="mt-8 sm:mt-10">
+          <ShowcaseFilters
+            markets={markets}
+            months={months}
+            market={market}
+            month={month}
+            sort={sort}
+            onMarketChange={setMarket}
+            onMonthChange={setMonth}
+            onSortChange={setSort}
+            onReset={resetFilters}
+            hasActiveFilters={hasActiveFilters}
+            onScrollLeft={() => scroll(-1)}
+            onScrollRight={() => scroll(1)}
+          />
         </div>
+      </div>
+
+      <div className="relative mt-6 sm:mt-8">
+        {loading ? (
+          <p className="px-6 py-12 text-center text-sm text-muted-foreground">
+            Loading benchmarks…
+          </p>
+        ) : entries.length === 0 ? (
+          <div className="mx-6 rounded-xl border border-dashed py-16 text-center sm:mx-auto sm:max-w-7xl">
+            <p className="text-muted-foreground">
+              No scores for this filter yet — run an audit and it&apos;ll
+              appear here.
+            </p>
+            <Button
+              className="mt-4 glow-primary"
+              nativeButton={false}
+              render={<Link href="/projects/new" />}
+            >
+              Run your free audit
+              <ArrowRight data-icon="inline-end" />
+            </Button>
+          </div>
+        ) : (
+          <div
+            ref={scrollRef}
+            className="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain scroll-ps-6 scroll-pe-6 px-6 pb-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-auto sm:max-w-7xl sm:scroll-ps-0 sm:scroll-pe-0 sm:px-0 [&::-webkit-scrollbar]:hidden"
+          >
+            {entries.map((entry, index) => (
+              <ShowcaseCard
+                key={`${entry.brandSlug}-${entry.market}-${entry.month}`}
+                entry={entry}
+                rank={index + 1}
+                onViewJourneys={setGateBrand}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <Dialog open={gateBrand !== null} onOpenChange={() => setGateBrand(null)}>

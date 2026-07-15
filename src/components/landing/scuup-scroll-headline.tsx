@@ -142,7 +142,7 @@ export function ScuupScrollHeadline() {
     <section
       ref={sectionRef}
       aria-label={fullText}
-      className="relative left-1/2 z-[1] w-screen max-w-none -translate-x-1/2 overflow-x-clip border-0 bg-background"
+      className="relative left-1/2 z-[1] w-screen max-w-none -translate-x-1/2 overflow-x-clip border-0"
     >
       <HeadlineRow
         text={LINE_1}

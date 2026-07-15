@@ -214,7 +214,7 @@ function ReportPreview() {
               Section 02 · Competitor ranking
             </p>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-w-full overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">

@@ -167,9 +167,13 @@
   }
   body {
     @apply bg-background text-foreground;
+    overflow-x: clip;
+    max-width: 100%;
   }
   html {
     @apply font-sans;
+    overflow-x: clip;
+    overscroll-behavior-x: none;
   }
   h1,
   h2,

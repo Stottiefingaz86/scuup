@@ -235,7 +235,7 @@ export function LandingShowcase() {
         </div>
       </header>
 
-      <main>
+      <main className="min-w-0">
         {/* Hero */}
         <section className="landing-hero-glow landing-bg-dots relative isolate overflow-hidden pb-20 pt-20 sm:pt-28">
           <div aria-hidden className="landing-grain-texture absolute z-[1]" />

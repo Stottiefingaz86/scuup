@@ -15,6 +15,7 @@ import {
   ANALYSIS_AREA_LABELS,
   JOURNEY_HEURISTICS,
   LANDING,
+  journeyRequiresLogin,
 } from "@/lib/constants";
 
 const MEASURE_AREAS = [
@@ -65,6 +66,127 @@ const METHODOLOGY = [
   "iGaming-native analyst",
 ];
 
+function areaNote(area: string): string {
+  if (area === "loyalty_rewards") {
+    return "Scores retention loop mechanics — reward visibility, progress meters, value-back, and reward cadence.";
+  }
+  if (journeyRequiresLogin(area)) {
+    return "Scored from a logged-in browser session in your market — same heuristic names on every brand.";
+  }
+  return "Vision-scored from captured screenshots — fixed names so every brand compares on the same axes.";
+}
+
+function JourneyPicker({
+  active,
+  onSelect,
+  variant,
+}: {
+  active: string;
+  onSelect: (area: string) => void;
+  variant: "mobile" | "desktop";
+}) {
+  if (variant === "mobile") {
+    return (
+      <div className="min-w-0 max-w-full overflow-hidden border-b border-border bg-muted/10 py-3 lg:hidden">
+        <p className="mb-2 px-3 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+          Journey area
+        </p>
+        <div
+          className="flex w-full min-w-0 touch-pan-x gap-2 overflow-x-auto overscroll-x-contain scroll-ps-3 scroll-pe-3 px-3 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Journey areas"
+        >
+          {MEASURE_AREAS.map((area) => {
+            const isActive = active === area;
+            const count = JOURNEY_HEURISTICS[area]?.length ?? 0;
+            const label = ANALYSIS_AREA_LABELS[area] ?? area;
+            return (
+              <button
+                key={area}
+                type="button"
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => onSelect(area)}
+                className={cn(
+                  "inline-flex shrink-0 snap-start items-center gap-2 rounded-full px-3.5 py-2 text-left text-xs font-medium transition-colors",
+                  isActive
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "bg-background/80 text-muted-foreground ring-1 ring-border/70"
+                )}
+              >
+                <span className="max-w-[9.5rem] truncate sm:max-w-none">{label}</span>
+                <span
+                  className={cn(
+                    "rounded-full px-1.5 py-0.5 font-mono text-[10px] tabular-nums",
+                    isActive
+                      ? "bg-primary-foreground/15 text-primary-foreground"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <nav
+      className="hidden max-h-[min(70vh,560px)] flex-col gap-0.5 overflow-y-auto border-b border-border bg-muted/10 p-2 lg:flex lg:border-b-0 lg:border-r"
+      aria-label="Journey areas"
+    >
+      {MEASURE_AREAS.map((area) => {
+        const loginGated = journeyRequiresLogin(area);
+        const isActive = active === area;
+        const count = JOURNEY_HEURISTICS[area]?.length ?? 0;
+        return (
+          <button
+            key={area}
+            type="button"
+            onClick={() => onSelect(area)}
+            className={cn(
+              "flex items-start gap-3 rounded-lg px-3 py-2.5 text-start transition-colors",
+              isActive
+                ? "bg-background shadow-sm ring-1 ring-border"
+                : "hover:bg-background/60"
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded-md font-mono text-xs font-medium tabular-nums",
+                isActive
+                  ? "bg-primary/12 text-primary"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {count}
+            </span>
+            <span className="min-w-0 flex-1 pt-0.5">
+              <span
+                className={cn(
+                  "block text-sm leading-snug",
+                  isActive ? "font-medium text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {ANALYSIS_AREA_LABELS[area] ?? area}
+              </span>
+              {loginGated ? (
+                <span className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                  <Lock className="size-3 shrink-0 opacity-70" />
+                  Logged-in session
+                </span>
+              ) : null}
+            </span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 function SectionIntro({
   id,
   kicker,
@@ -105,77 +227,40 @@ export function WhatWeMeasure() {
         />
       </LandingReveal>
 
-      <LandingReveal delay={100} className="mt-14 overflow-hidden rounded-xl border bg-card/50">
-        <div className="grid lg:grid-cols-[minmax(260px,300px)_1fr]">
-          <nav
-            className="flex flex-col gap-0.5 border-b border-border bg-muted/15 p-2 lg:border-b-0 lg:border-r"
-            aria-label="Journey areas"
-          >
-            {MEASURE_AREAS.map((area) => {
-              const loginGated =
-                area === "deposit" || area === "withdraw" || area === "my_account";
-              const isActive = active === area;
-              const count = JOURNEY_HEURISTICS[area]?.length ?? 0;
-              return (
-                <button
-                  key={area}
-                  type="button"
-                  onClick={() => setActive(area)}
-                  className={cn(
-                    "flex items-start gap-3 rounded-lg px-3 py-3 text-start transition-colors",
-                    isActive
-                      ? "bg-background shadow-sm ring-1 ring-border"
-                      : "hover:bg-background/60"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "flex size-9 shrink-0 items-center justify-center rounded-md font-mono text-xs font-medium tabular-nums",
-                      isActive
-                        ? "bg-primary/12 text-primary"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {count}
-                  </span>
-                  <span className="min-w-0 flex-1 pt-0.5">
-                    <span
-                      className={cn(
-                        "block text-sm leading-snug",
-                        isActive ? "font-medium text-foreground" : "text-muted-foreground"
-                      )}
-                    >
-                      {ANALYSIS_AREA_LABELS[area] ?? area}
-                    </span>
-                    {loginGated ? (
-                      <span className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
-                        <Lock className="size-3 shrink-0 opacity-70" />
-                        Logged-in session
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
+      <LandingReveal delay={100} className="mt-10 min-w-0 max-w-full rounded-xl border border-border/80 bg-card/40 sm:mt-14 lg:overflow-hidden">
+        <div className="grid min-w-0 lg:grid-cols-[minmax(240px,280px)_1fr]">
+          <JourneyPicker
+            active={active}
+            onSelect={setActive}
+            variant="mobile"
+          />
+          <JourneyPicker
+            active={active}
+            onSelect={setActive}
+            variant="desktop"
+          />
 
-          <div className="min-w-0 p-5 sm:p-6 lg:p-8">
-            <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-border pb-4">
-              <h3 className="font-heading text-xl font-semibold">
+          <div
+            className="min-w-0 p-4 sm:p-6 lg:p-8"
+            role="tabpanel"
+            aria-label={ANALYSIS_AREA_LABELS[active] ?? active}
+          >
+            <div className="flex flex-col gap-2 border-b border-border/80 pb-4 sm:flex-row sm:items-center sm:justify-between">
+              <h3 className="font-heading text-lg font-semibold sm:text-xl">
                 {ANALYSIS_AREA_LABELS[active] ?? active}
               </h3>
-              <p className="text-sm text-muted-foreground">
+              <span className="inline-flex w-fit items-center rounded-full bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
                 {heuristics.length} heuristics · scored 0–100
-              </p>
+              </span>
             </div>
 
-            <ul className="mt-5 grid gap-2 sm:grid-cols-2">
+            <ul className="mt-4 grid grid-cols-1 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-2.5">
               {heuristics.map((h, i) => (
                 <li
                   key={h}
-                  className="flex items-start gap-3 rounded-lg border border-border/80 bg-background/40 px-3.5 py-3"
+                  className="flex items-start gap-3 rounded-lg bg-background/50 px-3 py-2.5 ring-1 ring-border/60 sm:bg-background/40 sm:px-3.5 sm:py-3"
                 >
-                  <span className="w-5 shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/70">
+                  <span className="w-5 shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-brand/80">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="text-sm leading-snug text-foreground/90">{h}</span>
@@ -183,10 +268,8 @@ export function WhatWeMeasure() {
               ))}
             </ul>
 
-            <p className="mt-6 rounded-lg border border-dashed border-border/80 bg-muted/10 px-4 py-3 text-sm leading-relaxed text-muted-foreground">
-              Loyalty journeys also score retention loop mechanics — reward visibility,
-              progress meters, value-back, frequency cadence — with explicit rules for
-              logged-in or tracked-play sessions.
+            <p className="mt-5 rounded-lg bg-muted/15 px-3.5 py-3 text-sm leading-relaxed text-muted-foreground ring-1 ring-border/50 sm:mt-6 sm:px-4">
+              {areaNote(active)}
             </p>
           </div>
         </div>
@@ -197,7 +280,7 @@ export function WhatWeMeasure() {
 
 export function HowItWorks() {
   return (
-    <section id="how" className="border-b border-border bg-card/40 py-20 sm:py-28">
+    <section id="how" className="border-b border-border bg-background py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
         <LandingReveal>
           <SectionIntro
