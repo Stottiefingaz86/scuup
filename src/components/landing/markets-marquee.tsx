@@ -99,7 +99,7 @@ function MarqueeRow({
   );
 }
 
-export function MarketsMarquee() {
+export function MarketsMarquee({ compactTop = false }: { compactTop?: boolean }) {
   const sectionRef = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
   const [scrollShift, setScrollShift] = useState(0);
@@ -143,7 +143,10 @@ export function MarketsMarquee() {
     <TooltipProvider delay={120}>
       <section
         ref={sectionRef}
-        className="relative overflow-hidden border-t border-border py-20 sm:py-28"
+        className={cn(
+          "relative overflow-hidden border-y border-border",
+          compactTop ? "pb-14 pt-8 sm:pb-20 sm:pt-10" : "py-20 sm:py-28"
+        )}
       >
         <div
           aria-hidden
@@ -155,15 +158,15 @@ export function MarketsMarquee() {
             <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
               Markets
             </p>
-            <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
+            <h2 className="mt-2 font-heading text-2xl font-semibold tracking-tight sm:mt-3 sm:text-3xl">
               Audit from the market your players are in
             </h2>
-            <p className="mt-4 text-muted-foreground">
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground sm:mt-4 sm:text-base">
               Sessions browse through local residential connections — so
               geo-gated offers, payment rails and licensing walls match exactly
               what a local player sees.
             </p>
-            <p className="mt-6 text-sm font-medium tabular-nums text-foreground/80">
+            <p className="mt-4 text-sm font-medium tabular-nums text-foreground/80 sm:mt-5">
               {GEO_MARKETS.length} markets
               <span className="mx-2 text-muted-foreground/40">·</span>
               <span className="font-normal text-muted-foreground">
@@ -173,7 +176,7 @@ export function MarketsMarquee() {
           </div>
         </div>
 
-        <div className="relative mt-12 flex flex-col gap-0.5 sm:mt-14 sm:gap-1">
+        <div className="relative mt-8 flex flex-col gap-0.5 sm:mt-10 sm:gap-1">
           {rows.map((rowMarkets, i) => {
             const cfg = rowConfigs[i];
             const parallax = (scrollShift - 0.5) * cfg.parallaxMult;

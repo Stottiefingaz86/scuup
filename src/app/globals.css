@@ -295,6 +295,16 @@
     }
   }
 
+  /* Image-filled display headline (Blask-style) */
+  .landing-headline-fill {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background-repeat: no-repeat;
+    background-size: 120vw auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .animate-marquee,
     .animate-marquee-reverse,

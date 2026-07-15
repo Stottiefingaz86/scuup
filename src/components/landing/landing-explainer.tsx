@@ -8,11 +8,9 @@ import {
   MousePointerClick,
   Target,
 } from "lucide-react";
-import { TierLegend } from "@/components/score-chip";
 import { LandingReveal } from "@/components/landing/landing-reveal";
 import { WhatYouGetAccordion } from "@/components/landing/what-you-get-accordion";
 import { cn } from "@/lib/utils";
-import { TIERS, TIER_BG } from "@/lib/score";
 import {
   ANALYSIS_AREA_LABELS,
   JOURNEY_HEURISTICS,
@@ -199,7 +197,7 @@ export function WhatWeMeasure() {
 
 export function HowItWorks() {
   return (
-    <section id="how" className="border-y border-border bg-card/40 py-20 sm:py-28">
+    <section id="how" className="border-b border-border bg-card/40 py-20 sm:py-28">
       <div className="mx-auto w-full max-w-7xl px-6">
         <LandingReveal>
           <SectionIntro
@@ -263,64 +261,6 @@ export function WhatYouGet() {
       <LandingReveal delay={120} className="mt-14">
         <WhatYouGetAccordion />
       </LandingReveal>
-    </section>
-  );
-}
-
-export function ScoringScale() {
-  const tierWidths = [46, 15, 15, 15, 10];
-
-  return (
-    <section id="scoring" className="border-t border-border bg-card/40 py-16 sm:py-20">
-      <div className="mx-auto w-full max-w-7xl px-6">
-        <SectionIntro
-          kicker="Scoring"
-          title="0–100 on a five-tier scale"
-          description="Each heuristic is scored 0–100. Journey scores average their heuristics. Player CX Score averages all successful visits. Same rules for every site."
-        />
-
-        <div className="mt-10 flex h-1.5 overflow-hidden rounded-full">
-          {TIERS.map((tier, i) => (
-            <div
-              key={tier.tier}
-              className={cn(TIER_BG[tier.tier], "h-full first:rounded-s-full last:rounded-e-full")}
-              style={{ width: `${tierWidths[i]}%` }}
-              title={`${tier.label} (${tier.range})`}
-            />
-          ))}
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2">
-          {TIERS.map((tier) => (
-            <span key={tier.tier} className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span className={cn("size-1.5 rounded-full", TIER_BG[tier.tier])} />
-              {tier.label} {tier.range}
-            </span>
-          ))}
-        </div>
-
-        <div className="mt-10 grid gap-8 border-t pt-10 sm:grid-cols-3">
-          {[
-            { label: "Heuristic", example: "Tier transparency", score: 51 },
-            { label: "Journey", example: "Loyalty & rewards", score: 48 },
-            { label: "Player CX Score", example: "Overall", score: 62 },
-          ].map((row) => (
-            <div key={row.label}>
-              <p className="text-xs uppercase tracking-wider text-muted-foreground">
-                {row.label}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">{row.example}</p>
-              <p className="mt-2 font-heading text-4xl font-semibold tabular-nums">
-                {row.score}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-10 flex justify-end">
-          <TierLegend className="text-xs" />
-        </div>
-      </div>
     </section>
   );
 }

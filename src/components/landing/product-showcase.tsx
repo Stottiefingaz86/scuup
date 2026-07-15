@@ -1,6 +1,5 @@
 "use client";
 
-import { Fragment } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -12,7 +11,6 @@ import {
   Repeat,
   Route,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupMark } from "@/components/landing/scuup-mark";
@@ -27,10 +25,7 @@ import {
   PRO_SELLING_POINTS,
 } from "@/lib/plan";
 import {
-  HEURISTIC_COUNT,
   HowItWorks,
-  MEASURE_AREAS,
-  ScoringScale,
   WhatWeMeasure,
   WhatYouGet,
 } from "@/components/landing/landing-explainer";
@@ -46,7 +41,9 @@ import { LandingFooter } from "@/components/landing/landing-footer";
 import { LandingFaq } from "@/components/landing/landing-faq";
 import { LandingReveal } from "@/components/landing/landing-reveal";
 import { MarketsMarquee } from "@/components/landing/markets-marquee";
+import { ScuupScrollHeadline } from "@/components/landing/scuup-scroll-headline";
 import { SharedReportReview } from "@/components/landing/shared-report-review";
+import { WhyScuupComparison } from "@/components/landing/why-scuup-comparison";
 
 /* ------------------------------------------------------------------ */
 /* Hero visual: a real screenshot of the live workspace in a browser   */
@@ -172,34 +169,6 @@ const PILLARS = [
   },
 ];
 
-const COMPARISON = [
-  {
-    capability: "Evidence",
-    old: "Opinion decks and screenshots someone remembered to take",
-    scuup: "A screenshot behind every number. Nothing is estimated.",
-  },
-  {
-    capability: "Market view",
-    old: "One market, audited once, stale in a quarter",
-    scuup: "Any of 40 markets through local residential browsing, re-runnable on demand",
-  },
-  {
-    capability: "Logged-in coverage",
-    old: "Rarely. Nobody wants to register 5 accounts by hand.",
-    scuup: "Agents register real test accounts and walk deposit, rewards and account flows",
-  },
-  {
-    capability: "Player voice",
-    old: "Surveys and panels, weeks later",
-    scuup: "Live public reviews cross-checked against what the audit measured",
-  },
-  {
-    capability: "Time to first read",
-    old: "6–8 weeks and a workshop",
-    scuup: "Under an hour, then a living workspace",
-  },
-];
-
 const PRICING = [
   {
     name: "Free",
@@ -235,13 +204,6 @@ const PRICING = [
     href: "/upgrade",
     variant: "outline" as const,
   },
-];
-
-const HERO_STATS = [
-  { value: "4", label: "score pillars" },
-  { value: String(MEASURE_AREAS.length), label: "journey areas" },
-  { value: String(HEURISTIC_COUNT), label: "iGaming heuristics" },
-  { value: "40", label: "markets" },
 ];
 
 export function LandingShowcase() {
@@ -323,22 +285,7 @@ export function LandingShowcase() {
           <HeroVisual />
         </section>
 
-        {/* Stats strip */}
-        <section className="border-y border-border bg-card/40">
-          <div className="mx-auto grid w-full max-w-7xl grid-cols-2 gap-px overflow-hidden px-6 sm:grid-cols-4">
-            {HERO_STATS.map((s) => (
-              <div
-                key={s.label}
-                className="flex flex-col items-center gap-1 py-8"
-              >
-                <span className="font-heading text-3xl font-semibold tabular-nums">
-                  {s.value}
-                </span>
-                <span className="text-sm text-muted-foreground">{s.label}</span>
-              </div>
-            ))}
-          </div>
-        </section>
+        <MarketsMarquee />
 
         {/* Four pillars */}
         <section id="pillars" className="mx-auto w-full max-w-7xl px-6 py-20 sm:py-28">
@@ -376,64 +323,16 @@ export function LandingShowcase() {
 
         <ShowcaseCarousel />
 
+        <ScuupScrollHeadline />
+
         <HowItWorks />
         <WhatWeMeasure />
         <PillarSpotlights />
 
-        {/* Comparison */}
-        <section id="compare" className="border-y border-border bg-card/40 py-20 sm:py-28">
-          <div className="mx-auto w-full max-w-7xl px-6">
-            <LandingReveal className="max-w-2xl">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-                Why Scuup
-              </p>
-              <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-                Built for how iGaming actually competes
-              </h2>
-              <p className="mt-4 text-base leading-relaxed text-muted-foreground">
-                Agency CX audits are slow, expensive and opinion-shaped.
-                Generic analytics tools don&apos;t know what a betslip or a
-                rakeback loop is. Scuup is purpose-built for operator
-                benchmarking.
-              </p>
-            </LandingReveal>
-
-            <LandingReveal delay={120} className="mt-12 overflow-hidden rounded-xl border">
-              <div className="grid grid-cols-[1fr_1.2fr_1.2fr] gap-px bg-border text-sm sm:grid-cols-[220px_1fr_1fr]">
-                <div className="bg-card/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Capability
-                </div>
-                <div className="bg-card/80 px-4 py-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Agency audit / DIY
-                </div>
-                <div className="bg-primary/10 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-primary">
-                  Scuup
-                </div>
-                {COMPARISON.map((row) => (
-                  <Fragment key={row.capability}>
-                    <div className="bg-background px-4 py-4 font-medium">
-                      {row.capability}
-                    </div>
-                    <div className="flex items-start gap-2 bg-background px-4 py-4 text-muted-foreground">
-                      <X className="mt-0.5 size-3.5 shrink-0 text-tier-1/70" />
-                      {row.old}
-                    </div>
-                    <div className="flex items-start gap-2 bg-primary/[0.04] px-4 py-4">
-                      <Check className="mt-0.5 size-3.5 shrink-0 text-brand" />
-                      {row.scuup}
-                    </div>
-                  </Fragment>
-                ))}
-              </div>
-            </LandingReveal>
-          </div>
-        </section>
+        <WhyScuupComparison />
 
         <WhatYouGet />
         <SharedReportReview />
-        <ScoringScale />
-
-        <MarketsMarquee />
 
         {/* Pricing */}
         <section id="pricing" className="border-t border-border bg-card/40 py-20 sm:py-28">
