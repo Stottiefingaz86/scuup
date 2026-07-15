@@ -19,7 +19,8 @@ export async function POST(
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
-    if (!(await ownsProject(id, user.id))) {
+    // Admins may pause/reactivate any report (support access).
+    if (!isAdminUser(user) && !(await ownsProject(id, user.id))) {
       return NextResponse.json({ error: "not your project" }, { status: 403 });
     }
     const body = await request.json().catch(() => ({}));

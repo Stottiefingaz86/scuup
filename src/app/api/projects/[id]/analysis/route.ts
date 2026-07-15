@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth-server";
+import { isAdminUser, requireUser } from "@/lib/auth-server";
 import { ownsBrand, upsertAnalysis } from "@/lib/project-db";
 import type { JourneyAnalysis } from "@/lib/types";
 
@@ -15,7 +15,8 @@ export async function POST(request: NextRequest) {
     if (!brandId || !analysis?.area) {
       return NextResponse.json({ error: "invalid body" }, { status: 400 });
     }
-    if (!(await ownsBrand(brandId, user.id))) {
+    // Admins may re-run and save analyses on any report (support access).
+    if (!isAdminUser(user) && !(await ownsBrand(brandId, user.id))) {
       return NextResponse.json({ error: "not your project" }, { status: 403 });
     }
     await upsertAnalysis(brandId, analysis);

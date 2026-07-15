@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "./supabase-server";
+import { isAdminUser } from "./auth-server";
 import { ownsProject } from "./project-db";
 import type { ReportComment, ReportMember } from "./collab";
 
@@ -27,18 +28,21 @@ interface CommentRow {
   created_at: string;
 }
 
-/** Owner or accepted member — the gate for reading the report and
- * commenting. Mutations elsewhere still require ownsProject. */
+/** Owner, accepted member, or platform admin — the gate for reading the
+ * report and commenting. Mutations elsewhere still require ownsProject.
+ * Admins get read access to every report so support can inspect and
+ * re-run a user's audit from mission control. */
 export async function canAccessProject(
   projectId: string,
-  userId: string
+  user: Pick<User, "id" | "email">
 ): Promise<boolean> {
-  if (await ownsProject(projectId, userId)) return true;
+  if (isAdminUser(user)) return true;
+  if (await ownsProject(projectId, user.id)) return true;
   const { data, error } = await supabase()
     .from("ps_project_members")
     .select("id")
     .eq("project_id", projectId)
-    .eq("user_id", userId)
+    .eq("user_id", user.id)
     .eq("status", "active")
     .maybeSingle();
   if (error) throw new Error(error.message);

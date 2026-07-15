@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth-server";
+import { isAdminUser, requireUser } from "@/lib/auth-server";
 import { ownsProject, setProjectComplete } from "@/lib/project-db";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function POST(
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
-    if (!(await ownsProject(id, user.id))) {
+    if (!isAdminUser(user) && !(await ownsProject(id, user.id))) {
       return NextResponse.json({ error: "not your project" }, { status: 403 });
     }
     await setProjectComplete(id);

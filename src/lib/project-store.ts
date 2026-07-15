@@ -119,12 +119,45 @@ export function useProjectStoreError(): string | null {
   );
 }
 
+/* Reports outside the account's own list (admin support access) resolve
+ * through a one-shot fetch of /api/projects/[id]. */
+const singleFetches = new Map<string, "loading" | "missing">();
+
+function fetchSingleProject(id: string): void {
+  if (singleFetches.has(id)) return;
+  singleFetches.set(id, "loading");
+  fetch(`/api/projects/${id}`)
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.project) {
+        const project = sanitizeProject(data.project as Project);
+        projects = [project, ...(projects ?? []).filter((p) => p.id !== id)];
+      }
+      singleFetches.set(id, "missing");
+      emit();
+    })
+    .catch(() => {
+      singleFetches.set(id, "missing");
+      emit();
+    });
+}
+
 /** One project by id. undefined = still loading, null = not found. */
 export function useProject(id: string): Project | null | undefined {
   if (id === LANDING_DEMO_PROJECT_ID) return landingDemoProject();
   const all = useProjects();
   if (all === undefined) return undefined;
-  return all.find((p) => p.id === id) ?? null;
+  const found = all.find((p) => p.id === id);
+  if (found) return found;
+  if (typeof window !== "undefined") {
+    const status = singleFetches.get(id);
+    if (status === undefined) {
+      fetchSingleProject(id);
+      return undefined;
+    }
+    if (status === "loading") return undefined;
+  }
+  return null;
 }
 
 export function getProject(id: string): Project | undefined {

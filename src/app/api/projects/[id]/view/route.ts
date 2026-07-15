@@ -17,7 +17,7 @@ export async function POST(
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
-    if (!(await canAccessProject(id, user.id))) {
+    if (!(await canAccessProject(id, user))) {
       return NextResponse.json({ error: "not your report" }, { status: 403 });
     }
     await recordView(id, {

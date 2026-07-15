@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildActionPlan } from "@/lib/action-plan";
-import { requireUser } from "@/lib/auth-server";
-import { listProjects, saveActionPlan } from "@/lib/project-db";
+import { isAdminUser, requireUser } from "@/lib/auth-server";
+import { getProjectById, listProjects, saveActionPlan } from "@/lib/project-db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -16,7 +16,11 @@ export async function POST(
   try {
     const user = await requireUser();
     const { id } = await ctx.params;
-    const project = (await listProjects(user.id)).find((p) => p.id === id);
+    let project = (await listProjects(user.id)).find((p) => p.id === id);
+    // Admins may rebuild any report's plan (support access).
+    if (!project && isAdminUser(user)) {
+      project = (await getProjectById(id)) ?? undefined;
+    }
     if (!project) {
       return NextResponse.json({ error: "project not found" }, { status: 404 });
     }

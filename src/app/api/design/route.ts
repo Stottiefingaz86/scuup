@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { isAdminUser, planFor, requireUser } from "@/lib/auth-server";
 import { buildDesignReview, extractDesignSignals } from "@/lib/design-review";
-import { listProjects, upsertDesign } from "@/lib/project-db";
+import { getProjectById, listProjects, upsertDesign } from "@/lib/project-db";
 import { enforceRunLimit, RunLimitError } from "@/lib/run-limits";
 
 export const runtime = "nodejs";
@@ -21,9 +21,13 @@ export async function POST(request: NextRequest) {
     if (!projectId || !brandId) {
       return NextResponse.json({ error: "invalid body" }, { status: 400 });
     }
-    const project = (await listProjects(user.id)).find(
+    let project = (await listProjects(user.id)).find(
       (p) => p.id === projectId
     );
+    // Admins may run analyses on any report (support access).
+    if (!project && isAdminUser(user)) {
+      project = (await getProjectById(projectId)) ?? undefined;
+    }
     const brand = project?.brands.find((b) => b.id === brandId);
     if (!project || !brand) {
       return NextResponse.json({ error: "not your project" }, { status: 403 });

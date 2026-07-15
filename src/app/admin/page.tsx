@@ -278,7 +278,16 @@ function UserRow({
                     className="flex flex-wrap items-center gap-2 text-xs"
                   >
                     <FolderOpen className="size-3.5 text-muted-foreground" />
-                    <span className="font-medium">{p.name}</span>
+                    <a
+                      href={`/projects/${p.id}/overview`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
+                      title="Open this report (admin access)"
+                    >
+                      {p.name}
+                      <ExternalLink className="size-3 text-muted-foreground" />
+                    </a>
                     <span className="text-muted-foreground">{p.market}</span>
                     <Badge
                       variant={p.status === "archived" ? "outline" : "secondary"}
@@ -291,6 +300,17 @@ function UserRow({
                         dateStyle: "medium",
                       })}
                     </span>
+                    <button
+                      type="button"
+                      className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                      title="Copy report ID"
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(p.id);
+                        toast.success("Report ID copied");
+                      }}
+                    >
+                      {p.id}
+                    </button>
                   </div>
                 ))}
               </div>
