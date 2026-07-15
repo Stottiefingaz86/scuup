@@ -30,28 +30,30 @@ export class RunLimitError extends Error {
 }
 
 /** Throws RunLimitError when the user is over today's cap, otherwise
- * records this run. Fails open on infrastructure errors — a broken
- * limiter must never block paying customers. */
+ * records this run. Admins skip the cap but still get logged so mission
+ * control charts reflect real activity. Fails open on infrastructure
+ * errors — a broken limiter must never block paying customers. */
 export async function enforceRunLimit(
   userId: string,
   kind: RunKind,
   plan: Plan,
   isAdmin = false
 ): Promise<void> {
-  if (isAdmin) return;
   try {
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
+    if (!isAdmin) {
+      const since = new Date();
+      since.setUTCHours(0, 0, 0, 0);
 
-    const { count, error } = await supabase()
-      .from("ps_run_log")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", userId)
-      .eq("kind", kind)
-      .gte("created_at", since.toISOString());
+      const { count, error } = await supabase()
+        .from("ps_run_log")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .eq("kind", kind)
+        .gte("created_at", since.toISOString());
 
-    if (!error && (count ?? 0) >= DAILY_LIMITS[kind][plan]) {
-      throw new RunLimitError(kind);
+      if (!error && (count ?? 0) >= DAILY_LIMITS[kind][plan]) {
+        throw new RunLimitError(kind);
+      }
     }
 
     await supabase()
