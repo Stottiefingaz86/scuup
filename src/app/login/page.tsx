@@ -17,6 +17,7 @@ import {
 import { cn } from "@/lib/utils";
 import { appOriginClient, authCallbackUrl } from "@/lib/app-url";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { track } from "@/lib/track";
 
 type Mode = "signin" | "signup";
 
@@ -189,6 +190,7 @@ function LoginForm() {
             "Account created, check your email to confirm, then log in."
           );
         }
+        track("signup_completed", { company: company || null });
         await sendVerificationEmail();
         router.push(next);
         router.refresh();
@@ -200,6 +202,7 @@ function LoginForm() {
         password,
       });
       if (signInError) throw signInError;
+      track("logged_in");
       router.push(next);
       router.refresh();
     } catch (err) {

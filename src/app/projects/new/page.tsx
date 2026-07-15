@@ -46,6 +46,7 @@ import {
   createProject,
   LimitError,
 } from "@/lib/project-store";
+import { track } from "@/lib/track";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
 import { VerifyEmailDialog } from "@/components/verify-email-dialog";
 import type { JourneyType } from "@/lib/types";
@@ -680,6 +681,12 @@ export default function NewProjectPage() {
           { replaceActive: opts?.replaceActive === true }
         );
         setActiveConflict(null);
+        track("report_created", {
+          market: market!,
+          plan,
+          competitors: validCompetitors.length,
+          journeys: journeys.length,
+        });
         router.push(`/projects/${project.id}/analyzing`);
       } catch (e) {
         if (e instanceof ActiveReportError) {
@@ -704,6 +711,7 @@ export default function NewProjectPage() {
       validate,
       ownBrandUrl,
       market,
+      plan,
       validCompetitors,
       products,
       journeys,

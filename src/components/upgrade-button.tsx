@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { track } from "@/lib/track";
 
 /** Starts Stripe Checkout for a paid plan. */
 export function UpgradeButton({
@@ -21,6 +22,7 @@ export function UpgradeButton({
 
   async function startCheckout() {
     setLoading(true);
+    track("checkout_started", { plan });
     try {
       const res = await fetch("/api/billing/checkout", {
         method: "POST",
@@ -62,6 +64,7 @@ export function ManageBillingButton({ className }: { className?: string }) {
 
   async function openPortal() {
     setLoading(true);
+    track("billing_portal_opened");
     try {
       const res = await fetch("/api/billing/portal", { method: "POST" });
       const data = await res.json();

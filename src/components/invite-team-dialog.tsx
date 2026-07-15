@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { colorForUser, timeAgo, type ReportMember } from "@/lib/collab";
+import { track } from "@/lib/track";
 
 interface MembersPayload {
   members: ReportMember[];
@@ -151,6 +152,7 @@ export function InviteTeamDialog({ projectId }: { projectId: string }) {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(payload.error ?? "Failed to invite");
+      track("invite_sent");
       setEmail("");
       setLastInviteUrl(payload.inviteUrl ?? null);
       setCopied(false);

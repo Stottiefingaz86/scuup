@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { getProject, saveAnalysis } from "./project-store";
+import { track } from "./track";
 import type { Brand, JourneyAnalysis } from "./types";
 
 /** In-flight agent runs, shared across every component so the same
@@ -72,6 +73,10 @@ export function runAgent(
 
   const promise = (async () => {
     const project = getProject(projectId);
+    track("agent_run_started", {
+      area,
+      ownBrand: brand.role === "own_brand",
+    });
 
     // Gated journeys run as their own requests (not chained inside signup)
     // so each run fits the serverless time limit — the persisted browser
@@ -90,6 +95,7 @@ export function runAgent(
     });
     const data = await res.json();
     if (!res.ok) {
+      track("agent_run_failed", { area, status: res.status });
       if (res.status === 403 && data.code === "email_not_verified") {
         throw new Error(
           "Verify your email before running analysis — use the link on your dashboard."
