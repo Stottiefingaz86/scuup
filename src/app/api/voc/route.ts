@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth-server";
+import * as Sentry from "@sentry/nextjs";
+import { isAdminUser, planFor, requireUser } from "@/lib/auth-server";
 import { listProjects, upsertVoc } from "@/lib/project-db";
+import { enforceRunLimit, RunLimitError } from "@/lib/run-limits";
 import { buildVocAnalysis, scrapeTrustpilot } from "@/lib/voc";
 
 export const runtime = "nodejs";
@@ -33,13 +35,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await enforceRunLimit(
+      user.id,
+      "voc",
+      await planFor(user.id),
+      isAdminUser(user)
+    );
+
     const scrape = await scrapeTrustpilot(brand.url);
     const voc = await buildVocAnalysis(project, brand, scrape);
     await upsertVoc(brandId, voc);
     return NextResponse.json({ voc });
   } catch (e) {
+    if (e instanceof RunLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
     const message = e instanceof Error ? e.message : "VoC analysis failed";
     console.error("[voc] failed:", message);
+    Sentry.captureException(e, { tags: { route: "voc" } });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -12,6 +12,8 @@ const PUBLIC_PATHS = [
   /^\/cookies(\/|$)/,
   /^\/api\/showcase(\/|$)/,
   /^\/api\/contact(\/|$)/,
+  // Stripe calls this from its servers; the signature check is the auth.
+  /^\/api\/billing\/webhook$/,
 ];
 
 export async function proxy(request: NextRequest) {

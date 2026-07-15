@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import {
   AuthError,
   EmailNotVerifiedError,
+  isAdminUser,
   planFor,
   requireUser,
 } from "@/lib/auth-server";
@@ -11,6 +13,7 @@ import { auditUrlForMarket } from "@/lib/brand-markets";
 import { createContext } from "@/lib/browserbase";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { journeyAllowedOnPlan } from "@/lib/plan";
+import { enforceRunLimit, RunLimitError } from "@/lib/run-limits";
 import {
   getBrandContextId,
   getCredentialsForLogin,
@@ -30,10 +33,12 @@ export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   let userId = "";
+  let isAdmin = false;
   try {
     const user = await requireUser();
     await requireEmailVerified(user);
     userId = user.id;
+    isAdmin = isAdminUser(user);
   } catch (e) {
     if (e instanceof AuthError) {
       return NextResponse.json({ error: e.message }, { status: 401 });
@@ -91,6 +96,15 @@ export async function POST(request: NextRequest) {
       },
       { status: 402 }
     );
+  }
+
+  try {
+    await enforceRunLimit(userId, "analyze", plan, isAdmin);
+  } catch (e) {
+    if (e instanceof RunLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
+    throw e;
   }
 
   // A saved browser context means the agent starts logged in. Optional:
@@ -168,6 +182,10 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "analysis failed";
     console.error(`[analyze] ${journey} @ ${url} failed:`, message);
+    Sentry.captureException(e, {
+      tags: { route: "analyze", journey },
+      extra: { url, brandId, userId },
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

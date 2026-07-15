@@ -1,11 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { LogOut, Sparkles } from "lucide-react";
 import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupMark } from "@/components/landing/scuup-mark";
 import { AccountQuickLinks } from "@/components/account-menu";
+import { ManageBillingButton } from "@/components/upgrade-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,15 +21,32 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useAuthUser } from "@/lib/use-auth-user";
 
+const PLAN_LABELS: Record<string, string> = {
+  free: "Free",
+  pro: "Pro",
+  pro_plus: "Pro Plus",
+};
+
 export default function AccountPage() {
   const router = useRouter();
   const { user, loading, name, email, initials } = useAuthUser();
+  const [plan, setPlan] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login?next=/account");
     }
   }, [loading, user, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/account/plan")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.plan) setPlan(d.plan);
+      })
+      .catch(() => {});
+  }, [user]);
 
   async function signOut() {
     await supabaseBrowser().auth.signOut();
@@ -83,11 +102,25 @@ export default function AccountPage() {
                 <CardTitle className="text-base">{name ?? "Account"}</CardTitle>
                 <CardDescription className="truncate">{email}</CardDescription>
               </div>
-              <Badge variant="secondary">Free</Badge>
+              <Badge variant="secondary">
+                {plan ? (PLAN_LABELS[plan] ?? plan) : "…"}
+              </Badge>
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
             <AccountQuickLinks />
+            {plan === "free" ? (
+              <Button
+                className="w-full"
+                nativeButton={false}
+                render={<Link href="/upgrade" />}
+              >
+                <Sparkles data-icon="inline-start" />
+                Upgrade to Pro
+              </Button>
+            ) : plan ? (
+              <ManageBillingButton className="w-full" />
+            ) : null}
             <Button variant="outline" className="w-full" onClick={signOut}>
               <LogOut data-icon="inline-start" />
               Log out

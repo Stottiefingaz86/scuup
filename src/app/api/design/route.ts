@@ -1,7 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { requireUser } from "@/lib/auth-server";
+import * as Sentry from "@sentry/nextjs";
+import { isAdminUser, planFor, requireUser } from "@/lib/auth-server";
 import { buildDesignReview, extractDesignSignals } from "@/lib/design-review";
 import { listProjects, upsertDesign } from "@/lib/project-db";
+import { enforceRunLimit, RunLimitError } from "@/lib/run-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,13 +35,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    await enforceRunLimit(
+      user.id,
+      "design",
+      await planFor(user.id),
+      isAdminUser(user)
+    );
+
     const signals = await extractDesignSignals(brand.url, project.market);
     const design = await buildDesignReview(project, brand, signals);
     await upsertDesign(brandId, design);
     return NextResponse.json({ design });
   } catch (e) {
+    if (e instanceof RunLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
     const message = e instanceof Error ? e.message : "Design review failed";
     console.error("[design] failed:", message);
+    Sentry.captureException(e, { tags: { route: "design" } });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

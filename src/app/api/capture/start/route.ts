@@ -1,15 +1,41 @@
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  AuthError,
+  isAdminUser,
+  planFor,
+  requireUser,
+} from "@/lib/auth-server";
 import { startCapture } from "@/lib/capture-runtime";
 import { auditUrlForMarket } from "@/lib/brand-markets";
 import { createContext } from "@/lib/browserbase";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { getBrandContextId, saveBrandContext } from "@/lib/credentials-db";
+import { enforceRunLimit, RunLimitError } from "@/lib/run-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  // Live captures spin up real Browserbase sessions — signed-in users only.
+  try {
+    const user = await requireUser();
+    await enforceRunLimit(
+      user.id,
+      "capture",
+      await planFor(user.id),
+      isAdminUser(user)
+    );
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return NextResponse.json({ error: e.message }, { status: 401 });
+    }
+    if (e instanceof RunLimitError) {
+      return NextResponse.json({ error: e.message }, { status: 429 });
+    }
+    throw e;
+  }
+
   let url = "";
   let brandId = "";
   let market = "";

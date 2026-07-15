@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Check, Lock, Sparkles } from "lucide-react";
 import { ScuupLogo } from "@/components/scuup-logo";
+import { UpgradeButton } from "@/components/upgrade-button";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,6 +17,7 @@ import {
   PRO_PRICE_MONTHLY,
   PRO_SELLING_POINTS,
 } from "@/lib/plan";
+import { stripeConfigured } from "@/lib/stripe";
 
 const HEADLINES: Record<string, { title: string; description: string }> = {
   new: {
@@ -75,6 +77,7 @@ export default async function UpgradePage({
 }) {
   const { from } = await searchParams;
   const heading = HEADLINES[from ?? "default"] ?? HEADLINES.default;
+  const paymentsLive = stripeConfigured();
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 px-6 py-12">
@@ -137,10 +140,16 @@ export default async function UpgradePage({
                 </li>
               ))}
             </ul>
-            <Button size="lg" className="w-full glow-primary" disabled>
-              <Sparkles data-icon="inline-start" />
-              Upgrade to Pro, coming soon
-            </Button>
+            {paymentsLive ? (
+              <UpgradeButton plan="pro" className="w-full glow-primary">
+                Upgrade to Pro
+              </UpgradeButton>
+            ) : (
+              <Button size="lg" className="w-full glow-primary" disabled>
+                <Sparkles data-icon="inline-start" />
+                Upgrade to Pro, coming soon
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -165,16 +174,23 @@ export default async function UpgradePage({
                 </li>
               ))}
             </ul>
-            <Button size="lg" className="w-full" variant="outline" disabled>
-              Pro Plus, coming soon
-            </Button>
+            {paymentsLive ? (
+              <UpgradeButton plan="pro_plus" variant="outline" className="w-full">
+                Upgrade to Pro Plus
+              </UpgradeButton>
+            ) : (
+              <Button size="lg" className="w-full" variant="outline" disabled>
+                Pro Plus, coming soon
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
 
       <p className="max-w-md text-center text-xs text-muted-foreground">
-        Payments aren&apos;t live yet. Contact us for early Pro or Pro Plus
-        access.
+        {paymentsLive
+          ? "Prices exclude tax. Cancel any time from your account page."
+          : "Payments aren't live yet. Contact us for early Pro or Pro Plus access."}
       </p>
 
       <Button
