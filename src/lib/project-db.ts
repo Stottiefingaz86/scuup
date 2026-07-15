@@ -405,6 +405,9 @@ export async function upsertAnalysis(
     analysed_at: analysis.analysedAt,
   });
   if (error) throw new Error(error.message);
+  void import("./showcase-db")
+    .then((m) => m.syncShowcaseForBrand(brandId))
+    .catch((e) => console.error("[showcase] sync after analysis failed:", e));
 }
 
 export async function upsertVoc(
@@ -418,6 +421,9 @@ export async function upsertVoc(
     data: voc,
   });
   if (error) throw new Error(error.message);
+  void import("./showcase-db")
+    .then((m) => m.syncShowcaseForBrand(brandId))
+    .catch((e) => console.error("[showcase] sync after voc failed:", e));
 }
 
 export async function upsertDesign(
@@ -430,6 +436,9 @@ export async function upsertDesign(
     data: design,
   });
   if (error) throw new Error(error.message);
+  void import("./showcase-db")
+    .then((m) => m.syncShowcaseForBrand(brandId))
+    .catch((e) => console.error("[showcase] sync after design failed:", e));
 }
 
 export async function insertSession(

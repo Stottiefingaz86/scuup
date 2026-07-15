@@ -2,6 +2,7 @@ import { supabase } from "./supabase-server";
 import {
   brandSlugFromUrl,
   dedupeShowcaseByBrand,
+  mergeShowcasePillars,
   isShowcaseExcludedBrand,
   monthKey,
   prevMonthKey,
@@ -55,7 +56,7 @@ export async function syncShowcaseFromProject(projectId: string): Promise<number
     .eq("id", projectId)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  if (!row || row.status !== "complete") return 0;
+  if (!row || (row.status !== "complete" && row.status !== "archived")) return 0;
 
   const project = await getProjectById(projectId);
   if (!project) return 0;
@@ -78,6 +79,78 @@ export async function syncShowcaseFromProject(projectId: string): Promise<number
     n += 1;
   }
   return n;
+}
+
+/** Re-sync the public carousel when a brand's scores change on a finished report. */
+export async function syncShowcaseForBrand(brandId: string): Promise<void> {
+  const db = supabase();
+  const { data: brand, error } = await db
+    .from("ps_brands")
+    .select("project_id")
+    .eq("id", brandId)
+    .maybeSingle();
+  if (error || !brand?.project_id) return;
+  const { data: proj } = await db
+    .from("ps_projects")
+    .select("status")
+    .eq("id", brand.project_id)
+    .maybeSingle();
+  if (proj?.status === "complete" || proj?.status === "archived") {
+    await syncShowcaseFromProject(brand.project_id as string);
+  }
+}
+
+/** Replace stale snapshot pillar fields with live project data when linked. */
+async function liveSnapshotRow(
+  row: ShowcaseSnapshotRow
+): Promise<ShowcaseSnapshotRow> {
+  if (!row.project_id || !row.brand_id) return row;
+  try {
+    const project = await getProjectById(row.project_id);
+    if (
+      !project ||
+      (project.status !== "complete" && project.status !== "archived")
+    ) {
+      return row;
+    }
+    const brand = project.brands.find((b) => b.id === row.brand_id);
+    if (!brand || overallScore(brand) === null) return row;
+
+    const snap = snapshotFromBrand(
+      brand,
+      row.market,
+      row.month,
+      row.project_id
+    );
+    if (!snap) return row;
+
+    const changed =
+      snap.cx_score !== row.cx_score ||
+      snap.journeys_score !== row.journeys_score ||
+      snap.retention_score !== row.retention_score ||
+      snap.voc_score !== row.voc_score ||
+      snap.design_score !== row.design_score;
+
+    if (changed) {
+      const { error: upsertErr } = await supabase()
+        .from("ps_showcase_snapshots")
+        .upsert(snap, { onConflict: "brand_slug,market,month" });
+      if (upsertErr) throw new Error(upsertErr.message);
+    }
+
+    return {
+      ...row,
+      cx_score: snap.cx_score,
+      journeys_score: snap.journeys_score,
+      retention_score: snap.retention_score,
+      voc_score: snap.voc_score,
+      design_score: snap.design_score,
+      updated_at: snap.updated_at,
+    };
+  } catch (e) {
+    console.error("[showcase] live heal failed:", e);
+    return row;
+  }
 }
 
 export async function listShowcaseSnapshots(opts?: {
@@ -132,6 +205,8 @@ export async function buildShowcaseEntries(opts?: {
     all.filter((row) => !isShowcaseExcludedBrand(row.brand_slug))
   );
 
+  const healedRows = await Promise.all(rows.map(liveSnapshotRow));
+
   const prevMonth = prevMonthKey(month);
   const prevRows = await listShowcaseSnapshots({
     market: opts?.market,
@@ -141,14 +216,27 @@ export async function buildShowcaseEntries(opts?: {
     prevRows.map((r) => [`${r.brand_slug}:${r.market}`, r.cx_score])
   );
 
-  const entries = rows.map((row) => {
+  const entries = healedRows.map((row) => {
     const prev = prevByKey.get(`${row.brand_slug}:${row.market}`) ?? null;
     return rowToEntry(row, prev);
   });
 
-  const visible = opts?.market ? entries : dedupeShowcaseByBrand(entries);
+  const bySlug = new Map<string, ShowcaseEntry[]>();
+  for (const entry of entries) {
+    const list = bySlug.get(entry.brandSlug) ?? [];
+    list.push(entry);
+    bySlug.set(entry.brandSlug, list);
+  }
 
-  return { entries: visible, markets: meta.markets, months: meta.months };
+  const visible = opts?.market ? entries : dedupeShowcaseByBrand(entries);
+  const merged = visible.map((entry) => {
+    const siblings = (bySlug.get(entry.brandSlug) ?? []).filter(
+      (s) => s.id !== entry.id
+    );
+    return mergeShowcasePillars(entry, siblings);
+  });
+
+  return { entries: merged, markets: meta.markets, months: meta.months };
 }
 
 /** Backfill showcase from every completed project (one-time / cron). */

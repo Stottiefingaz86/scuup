@@ -10,6 +10,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
+import { MarketTag } from "@/components/market-tag";
 import { PillarRow } from "@/components/brand-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,6 +103,7 @@ function ShowcaseCard({
 
   const pillars = pillarsFromShowcaseEntry(entry);
   const scoredPillars = pillars.filter((p) => p.score !== null);
+  const pendingPillars = pillars.filter((p) => p.score === null);
 
   return (
     <Card className="group/score flex w-[min(100%,300px)] shrink-0 snap-start flex-col gap-4 overflow-hidden py-4">
@@ -120,22 +122,28 @@ function ShowcaseCard({
             #{rank}
           </Badge>
         </div>
-        <Badge
-          variant="secondary"
-          className="mt-2.5 w-fit max-w-full truncate font-normal"
-        >
-          {entry.market}
-        </Badge>
+        <MarketTag market={entry.market} className="mt-2.5 w-fit" />
       </CardHeader>
 
       <CardContent className="flex flex-1 flex-col gap-4 px-4">
-        <ScoreGauge
-          score={entry.cxScore}
-          size={116}
-          caption="Player CX Score"
-          muted
-          className="mx-auto"
-        />
+        {entry.cxScore !== null ? (
+          <ScoreGauge
+            score={entry.cxScore}
+            size={116}
+            caption="Player CX Score"
+            muted
+            className="mx-auto"
+          />
+        ) : (
+          <div className="mx-auto flex h-[80px] flex-col items-center justify-center gap-1">
+            <span className="font-heading text-2xl font-semibold text-muted-foreground/40">
+              N/A
+            </span>
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              No successful analysis yet
+            </span>
+          </div>
+        )}
 
         <TrendBadge entry={entry} />
 
@@ -144,8 +152,11 @@ function ShowcaseCard({
             <PillarRow key={p.key} pillar={p} muted />
           ))}
           <span className="text-[10px] leading-snug text-muted-foreground/70">
-            Player CX Score = average of {scoredPillars.length} scored pillar
-            {scoredPillars.length === 1 ? "" : "s"}.
+            {entry.cxScore !== null
+              ? pendingPillars.length > 0
+                ? `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}. ${pendingPillars.map((p) => p.label).join(", ")} pending.`
+                : `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}.`
+              : "Scores appear as the agent completes its first visits."}
           </span>
         </div>
       </CardContent>

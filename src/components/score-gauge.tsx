@@ -1,10 +1,5 @@
 import { cn } from "@/lib/utils";
-import {
-  TIER_TEXT_GROUP_HOVER,
-  tierLabel,
-  tierOf,
-  tierTextClass,
-} from "@/lib/score";
+import { tierLabel, tierTextClass } from "@/lib/score";
 
 /**
  * Semicircular score gauge with the score and tier label inside the arc.
@@ -52,7 +47,7 @@ export function ScoreGauge({
             className={cn(
               "transition-colors duration-300",
               muted
-                ? cn("text-foreground/35", TIER_TEXT_GROUP_HOVER[tierOf(score)])
+                ? cn(tierTextClass(score), "opacity-75")
                 : cn(
                     "[filter:drop-shadow(0_0_3px_color-mix(in_oklch,currentColor_40%,transparent))]",
                     tierTextClass(score)
@@ -78,10 +73,7 @@ export function ScoreGauge({
             className={cn(
               "font-heading font-medium transition-colors duration-300",
               muted
-                ? cn(
-                    "text-muted-foreground",
-                    TIER_TEXT_GROUP_HOVER[tierOf(score)]
-                  )
+                ? cn(tierTextClass(score), "opacity-75")
                 : tierTextClass(score)
             )}
             style={{ fontSize: Math.max(10, Math.round(size * 0.075)) }}

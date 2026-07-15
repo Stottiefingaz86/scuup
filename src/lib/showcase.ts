@@ -103,22 +103,57 @@ export function matchesSort(entry: ShowcaseEntry, sort: ShowcaseSort): boolean {
   return true;
 }
 
-/** One public card per brand when the carousel spans all markets. */
+/** One public card per brand when the carousel spans all markets. Prefer the
+ * snapshot with the most scored pillars — not just the highest cx score —
+ * so Tipico Germany with a full audit beats a partial row from elsewhere. */
 export function dedupeShowcaseByBrand(
   entries: ShowcaseEntry[]
 ): ShowcaseEntry[] {
+  const pillarCount = (e: ShowcaseEntry) =>
+    [e.journeysScore, e.retentionScore, e.vocScore, e.designScore].filter(
+      (s) => s !== null
+    ).length;
+
   const bySlug = new Map<string, ShowcaseEntry>();
   for (const entry of entries) {
     const kept = bySlug.get(entry.brandSlug);
+    if (!kept) {
+      bySlug.set(entry.brandSlug, entry);
+      continue;
+    }
+    const keptP = pillarCount(kept);
+    const entryP = pillarCount(entry);
     if (
-      !kept ||
-      entry.cxScore > kept.cxScore ||
-      (entry.cxScore === kept.cxScore && entry.id > kept.id)
+      entryP > keptP ||
+      (entryP === keptP && entry.cxScore > kept.cxScore) ||
+      (entryP === keptP &&
+        entry.cxScore === kept.cxScore &&
+        entry.id > kept.id)
     ) {
       bySlug.set(entry.brandSlug, entry);
     }
   }
   return [...bySlug.values()].sort((a, b) => b.cxScore - a.cxScore);
+}
+
+/** Fill null pillars on the primary row from sibling snapshots of the same brand
+ * and month (e.g. Canada Stake missing retention while Mexico scored it). */
+export function mergeShowcasePillars(
+  primary: ShowcaseEntry,
+  siblings: ShowcaseEntry[]
+): ShowcaseEntry {
+  if (siblings.length === 0) return primary;
+  const pick = (get: (e: ShowcaseEntry) => number | null) =>
+    get(primary) ??
+    siblings.map(get).find((s): s is number => s !== null) ??
+    null;
+  return {
+    ...primary,
+    journeysScore: pick((e) => e.journeysScore),
+    retentionScore: pick((e) => e.retentionScore),
+    vocScore: pick((e) => e.vocScore),
+    designScore: pick((e) => e.designScore),
+  };
 }
 
 export function rowToEntry(

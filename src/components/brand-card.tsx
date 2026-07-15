@@ -99,6 +99,7 @@ export function BrandCard({
   const overall = overallScore(brand);
   const pillars = scorePillars(brand);
   const scoredPillars = pillars.filter((p) => p.score !== null);
+  const pendingPillars = pillars.filter((p) => p.score === null);
 
   return (
     <Card
@@ -162,7 +163,9 @@ export function BrandCard({
           ))}
           <span className="text-[10px] leading-snug text-muted-foreground/70">
             {overall !== null
-              ? `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}.`
+              ? pendingPillars.length > 0
+                ? `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}. ${pendingPillars.map((p) => p.label).join(", ")} pending.`
+                : `Player CX Score = average of ${scoredPillars.length} scored pillar${scoredPillars.length === 1 ? "" : "s"}.`
               : "Scores appear as the agent completes its first visits."}
           </span>
         </div>

@@ -18,7 +18,7 @@ import {
   saveBrandContext,
   seedTestPersona,
 } from "@/lib/credentials-db";
-import { brandProjectArchived } from "@/lib/project-db";
+import { brandProjectArchived, upsertAnalysis } from "@/lib/project-db";
 import { personaVariables } from "@/lib/test-persona";
 
 export const runtime = "nodejs";
@@ -155,6 +155,12 @@ export async function POST(request: NextRequest) {
       accountExists,
     });
     const { chainedAnalyses, ...analysis } = result;
+    if (brandId) {
+      await upsertAnalysis(brandId, analysis);
+      for (const chained of chainedAnalyses ?? []) {
+        await upsertAnalysis(brandId, chained);
+      }
+    }
     if (brandId && (analysis.authenticated || analysis.loggedIn)) {
       await markLoggedIn(brandId).catch(() => {});
     }

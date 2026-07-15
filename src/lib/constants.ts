@@ -240,6 +240,20 @@ export function defaultTestEmailForBrand(brandName: string): string {
   return `${DEFAULT_TEST_EMAIL.slice(0, at)}+${slug}${DEFAULT_TEST_EMAIL.slice(at)}`;
 }
 
+/** Resolve a stored market label (including legacy aliases) for flags and proxy. */
+export function marketOptionForLabel(
+  label: string
+): Pick<MarketOption, "geo" | "label"> {
+  const direct = MARKET_OPTIONS.find((m) => m.label === label);
+  if (direct) return direct;
+  const geo = MARKET_PROXY_COUNTRY[label];
+  if (geo) {
+    const byGeo = MARKET_OPTIONS.find((m) => m.geo === geo);
+    return { label, geo: byGeo?.geo ?? geo };
+  }
+  return { label };
+}
+
 /** Market label → proxy geolocation code ("GB", "US-NJ"). iGaming sites
  * geo-gate content, offers and payment methods, so auditing from the wrong
  * region skews every score. Sessions route through a residential proxy in
