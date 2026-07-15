@@ -8,6 +8,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
   Globe,
   RotateCcw,
   TrendingDown,
@@ -42,6 +43,7 @@ import {
 } from "@/components/ui/select";
 import { ScoreGauge } from "@/components/score-gauge";
 import { marketOptionForLabel } from "@/lib/constants";
+import { brandSiteOutboundUrl } from "@/lib/brand-outbound";
 import { cn } from "@/lib/utils";
 import {
   formatMonthLabel,
@@ -61,7 +63,7 @@ function MarketFilterLabel({ market }: { market: string }) {
   if (market === "all") {
     return (
       <>
-        <Globe className="size-3.5 shrink-0 text-muted-foreground" />
+        <Globe className="size-4 shrink-0 text-muted-foreground sm:size-3.5" />
         <span className="truncate">All markets</span>
       </>
     );
@@ -145,7 +147,7 @@ function ShowcaseFilters({
             }
           >
             <span className="sm:hidden">{marketMobileIcon}</span>
-            <span className="hidden sm:flex">
+            <span className="hidden sm:contents">
               <MarketFilterLabel market={market} />
             </span>
           </SelectTrigger>
@@ -308,6 +310,7 @@ function ShowcaseCard({
   const pillars = pillarsFromShowcaseEntry(entry);
   const scoredPillars = pillars.filter((p) => p.score !== null);
   const pendingPillars = pillars.filter((p) => p.score === null);
+  const siteUrl = brandSiteOutboundUrl(entry.brandUrl, entry.brandSlug);
 
   return (
     <Card
@@ -368,16 +371,28 @@ function ShowcaseCard({
         </div>
       </CardContent>
 
-      <CardFooter className="px-4">
-        <Button
-          variant="secondary"
-          size="sm"
-          className="w-full"
-          onClick={() => onViewJourneys(entry)}
-        >
-          View journeys
-          <ArrowRight data-icon="inline-end" />
-        </Button>
+      <CardFooter className="px-4 py-3">
+        <div className="flex w-full overflow-hidden rounded-lg border border-border/60 bg-muted/15">
+          <a
+            href={siteUrl}
+            target="_blank"
+            rel="noopener noreferrer sponsored"
+            title={`Visit ${entry.brandName}`}
+            className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap px-2 py-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-background/80 hover:text-foreground"
+          >
+            Site
+            <ExternalLink className="size-3 shrink-0 opacity-50" aria-hidden />
+          </a>
+          <span aria-hidden className="w-px shrink-0 self-stretch bg-border/70" />
+          <button
+            type="button"
+            onClick={() => onViewJourneys(entry)}
+            className="flex flex-1 items-center justify-center gap-1 whitespace-nowrap px-2 py-2 text-[11px] font-medium text-foreground transition-colors hover:bg-background/80"
+          >
+            View Report
+            <ArrowRight className="size-3 shrink-0 opacity-50" aria-hidden />
+          </button>
+        </div>
       </CardFooter>
     </Card>
   );
