@@ -489,10 +489,6 @@ export function LandingShowcase() {
           />
           <div aria-hidden className="landing-grain-texture absolute z-[1] opacity-[0.14]" />
           <LandingReveal className="relative z-[2] mx-auto flex w-full max-w-7xl flex-col items-center gap-6 px-6 py-24 text-center sm:py-32">
-            <p className="max-w-lg text-sm text-muted-foreground sm:text-base">
-              You vs the rest of your market. Scored, evidenced and ranked,
-              with the fixes pinpointed. First read in under an hour.
-            </p>
             <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-4xl">
               Stop guessing where
               <br /> you&apos;re losing players
