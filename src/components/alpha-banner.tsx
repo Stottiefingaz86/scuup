@@ -1,59 +1,29 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { FlaskConical, X } from "lucide-react";
-
-/** Bump to re-show the banner after a meaningful alpha milestone. */
-const STORAGE_KEY = "scuup-alpha-banner-v1";
+import Link from "next/link";
+import { FlaskConical, MessageSquareWarning } from "lucide-react";
 
 /**
- * Slim site-wide notice that Scuup is in alpha. Dismissible per browser;
- * remove this component from the root layout when alpha ends.
+ * Slim site-wide notice that Scuup is in early access, with a shortcut to
+ * report problems via the contact form. Remove from the root layout when
+ * alpha ends.
  */
 export function AlphaBanner() {
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    try {
-      setShow(localStorage.getItem(STORAGE_KEY) !== "dismissed");
-    } catch {
-      setShow(true);
-    }
-  }, []);
-
-  if (!show) return null;
-
-  function dismiss() {
-    try {
-      localStorage.setItem(STORAGE_KEY, "dismissed");
-    } catch {
-      /* ignore */
-    }
-    setShow(false);
-  }
-
   return (
     <div
       role="status"
       className="relative z-50 border-b border-amber-500/25 bg-amber-500/10 text-amber-100"
     >
-      <div className="mx-auto flex w-full max-w-7xl items-center gap-2.5 px-4 py-2 pe-10 sm:px-6">
-        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/15 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-widest text-amber-300">
-          <FlaskConical className="size-3" />
-          Alpha
-        </span>
-        <p className="min-w-0 truncate text-xs leading-relaxed text-amber-100/90 sm:text-[13px]">
-          Scuup is in early access. Reports are real, but you may hit rough
-          edges while we polish.
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-center gap-3 px-4 py-1.5 sm:px-6">
+        <p className="inline-flex min-w-0 items-center gap-1.5 truncate text-xs text-amber-100/90 sm:text-[13px]">
+          <FlaskConical className="size-3.5 shrink-0 text-amber-300" />
+          We are in early access
         </p>
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label="Dismiss alpha notice"
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-amber-200/70 transition-colors hover:bg-amber-400/15 hover:text-amber-100"
+        <Link
+          href="/#contact"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-400/40 bg-amber-400/15 px-2.5 py-0.5 text-[11px] font-medium text-amber-200 transition-colors hover:bg-amber-400/25 hover:text-amber-100"
         >
-          <X className="size-3.5" />
-        </button>
+          <MessageSquareWarning className="size-3" />
+          Report an issue
+        </Link>
       </div>
     </div>
   );
