@@ -329,7 +329,7 @@ export function LandingShowcase() {
               </Button>
             </div>
             <p className="mt-4 font-mono text-[11px] tracking-wide text-muted-foreground sm:text-xs">
-              No code, no integrations · first report free, no credit card
+              No code, no integrations
             </p>
           </div>
 
