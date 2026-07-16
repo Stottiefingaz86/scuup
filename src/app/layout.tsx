@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
+import { AlphaBanner } from "@/components/alpha-banner";
 import { AuthHashRecovery } from "@/components/auth-hash-recovery";
 import { IntercomProvider } from "@/components/intercom-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -43,6 +44,7 @@ export default function RootLayout({
       className={`dark ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <AlphaBanner />
         <AuthHashRecovery />
         <IntercomProvider />
         <TooltipProvider>{children}</TooltipProvider>
