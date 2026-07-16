@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 
+/** Brand wordmark from /public/logo.svg (icon + Scuup). */
 export function ScuupMark({
   className,
   size = "default",
@@ -8,21 +9,18 @@ export function ScuupMark({
   size?: "default" | "lg";
 }) {
   return (
-    <span
+    // eslint-disable-next-line @next/next/no-img-element -- brand SVG wordmark
+    <img
+      src="/logo.svg"
+      alt="Scuup"
+      width={116}
+      height={41}
       className={cn(
-        "font-heading font-semibold tracking-tight text-foreground",
-        size === "default" && "text-lg",
-        size === "lg" && "text-xl",
+        "h-auto w-auto",
+        size === "default" && "h-7",
+        size === "lg" && "h-8",
         className
       )}
-    >
-      Scuup
-      <span
-        aria-hidden
-        className="inline-block translate-y-px animate-scuup-blink text-[1.15em] font-bold text-primary"
-      >
-        .
-      </span>
-    </span>
+    />
   );
 }
