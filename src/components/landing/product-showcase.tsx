@@ -286,13 +286,14 @@ export function LandingShowcase() {
           <div aria-hidden className="landing-grain-texture absolute z-[1]" />
           <HeroRadar />
           <div className="relative z-[2] mx-auto flex w-full max-w-4xl flex-col items-center px-6 text-center">
-            <Badge
-              variant="outline"
-              className="gap-1.5 rounded-full border-primary/30 px-3 py-1 font-normal text-muted-foreground"
+            <Link
+              href="/login?mode=signup"
+              className="group inline-flex items-center gap-2 rounded-full border border-brand/40 bg-brand/10 px-4 py-1.5 text-sm font-medium text-foreground shadow-[0_0_24px_-8px_color-mix(in_oklch,var(--brand)_55%,transparent)] transition-colors hover:border-brand/70 hover:bg-brand/15"
             >
               <span className="size-1.5 rounded-full bg-brand" />
-              Quick competitor analysis for iGaming
-            </Badge>
+              Built by iGaming Experts
+              <ArrowRight className="size-3.5 text-brand transition-transform group-hover:translate-x-0.5" />
+            </Link>
             <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.12] tracking-tight sm:text-6xl">
               <span className="block text-foreground">Know where you stand,</span>
               <HeroRollingPhrase />
