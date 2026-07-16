@@ -12,6 +12,7 @@ import {
   Repeat,
   Route,
   ShieldCheck,
+  Zap,
 } from "lucide-react";
 import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupMark } from "@/components/landing/scuup-mark";
@@ -290,7 +291,7 @@ export function LandingShowcase() {
               href="/login?mode=signup"
               className="group inline-flex items-center gap-2 rounded-full border border-brand/40 bg-brand/10 px-4 py-1.5 text-sm font-medium text-foreground shadow-[0_0_24px_-8px_color-mix(in_oklch,var(--brand)_55%,transparent)] transition-colors hover:border-brand/70 hover:bg-brand/15"
             >
-              <span className="size-1.5 rounded-full bg-brand" />
+              <Zap className="size-3.5 fill-brand text-brand" />
               Built by iGaming Experts
               <ArrowRight className="size-3.5 text-brand transition-transform group-hover:translate-x-0.5" />
             </Link>
