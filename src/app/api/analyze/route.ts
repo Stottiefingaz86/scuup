@@ -23,6 +23,7 @@ import {
 } from "@/lib/credentials-db";
 import { brandProjectArchived, upsertAnalysis } from "@/lib/project-db";
 import { personaVariables } from "@/lib/test-persona";
+import type { JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -169,16 +170,24 @@ export async function POST(request: NextRequest) {
       accountExists,
     });
     const { chainedAnalyses, ...analysis } = result;
+    // Re-runs may be guardrailed against the previous run — return what
+    // was actually published so the client never shows a different number.
+    let published: JourneyAnalysis = analysis;
+    let publishedChained: JourneyAnalysis[] | undefined = chainedAnalyses;
     if (brandId) {
-      await upsertAnalysis(brandId, analysis);
+      published = await upsertAnalysis(brandId, analysis);
+      publishedChained = [];
       for (const chained of chainedAnalyses ?? []) {
-        await upsertAnalysis(brandId, chained);
+        publishedChained.push(await upsertAnalysis(brandId, chained));
       }
     }
     if (brandId && (analysis.authenticated || analysis.loggedIn)) {
       await markLoggedIn(brandId).catch(() => {});
     }
-    return NextResponse.json({ ...analysis, chainedAnalyses });
+    return NextResponse.json({
+      ...published,
+      chainedAnalyses: publishedChained,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "analysis failed";
     console.error(`[analyze] ${journey} @ ${url} failed:`, message);

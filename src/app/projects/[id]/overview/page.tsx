@@ -32,6 +32,7 @@ import { ScoreBar } from "@/components/score-bar";
 import { TierLegend } from "@/components/score-chip";
 import { getCoverage } from "@/lib/coverage";
 import { agentCanReachLoggedIn, LANDING } from "@/lib/constants";
+import { overallTrendDelta, useProjectTrends } from "@/lib/use-trends";
 import {
   areaScore,
   overallScore,
@@ -48,6 +49,7 @@ function OverviewContent({ project }: { project: Project }) {
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
   const [captureBrand, setCaptureBrand] = useState<Brand | null>(null);
   const coverage = getCoverage(project);
+  const trends = useProjectTrends(project.id);
 
   const scored = project.brands
     .map((b) => ({ brand: b, score: overallScore(b) }))
@@ -199,6 +201,7 @@ function OverviewContent({ project }: { project: Project }) {
             brand={brand}
             projectId={project.id}
             rank={rankByBrand[brand.id]}
+            trendDelta={overallTrendDelta(trends?.[brand.id])}
           />
         ))}
         {/* Empty competitor slots sell the upgrade better than a banner. */}

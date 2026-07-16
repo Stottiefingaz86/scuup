@@ -2,9 +2,12 @@ import Link from "next/link";
 import {
   ArrowRight,
   MessagesSquare,
+  Minus,
   Palette,
   Repeat,
   Route,
+  TrendingDown,
+  TrendingUp,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -86,14 +89,40 @@ export function PillarRow({ pillar, muted }: { pillar: ScorePillar; muted: boole
   );
 }
 
+/** Small signed movement chip: "+3 this cycle". Hidden until a second run
+ * exists, so first reports don't show noise. */
+function TrendBadge({ delta }: { delta: number | null | undefined }) {
+  if (delta == null) return null;
+  const Icon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
+  return (
+    <span
+      title="Average score movement vs the previous run of each area"
+      className={cn(
+        "mx-auto inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium tabular-nums",
+        delta > 0
+          ? "border-score-strong/30 text-score-strong"
+          : delta < 0
+            ? "border-score-weak/30 text-score-weak"
+            : "border-border text-muted-foreground"
+      )}
+    >
+      <Icon className="size-3" />
+      {delta > 0 ? `+${delta}` : delta === 0 ? "±0" : delta} this cycle
+    </span>
+  );
+}
+
 export function BrandCard({
   brand,
   projectId,
   rank,
+  trendDelta,
 }: {
   brand: Brand;
   projectId: string;
   rank?: number;
+  /** Average score change vs the previous run, when history exists. */
+  trendDelta?: number | null;
 }) {
   const own = brand.role === "own_brand";
   const overall = overallScore(brand);
@@ -138,13 +167,15 @@ export function BrandCard({
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4 px-4">
         {overall !== null ? (
-          <ScoreGauge
-            score={overall}
-            size={116}
-            caption="Player CX Score"
-            muted={!own}
-            className="mx-auto"
-          />
+          <div className="mx-auto flex flex-col items-center gap-1.5">
+            <ScoreGauge
+              score={overall}
+              size={116}
+              caption="Player CX Score"
+              muted={!own}
+            />
+            <TrendBadge delta={trendDelta} />
+          </div>
         ) : (
           <div className="mx-auto flex h-[80px] flex-col items-center justify-center gap-1">
             <span className="font-heading text-2xl font-semibold text-muted-foreground/40">

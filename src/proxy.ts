@@ -16,6 +16,8 @@ const PUBLIC_PATHS = [
   /^\/api\/billing\/webhook$/,
   // Sentry event tunnel — must work for logged-out visitors too.
   /^\/monitoring(\/|$)/,
+  // Vercel Cron calls this with the CRON_SECRET bearer token as its auth.
+  /^\/api\/cron(\/|$)/,
 ];
 
 export async function proxy(request: NextRequest) {

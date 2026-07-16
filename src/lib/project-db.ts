@@ -394,20 +394,94 @@ export async function insertProject(
   }
 }
 
+/** The stored analysis for one brand+area, or null on first run. */
+export async function getAnalysis(
+  brandId: string,
+  area: string
+): Promise<JourneyAnalysis | null> {
+  const { data, error } = await supabase()
+    .from("ps_analyses")
+    .select("data")
+    .eq("brand_id", brandId)
+    .eq("area", area)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.data as JourneyAnalysis) ?? null;
+}
+
+/** Append one point to the score history that powers trends and the
+ * re-run guardrail. Fail-soft: history must never block saving a run. */
+async function recordScoreHistory(
+  brandId: string,
+  area: string,
+  score: number,
+  rawScore: number | null,
+  analysedAt: string
+): Promise<void> {
+  try {
+    const db = supabase();
+    const { data } = await db
+      .from("ps_brands")
+      .select("project_id")
+      .eq("id", brandId)
+      .maybeSingle();
+    if (!data) return;
+    const { error } = await db.from("ps_score_history").insert({
+      project_id: data.project_id as string,
+      brand_id: brandId,
+      area,
+      score,
+      raw_score: rawScore,
+      analysed_at: analysedAt,
+    });
+    // 23505 = the client sync path re-saving the same run — not a problem.
+    if (error && error.code !== "23505") {
+      console.error("[score-history] record failed:", error.message);
+    }
+  } catch (e) {
+    console.error("[score-history] record failed:", e);
+  }
+}
+
+/** Saves a run and returns what was actually published — re-runs may be
+ * guardrailed against the previous run, so callers must return/display the
+ * result of this function, not their input. */
 export async function upsertAnalysis(
   brandId: string,
   analysis: JourneyAnalysis
-): Promise<void> {
+): Promise<JourneyAnalysis> {
+  // Re-runs are anchored to the previous run so scores trend rather than
+  // whiplash — a subscriber's report must not swing 15 points when the
+  // site didn't change.
+  let toSave = analysis;
+  try {
+    const prev = await getAnalysis(brandId, analysis.area);
+    const { applyScoreGuardrail } = await import("./score-guardrail");
+    toSave = applyScoreGuardrail(analysis, prev);
+  } catch (e) {
+    console.error("[guardrail] skipped, saving unanchored:", e);
+  }
+
   const { error } = await supabase().from("ps_analyses").upsert({
     brand_id: brandId,
-    area: analysis.area,
-    data: analysis,
-    analysed_at: analysis.analysedAt,
+    area: toSave.area,
+    data: toSave,
+    analysed_at: toSave.analysedAt,
   });
   if (error) throw new Error(error.message);
+  if (!toSave.blocked) {
+    await recordScoreHistory(
+      brandId,
+      toSave.area,
+      toSave.score,
+      toSave.rawScore ?? null,
+      toSave.analysedAt
+    );
+  }
   void import("./showcase-db")
     .then((m) => m.syncShowcaseForBrand(brandId))
     .catch((e) => console.error("[showcase] sync after analysis failed:", e));
+  return toSave;
 }
 
 export async function upsertVoc(
@@ -421,6 +495,15 @@ export async function upsertVoc(
     data: voc,
   });
   if (error) throw new Error(error.message);
+  if (voc.trustScore != null) {
+    await recordScoreHistory(
+      brandId,
+      "voc",
+      Math.round(voc.trustScore * 20),
+      null,
+      voc.fetchedAt
+    );
+  }
   void import("./showcase-db")
     .then((m) => m.syncShowcaseForBrand(brandId))
     .catch((e) => console.error("[showcase] sync after voc failed:", e));
@@ -436,6 +519,15 @@ export async function upsertDesign(
     data: design,
   });
   if (error) throw new Error(error.message);
+  if (design.score != null) {
+    await recordScoreHistory(
+      brandId,
+      "design",
+      design.score,
+      null,
+      design.fetchedAt
+    );
+  }
   void import("./showcase-db")
     .then((m) => m.syncShowcaseForBrand(brandId))
     .catch((e) => console.error("[showcase] sync after design failed:", e));

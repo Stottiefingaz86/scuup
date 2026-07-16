@@ -35,6 +35,7 @@ import { RunAgentButton } from "@/components/run-agent-button";
 import { ScoreBar } from "@/components/score-bar";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
 import { ScoreGauge } from "@/components/score-gauge";
+import { ScoreTrend } from "@/components/score-trend";
 import {
   agentCanReach,
   agentCanReachLoggedIn,
@@ -43,6 +44,7 @@ import {
 } from "@/lib/constants";
 import { projectAreas } from "@/lib/coverage";
 import { agentKey, runAgentBatch, useRunningAgents } from "@/lib/run-agent";
+import { useProjectTrends } from "@/lib/use-trends";
 import {
   areaScore,
   splitScreenshots,
@@ -147,6 +149,7 @@ function AreaDeepDive({
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
   const competitors = project.brands.filter((b) => b.role === "competitor");
   const [tabBrand, setTabBrand] = useState<string>(ownBrand.id);
+  const trends = useProjectTrends(project.id);
 
   const detailBrand =
     project.brands.find((b) => b.id === tabBrand) ?? ownBrand;
@@ -189,11 +192,12 @@ function AreaDeepDive({
               className="shrink-0"
             />
             <div className="flex min-w-0 flex-col gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <AccessBadge
                   area={area}
                   actual={detail.loggedIn ?? detail.authenticated}
                 />
+                <ScoreTrend points={trends?.[detailBrand.id]?.[area]} />
               </div>
               <Verdict text={detail.summary} />
               <span className="break-all text-xs text-muted-foreground">

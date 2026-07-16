@@ -119,6 +119,9 @@ export interface JourneyAnalysis {
   analysedAt: string;
   /** 0-100 for what was observed. */
   score: number;
+  /** Re-runs only: the model's unanchored score before the guardrail
+   * smoothed it against the previous run. Missing = published as scored. */
+  rawScore?: number;
   /** True when a bot wall / geo block hid the real product. */
   blocked: boolean;
   blockReason: string | null;

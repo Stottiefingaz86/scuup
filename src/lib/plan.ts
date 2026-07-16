@@ -58,7 +58,7 @@ export const PRO_SELLING_POINTS = [
   "All 9 journey areas including logged-in flows",
   "Signup, deposit, withdraw, rewards & support",
   "Prioritised action plan and gap comparisons",
-  "Re-run and refresh on your monthly plan",
+  "Living report — auto-refreshed monthly with score trends",
 ];
 
 export const PRO_PLUS_SELLING_POINTS = [
