@@ -48,7 +48,11 @@ import { SharedReportReview } from "@/components/landing/shared-report-review";
 import { WhyScuupComparison } from "@/components/landing/why-scuup-comparison";
 
 /** Hero accent phrase rolls between the tagline and the brand line. */
-const HERO_ROLL_PHRASES = ["In an Instant", "Get The Scuup."] as const;
+const HERO_ROLL_PHRASES = [
+  "In an Instant",
+  "Get The Scuup.",
+  "With AI Benchmarking",
+] as const;
 
 function HeroRollingPhrase() {
   const [index, setIndex] = useState(0);
@@ -298,9 +302,6 @@ export function LandingShowcase() {
             <h1 className="mt-6 font-heading text-4xl font-semibold leading-[1.12] tracking-tight sm:text-6xl">
               <span className="block text-foreground">Know where you stand,</span>
               <HeroRollingPhrase />
-              <span className="mt-1 block text-foreground">
-                With AI Benchmarking
-              </span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-relaxed text-pretty text-muted-foreground">
               Deep dives into casino, sports, retention and what players are
