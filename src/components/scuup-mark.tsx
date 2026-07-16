@@ -13,7 +13,7 @@ export function ScuupMark({
     <img
       src="/logo.svg"
       alt="Scuup"
-      width={116}
+      width={121}
       height={41}
       className={cn(
         "h-auto w-auto",

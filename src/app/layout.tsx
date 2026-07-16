@@ -26,6 +26,10 @@ export const metadata: Metadata = {
   title: "Scuup | Competitor CX Intelligence for iGaming",
   description:
     "See where competitors beat you in the player journey, why they win, and what your brand should do next.",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png" }],
+    apple: [{ url: "/favicon.png", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({
