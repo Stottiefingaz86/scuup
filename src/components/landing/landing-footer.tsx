@@ -157,10 +157,14 @@ export function LandingFooter() {
             aria-hidden
             className="pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-brand/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
           />
-          <span className="relative block max-w-full overflow-hidden font-heading text-[clamp(2.75rem,14vw,7.5rem)] font-semibold leading-[0.9] tracking-[-0.04em] text-foreground/80 transition-colors group-hover:text-foreground">
-            Scuup
-            <span className="text-brand">.</span>
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- brand SVG wordmark */}
+          <img
+            src="/logo.svg"
+            alt=""
+            width={121}
+            height={41}
+            className="relative h-[clamp(2.75rem,12vw,6.5rem)] w-auto max-w-full opacity-90 transition-opacity group-hover:opacity-100"
+          />
         </button>
       </div>
     </footer>
