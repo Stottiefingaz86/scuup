@@ -470,9 +470,26 @@ export function LandingShowcase() {
         <LandingContact />
 
         {/* Final CTA */}
-        <section className="landing-hero-glow border-t border-border">
-          <LandingReveal className="mx-auto flex w-full max-w-7xl flex-col items-center gap-6 px-6 py-24 text-center sm:py-32">
-            <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+        <section className="relative isolate overflow-hidden border-t border-border">
+          {/* eslint-disable-next-line @next/next/no-img-element -- full-bleed CTA atmosphere */}
+          <img
+            src="/landing/cta-bg.png"
+            alt=""
+            aria-hidden
+            className="absolute inset-0 size-full object-cover object-center"
+          />
+          {/* Vignette: keep the center soft, crush edges so copy stays readable */}
+          <div
+            aria-hidden
+            className="absolute inset-0 bg-[radial-gradient(ellipse_70%_65%_at_50%_45%,transparent_0%,oklch(0.12_0.02_160/0.45)_55%,oklch(0.1_0.02_160/0.92)_100%)]"
+          />
+          <div
+            aria-hidden
+            className="absolute inset-0 bg-gradient-to-b from-background/80 via-background/35 to-background/90"
+          />
+          <div aria-hidden className="landing-grain-texture absolute z-[1] opacity-[0.14]" />
+          <LandingReveal className="relative z-[2] mx-auto flex w-full max-w-7xl flex-col items-center gap-6 px-6 py-24 text-center sm:py-32">
+            <h2 className="font-heading text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-4xl">
               Stop guessing where
               <br /> you&apos;re losing players
             </h2>
