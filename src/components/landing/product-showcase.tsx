@@ -328,7 +328,7 @@ export function LandingShowcase() {
                 Contact us
               </Button>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
+            <p className="mt-4 font-mono text-[11px] tracking-wide text-muted-foreground sm:text-xs">
               No code, no integrations · first report free, no credit card ·
               results in under an hour
             </p>
