@@ -51,7 +51,7 @@ import { WhyScuupComparison } from "@/components/landing/why-scuup-comparison";
 const HERO_ROLL_PHRASES = [
   "In an Instant",
   "Get The Scuup.",
-  "With AI Benchmarking",
+  "With AI Benchmarks",
 ] as const;
 
 function HeroRollingPhrase() {
