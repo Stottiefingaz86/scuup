@@ -289,7 +289,7 @@ export function ProjectShell({
       </Sidebar>
 
       <SidebarInset className="min-w-0 print:block print:min-h-0">
-        <header className="sticky top-(--alpha-banner-height) z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur print:hidden">
+        <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur print:hidden">
           <SidebarTrigger className="text-muted-foreground" />
           <Breadcrumb>
             <BreadcrumbList>
