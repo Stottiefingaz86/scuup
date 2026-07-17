@@ -43,11 +43,13 @@ export default function RootLayout({
       lang="en"
       className={`dark ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body className="flex min-h-full flex-col">
         <AlphaBanner />
         <AuthHashRecovery />
         <IntercomProvider />
-        <TooltipProvider>{children}</TooltipProvider>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <TooltipProvider>{children}</TooltipProvider>
+        </div>
         <Toaster />
         <Analytics />
       </body>

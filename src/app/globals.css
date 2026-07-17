@@ -105,6 +105,11 @@
   --sidebar-ring: oklch(0.708 0 0);
 }
 
+:root {
+  /* Space reserved for the early-access banner. Set to 0px when alpha ends. */
+  --alpha-banner-height: 2.25rem;
+}
+
 :root,
 .dark {
   /* Supabase/Vercel-style: neutral near-black surfaces, flat borders,
