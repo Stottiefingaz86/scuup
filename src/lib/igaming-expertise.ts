@@ -49,7 +49,10 @@ PROMO PAGE ONLY (no loop): campaign carousel and T&Cs with no tiers, points, rec
 /** Journey-specific expert lens. Falls back to landing for unknown areas. */
 const JOURNEY_EXPERTISE: Record<string, string> = {
   landing: `LANDING EXPERTISE — first impression is a filtering decision, not a reading exercise:
-- Within 3 seconds a player should know: what products (casino/sports), why here (rakeback, VIP, originals), and how to start (one primary CTA).
+- Within 3 seconds a player should know: what products (casino/sports/bingo), why here (rakeback, VIP, originals), and how to start (one primary CTA).
+- PRODUCT VISIBILITY is non-negotiable: the actual product (games, odds, rooms) must be visible or one obvious click away. A landing page where the games/casino/sports sections are hidden inside menus, unlabelled icons, or footer links fails the player — score "Above-the-fold product clarity" and "Search & discovery" hard when the product range is not evident from the hero.
+- ENERGY AND EXCITEMENT are part of the product: leaders feel alive — live win tickers, jackpot counters, player counts, game art, motion. A flat, bland, corporate page with a lone CTA and no product energy is a real weakness, not "clean design". Say so plainly when a page feels bland or uninviting; hedged praise helps nobody.
+- NEXT STEPS must be obvious: after the hero, a player should see exactly what to do — join, browse games, claim an offer. If the next step is ambiguous or everything important sits behind a hamburger/side menu, call that out as a conversion killer.
 - Trust cues that count: licence number/regulator seal in footer, RG links, visible payment rails. "Trusted by millions" is noise.
 - Live wins feed, jackpot ticker, player counts = category-correct social proof, not clutter.
 - Watch for: competing hero promos with no hierarchy, welcome-bonus-first messaging with buried terms, dead nav items, cookie/CTA walls hiding the product. Standard cookie banners are dismissed before capture — only penalise cookie friction if a consent wall still blocks the product in the screenshots.`,
@@ -106,7 +109,7 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 
 /** What 85+ looks like — concrete anchors so scores stay calibrated. */
 const CALIBRATION: Record<string, string> = {
-  landing: `CALIBRATION: 85+ = Stake-class landing — product visible immediately, rakeback/VIP value prop above the fold, one primary CTA, live social proof, licence in footer. 50 = average licensed operator: generic welcome-bonus hero, working nav, product reachable. Below 40 = promo wall obscuring the product or trust signals absent.`,
+  landing: `CALIBRATION: 85+ = Stake-class landing — product visible immediately, rakeback/VIP value prop above the fold, one primary CTA, live social proof, licence in footer. 50 = average licensed operator: generic welcome-bonus hero, working nav, product reachable. 40-55 = bland-but-functional: trustworthy and clean but flat — no product energy, thin game/odds visibility, key sections tucked in menus, next steps unclear after the hero. Below 40 = promo wall obscuring the product, product effectively hidden, or trust signals absent. A page can be tidy and licensed and still land in the 40s if it gives a player no reason or route to explore.`,
   casino: `CALIBRATION: 85+ = lobby with working search, recently played, provider filters, originals section, and live wins/races below the fold. 50 = usable grid with categories but no personalisation and weak search. Below 40 = broken search, no structure, dead ends.`,
   bingo: `CALIBRATION: 85+ = Tombola/Mecca-class lobby — room cards with live countdowns, ticket price and pot upfront, player counts, free rooms clearly marked, one tap from lobby to room. 50 = functional room list but prices or schedules need extra clicks. Below 40 = bingo buried under casino cross-sell, no schedule, prices hidden until purchase.`,
   sports_betslip: `CALIBRATION: 85+ = one-tap slip population, bet builder, cashout, live section with fresh odds. 50 = functional slip with extra steps. Below 40 = slip failures, stale odds, missing stake clarity.`,

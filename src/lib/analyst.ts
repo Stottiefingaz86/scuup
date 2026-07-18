@@ -17,7 +17,12 @@ import {
   preparePageAfterNavigation,
   type CookieDismissPage,
 } from "./dismiss-site-cookies";
+import { getNavHint, saveNavHint } from "./nav-hints";
 import { waitForPageReady } from "./page-ready";
+import {
+  inboxConfigured,
+  waitForVerificationEmail,
+} from "./verification-inbox";
 import { PLAIN_PROSE_RULE, sanitizeAnalysisProse } from "./prose";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
@@ -270,6 +275,23 @@ const DEEP_SCROLL_JOURNEYS = new Set([
   "bingo",
   "sports_betslip",
 ]);
+
+/** Product areas where "the agent couldn't find it" is a scorable CX
+ * finding — a player can't tell the product exists — rather than a dead
+ * run. Signup and login-gated journeys stay hard-blocked: without the
+ * form or session there is nothing to score. */
+const DISCOVERY_SCORED_JOURNEYS = new Set([
+  "casino",
+  "bingo",
+  "sports_betslip",
+  "loyalty_rewards",
+  "support",
+]);
+
+/** Prompt addendum when navigation to the area failed everywhere. */
+function discoveryFailurePrompt(journey: string): string {
+  return `\n\nCRITICAL CONTEXT — DISCOVERABILITY FAILURE: an autonomous agent tried to reach the ${journey} area from the homepage using the navigation, menus, and well-known URL paths, and could NOT find it. The screenshots show the site as a lost player would see it. Score exactly that reality: it is not clear this product exists or how to reach it, which is one of the most damaging CX failures an operator can have. Give the discovery/navigation-related heuristics very low scores, and in the summary state plainly that a player cannot find this product from the landing page and next steps are unclear. In observations, name what IS visible instead and where the product may be hidden (obscure menu entries, unlabelled icons). Do NOT set blocked — the capture worked; the product's discoverability is what failed.`;
+}
 
 const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan ALL screenshots — including scrolled sections at the bottom of the page — for product features. Casino lobbies often hide live win feeds, jackpot rows, leaderboards, provider carousels and recently-played rows below the fold; loyalty hubs show tier grids and reward calendars. Return a "features" array for every feature with visible evidence. Use standard names when possible: "Live wins feed", "Leaderboards", "Jackpot games", "VIP levels", "Rakeback", "Weekly bonus", "Status transfer", "Originals", "Provider filters", "Casino search", "Live casino", "Bet builder", "Cashout", "Live chat", "Crypto payments", "Provably fair", "Free spins", "Missions / streaks", etc. Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account. Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (VISIBLE in a screenshot but buried in obscure navigation — never use hidden for something you cannot see). Include note (one-line evidence) and shot (screenshot index — REQUIRED for every feature; if you cannot point at a screenshot showing it, do not list it). Only list features you can SEE — omit absent ones; a feature you cannot see is simply not listed, never marked hidden or no.`;
 
@@ -693,7 +715,8 @@ export async function scoreScreenshots(
   screenshots: string[],
   trail: string[] = [],
   source: "agent" | "session" = "agent",
-  mobileFrom: number | null = null
+  mobileFrom: number | null = null,
+  extraPrompt = ""
 ): Promise<AnalysisResult> {
   const guidance = JOURNEY_GUIDANCE[journey] ?? JOURNEY_GUIDANCE.landing;
   const hasMobile =
@@ -748,7 +771,7 @@ For each observation, point at the evidence: set "shot" to the screenshot index 
 
 If the screenshots show a bot-verification wall, geo-block, error page, or a loading/splash screen with no real product content, set blocked=true, explain in blockReason, and do NOT score the brand's product from it. A capture problem must never read as a bad product.
 
-${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEATURE_PROMPT}`;
+${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEATURE_PROMPT}${extraPrompt}`;
 
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -1138,6 +1161,79 @@ async function agentIsLoggedIn(stagehand: Stagehand): Promise<boolean> {
   return checkAgentLoggedIn(stagehand);
 }
 
+/** After a signup or login hits a "verify your email" wall, read the
+ * shared test inbox, then enter the OTP or open the confirmation link in
+ * the same browser session. Returns true when a verification action was
+ * performed — the caller re-checks the login state afterwards. */
+async function completeEmailVerification(
+  stagehand: Stagehand,
+  page: {
+    waitForTimeout: (ms: number) => Promise<void>;
+    goto?: (
+      url: string,
+      opts?: { waitUntil?: "domcontentloaded"; timeoutMs?: number }
+    ) => Promise<unknown>;
+  },
+  email: string,
+  siteUrl: string,
+  since: Date,
+  trail: string[],
+  shots: string[],
+  capture: () => Promise<string>,
+  timeoutMs = 75_000
+): Promise<boolean> {
+  if (!inboxConfigured() || !email) return false;
+  let host: string | null = null;
+  try {
+    host = new URL(siteUrl).hostname;
+  } catch {
+    // Fall back to alias-only matching.
+  }
+  trail.push("checking the test inbox for a verification email");
+  const mail = await waitForVerificationEmail(
+    { toAddress: email, since, fromDomainHint: host },
+    timeoutMs
+  );
+  if (!mail) {
+    trail.push("no verification email arrived within 90 seconds");
+    return false;
+  }
+  trail.push(`verification email received from ${mail.from}`);
+
+  if (mail.otp) {
+    try {
+      const res = await stagehand.act(
+        "type the verification code %otp% into the code or OTP input on this page and submit or confirm it",
+        { variables: { otp: mail.otp } }
+      );
+      if (res.success) {
+        trail.push("entered the emailed verification code");
+        await page.waitForTimeout(5000);
+        shots.push(await capture());
+        if (await agentIsLoggedIn(stagehand)) return true;
+      }
+    } catch {
+      // Fall through to the link route.
+    }
+  }
+  for (const link of mail.links.slice(0, 2)) {
+    if (!page.goto) break;
+    try {
+      await page.goto(link, {
+        waitUntil: "domcontentloaded",
+        timeoutMs: 20000,
+      });
+      await page.waitForTimeout(4000);
+      trail.push("opened the emailed verification link");
+      shots.push(await capture());
+      return true;
+    } catch {
+      // Try the next candidate link.
+    }
+  }
+  return mail.otp != null;
+}
+
 /** Fill and submit the (possibly multi-step) registration form with the
  * test persona, capturing each step as scoring evidence. Returns true when
  * the walk ended in an authenticated session. */
@@ -1145,12 +1241,20 @@ async function runRegistrationWalk(
   stagehand: Stagehand,
   page: {
     waitForTimeout: (ms: number) => Promise<void>;
+    goto?: (
+      url: string,
+      opts?: { waitUntil?: "domcontentloaded"; timeoutMs?: number }
+    ) => Promise<unknown>;
   },
+  siteUrl: string,
   vars: Record<string, string>,
   trail: string[],
   shots: string[],
   capture: () => Promise<string>
 ): Promise<boolean> {
+  // Verification emails triggered anywhere in this walk arrive after this
+  // moment (small buffer for clock skew between us and Gmail).
+  const walkStart = new Date(Date.now() - 60_000);
   const SUBMIT_PHRASINGS = [
     "click the enabled Create Account button to submit the registration",
     "click Register, Sign Up, or Create Account to complete registration",
@@ -1209,6 +1313,30 @@ async function runRegistrationWalk(
     }
   }
 
+  // "Verify your email" walls are the most common reason a submitted
+  // registration doesn't end authenticated. The agent owns the inbox —
+  // fetch the code or link and finish verification in this session.
+  const firstVerify = await completeEmailVerification(
+    stagehand,
+    page,
+    vars.email ?? "",
+    siteUrl,
+    walkStart,
+    trail,
+    shots,
+    capture
+  );
+  if (firstVerify) {
+    await page.waitForTimeout(4000);
+    if (await agentIsLoggedIn(stagehand)) {
+      trail.push("email verified, account created and logged in");
+      return true;
+    }
+  }
+  // Only emails that arrive AFTER this point matter for the second check
+  // (e.g. a login-triggered OTP) — never re-consume the signup email.
+  const afterFirstVerify = new Date(Date.now() - 10_000);
+
   if (await performAgentLogin(stagehand, page, {
     email: vars.email,
     username: vars.username,
@@ -1222,6 +1350,29 @@ async function runRegistrationWalk(
     trail.push("authenticated after registration settled");
     return true;
   }
+
+  // The login attempt itself can trip an OTP check — give the inbox one
+  // short chance for a login-triggered code before giving up.
+  if (
+    await completeEmailVerification(
+      stagehand,
+      page,
+      vars.email ?? "",
+      siteUrl,
+      afterFirstVerify,
+      trail,
+      shots,
+      capture,
+      40_000
+    )
+  ) {
+    await page.waitForTimeout(4000);
+    if (await agentIsLoggedIn(stagehand)) {
+      trail.push("verified via emailed code after login");
+      return true;
+    }
+  }
+
   trail.push(
     "registration submitted but no authenticated session. Email/SMS verification or captcha may be required"
   );
@@ -1371,6 +1522,11 @@ async function analyzeWithAgent(
       };
     }
 
+    // When a product section can't be found at all, that is itself a CX
+    // finding — "a player can't tell this product exists" — scored from
+    // the homepage evidence rather than reported as a dead run.
+    let discoveryFailure: string | null = null;
+
     // Signup must always show the real registration flow. A persisted
     // context can arrive already authenticated, which hides the Join CTA —
     // drop to a logged-out state so the form itself becomes the evidence.
@@ -1388,12 +1544,47 @@ async function analyzeWithAgent(
         "cleared the existing session so the real registration form could be walked"
       );
     }
-    for (const step of playbook) {
+    // Past reports are agent memory: try the route that found this area
+    // on this site last time before rediscovering the navigation.
+    const navHint = await getNavHint(url, journey);
+
+    for (const [stepIndex, step] of playbook.entries()) {
       let ok = false;
       let message = "";
+      const isNavStep = stepIndex === 0 && Boolean(step.verify);
+
+      // Remembered destination path first — fastest and most reliable.
+      if (isNavStep && navHint?.path) {
+        try {
+          await page.goto(new URL(navHint.path, url).toString(), {
+            waitUntil: "domcontentloaded",
+            timeoutMs: 20000,
+          });
+          await preparePageAfterNavigation(page, stagehand);
+          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
+          if (!step.verify || (await verifyLandedArea(stagehand, step.verify))) {
+            ok = true;
+            message = `went straight to ${navHint.path} — the route that worked on the previous visit`;
+          }
+        } catch {
+          // Site changed — rediscover below.
+        }
+      }
+
       // Sites label the same control differently — try each phrasing
-      // before concluding the step failed.
-      for (const phrasing of [step.instruction, ...(step.alternatives ?? [])]) {
+      // before concluding the step failed. A remembered textual route
+      // from a past run gets first shot.
+      const phrasings = [
+        ...(isNavStep && navHint && !ok
+          ? [
+              `${step.instruction}. On a previous visit, this site's ${journey} area was reached like this: ${navHint.hint} — try that route first`,
+            ]
+          : []),
+        step.instruction,
+        ...(step.alternatives ?? []),
+      ];
+      for (const phrasing of phrasings) {
+        if (ok) break;
         try {
           const result = await stagehand.act(phrasing);
           ok = result.success;
@@ -1411,7 +1602,6 @@ async function analyzeWithAgent(
             message = "landed on the wrong area — trying another route";
           }
         }
-        if (ok) break;
       }
       // Section navigation can fall back to well-known URL paths when the
       // agent can't find the nav entry (mega-menus, icon-only navs).
@@ -1450,7 +1640,28 @@ async function analyzeWithAgent(
         trail.push(message || step.instruction);
         shots.push(await capture());
         lastUrl = page.url();
+        // A verified navigation is knowledge — remember the route so the
+        // next run on this site goes straight there.
+        if (isNavStep) {
+          void saveNavHint(url, journey, message || step.instruction, lastUrl);
+        }
       } else if (step.required) {
+        // Product areas: not finding the section IS the finding. Go back
+        // to the homepage so the evidence shows exactly what a lost
+        // player sees, and score the discoverability failure.
+        if (DISCOVERY_SCORED_JOURNEYS.has(journey)) {
+          discoveryFailure = message || step.instruction;
+          trail.push(
+            `couldn't find the ${journey} area from the navigation, menus, or known URL paths — scoring this as a discoverability failure`
+          );
+          await page
+            .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+            .catch(() => {});
+          await preparePageAfterNavigation(page, stagehand);
+          await waitForPageContent(page);
+          shots.push(await capture());
+          break;
+        }
         // The failed attempt is still evidence — keep everything captured
         // so far (login tries, partial navigation) plus the final state.
         const screenshots = await persistShots([...shots, await capture()]);
@@ -1476,6 +1687,7 @@ async function analyzeWithAgent(
       authenticated = await runRegistrationWalk(
         stagehand,
         page,
+        url,
         signupVars,
         trail,
         shots,
@@ -1540,7 +1752,8 @@ async function analyzeWithAgent(
         shots,
         trail,
         "agent",
-        hasMobile ? mobileFrom : null
+        hasMobile ? mobileFrom : null,
+        discoveryFailure ? discoveryFailurePrompt(journey) : ""
       ),
       persistShots(shots),
     ]);
