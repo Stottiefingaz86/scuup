@@ -18,7 +18,7 @@ import {
   preparePageAfterNavigation,
   type CookieDismissPage,
 } from "./dismiss-site-cookies";
-import { getNavHint, resolveNavUrl, saveNavHint } from "./nav-hints";
+import { getNavHint, isRelatedDestination, resolveNavUrl, saveNavHint } from "./nav-hints";
 import { waitForPageReady } from "./page-ready";
 import {
   inboxConfigured,
@@ -266,6 +266,8 @@ async function clickNavByLabel(
 
     const href = found.href || undefined;
     if (href && /^https?:\/\//i.test(href) && page.goto) {
+      // Never follow an off-brand absolute link from a shared playbook label
+      // (e.g. a polluted Arcade href). Caller still verifies relatedness.
       await page.goto(href, {
         waitUntil: "domcontentloaded",
         timeoutMs: 25000,
@@ -350,16 +352,16 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   casino: [
     {
       instruction:
-        "open the LEFT SIDE MENU or hamburger first if needed, then click Arcade — on bingo-first brands the casino is labelled Arcade and often opens a sister site (e.g. tombolaarcade.co.uk). Also try Casino, Games, Vegas, Slots, or Live Casino. Do NOT open sports or bingo, and do NOT stay on the homepage",
+        "open the LEFT SIDE MENU or hamburger first if needed, then click the casino / arcade / slots / games / vegas / live casino entry for THIS brand. On some bingo-first brands the casino is labelled Arcade and may open a sister site of the SAME brand. Do NOT open sports or bingo, do NOT stay on the homepage, and do NOT navigate to a different operator's website",
       required: true,
       alternatives: [
-        "click Arcade in the left-hand side menu or drawer — that is the casino games lobby on brands like Tombola, and it may open tombolaarcade.co.uk",
+        "click Arcade in the left-hand side menu or drawer when that is this brand's casino label — it may open a same-brand sister site",
         "open the site menu (hamburger, left sidebar, or category menu) and choose Arcade, Casino, Games, Vegas, or Slots from it",
         "click the navigation entry that leads to slot games, instant-win games, or live casino tables — try labels like Arcade, Games, Vegas, Casino, Slots, Live Casino, or a games controller / playing-cards icon",
       ],
+      // Relative paths only — never hardcode another brand's sister site
+      // (that sent Foxybingo agents to tombolaarcade.co.uk).
       fallbackPaths: [
-        "https://www.tombolaarcade.co.uk/arcade-games",
-        "https://www.tombolaarcade.co.uk/",
         "/arcade",
         "/games",
         "/casino",
@@ -368,11 +370,14 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "/live-casino",
         "/games/arcade",
         "/play/arcade",
+        "/en/games",
+        "/en/casino",
+        "/en/slots",
       ],
       /** Labels tried via a direct DOM click when Stagehand misses icon/side-nav entries. */
       navLabels: ["Arcade", "Casino", "Vegas", "Slots", "Live Casino", "Arcade games"],
       verify:
-        "a casino / arcade games area — either a lobby with visible game tiles (slots, instant-win, live casino) OR a dedicated arcade/casino product page (branded Arcade, Play now into games, featured slots). Accept sister-site arcade homes. NOT the bingo homepage footer, NOT sports, NOT a generic marketing homepage with no arcade/casino content",
+        "a casino / arcade games area for THIS brand — either a lobby with visible game tiles (slots, instant-win, live casino) OR a dedicated arcade/casino product page. Accept a same-brand sister-site arcade home. NOT another operator's site, NOT the bingo homepage footer, NOT sports, NOT a generic marketing homepage with no arcade/casino content",
     },
   ],
   bingo: [
@@ -2309,7 +2314,10 @@ async function analyzeWithAgent(
               ...(step.fallbackPaths ?? []).filter((p) =>
                 /^https?:\/\//i.test(p)
               ),
-            ];
+            ].filter(
+              (p) =>
+                !/^https?:\/\//i.test(p) || isRelatedDestination(url, p)
+            );
             for (const path of lastChancePaths) {
               try {
                 await page.goto(resolveNavUrl(url, path), {
@@ -2418,28 +2426,43 @@ async function analyzeWithAgent(
       // Remembered destination path first — fastest and most reliable.
       if (isNavStep && navHint?.path) {
         try {
-          await page.goto(resolveNavUrl(url, navHint.path), {
-            waitUntil: "domcontentloaded",
-            timeoutMs: 20000,
-          });
-          await preparePageAfterNavigation(page, stagehand);
-          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (
-            await areaVerified(stagehand, page.url(), journey, step.verify)
+            !/^https?:\/\//i.test(navHint.path) ||
+            isRelatedDestination(url, navHint.path)
           ) {
-            ok = true;
-            message = `went straight to ${navHint.path} — the route that worked on the previous visit`;
+            await page.goto(resolveNavUrl(url, navHint.path), {
+              waitUntil: "domcontentloaded",
+              timeoutMs: 20000,
+            });
+            await preparePageAfterNavigation(page, stagehand);
+            await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
+            if (
+              isRelatedDestination(url, page.url()) &&
+              (await areaVerified(stagehand, page.url(), journey, step.verify))
+            ) {
+              ok = true;
+              message = `went straight to ${navHint.path} — the route that worked on the previous visit`;
+            }
           }
         } catch {
-          // Site changed — rediscover below.
+          // Site changed or cross-brand hint refused — rediscover below.
         }
       }
 
-      // Absolute sister-site fallbacks (e.g. tombolaarcade.co.uk) before
-      // Stagehand burns budget clicking bingo homepage chrome.
-      if (!ok && isNavStep && step.fallbackPaths?.length) {
-        for (const path of step.fallbackPaths) {
-          if (!/^https?:\/\//i.test(path)) continue;
+      // Absolute sister-site fallbacks only when they belong to THIS brand
+      // (nav-hint path or same-stem host). Never open another operator.
+      if (!ok && isNavStep) {
+        const absoluteCandidates = [
+          ...(navHint?.path && /^https?:\/\//i.test(navHint.path)
+            ? [navHint.path]
+            : []),
+          ...(step.fallbackPaths ?? []).filter((p) => /^https?:\/\//i.test(p)),
+        ].filter((p, i, arr) => arr.indexOf(p) === i);
+        for (const path of absoluteCandidates) {
+          if (!isRelatedDestination(url, path)) {
+            trail.push(`skipped unrelated sister-site URL ${path}`);
+            continue;
+          }
           if (timeLeft() < 40_000) break;
           try {
             await page.goto(path, {
@@ -2449,12 +2472,18 @@ async function analyzeWithAgent(
             await preparePageAfterNavigation(page, stagehand);
             await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
             if (
-              await areaVerified(stagehand, page.url(), journey, step.verify)
+              isRelatedDestination(url, page.url()) &&
+              (await areaVerified(stagehand, page.url(), journey, step.verify))
             ) {
               ok = true;
-              message = `opened sister-site ${path} directly`;
+              message = `opened same-brand sister-site ${path} directly`;
               break;
             }
+            // Wrong brand or wrong page — go home and keep looking.
+            await page
+              .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+              .catch(() => {});
+            await preparePageAfterNavigation(page, stagehand);
           } catch {
             // Try the next absolute path.
           }
@@ -2489,8 +2518,21 @@ async function analyzeWithAgent(
         if (ok && step.verify) {
           await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (
+            (isNavStep && !isRelatedDestination(url, page.url())) ||
             !(await areaVerified(stagehand, page.url(), journey, step.verify))
           ) {
+            if (isNavStep && !isRelatedDestination(url, page.url())) {
+              trail.push(
+                `landed on an unrelated site (${page.url()}) — returning to the brand`
+              );
+              await page
+                .goto(url, {
+                  waitUntil: "domcontentloaded",
+                  timeoutMs: 20000,
+                })
+                .catch(() => {});
+              await preparePageAfterNavigation(page, stagehand);
+            }
             ok = false;
             message = "landed on the wrong area — trying another route";
           }
@@ -2507,13 +2549,26 @@ async function analyzeWithAgent(
           await preparePageAfterNavigation(page, stagehand);
           await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
           if (
-            await areaVerified(stagehand, page.url(), journey, step.verify)
+            isRelatedDestination(url, page.url()) &&
+            (await areaVerified(stagehand, page.url(), journey, step.verify))
           ) {
             ok = true;
             message = hit.href
               ? `opened "${hit.matched}" → ${hit.href}`
               : `clicked "${hit.matched}" in the site navigation`;
           } else {
+            if (!isRelatedDestination(url, page.url())) {
+              trail.push(
+                `nav click left the brand (${page.url()}) — returning home`
+              );
+              await page
+                .goto(url, {
+                  waitUntil: "domcontentloaded",
+                  timeoutMs: 20000,
+                })
+                .catch(() => {});
+              await preparePageAfterNavigation(page, stagehand);
+            }
             message = `clicked "${hit.matched}" but landed on the wrong area`;
           }
         }
@@ -2521,6 +2576,9 @@ async function analyzeWithAgent(
       if (!ok && step.fallbackPaths?.length) {
         for (const path of step.fallbackPaths) {
           if (timeLeft() < 30_000) break;
+          if (/^https?:\/\//i.test(path) && !isRelatedDestination(url, path)) {
+            continue;
+          }
           try {
             await page.goto(resolveNavUrl(url, path), {
               waitUntil: "domcontentloaded",
@@ -2538,6 +2596,7 @@ async function analyzeWithAgent(
               );
             if (
               !dead &&
+              isRelatedDestination(url, page.url()) &&
               (await areaVerified(stagehand, page.url(), journey, step.verify))
             ) {
               ok = true;

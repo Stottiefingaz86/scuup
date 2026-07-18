@@ -22,10 +22,60 @@ function hostOf(url: string): string | null {
   }
 }
 
+/** Bare label of a host for brand matching (tombola.co.uk → tombola). */
+function hostLabel(host: string): string {
+  return host
+    .replace(/^www\./, "")
+    .split(".")[0]
+    ?.toLowerCase()
+    .replace(/[^a-z0-9]/g, "") ?? "";
+}
+
+/** Strip common product suffixes so tombolaarcade ≈ tombola. */
+function brandStem(label: string): string {
+  return label.replace(
+    /(bingo|casino|arcade|bet|bets|sports|sport|games|play|slots|vegas)$/i,
+    ""
+  );
+}
+
+/** True when dest is the same site or a plausible sister site of the brand
+ * (tombola.co.uk → tombolaarcade.co.uk). Rejects cross-brand pollution
+ * (foxybingo.com must NEVER remember tombolaarcade.co.uk). */
+export function isRelatedDestination(
+  brandUrl: string,
+  destinationUrl: string
+): boolean {
+  try {
+    const brandHost = new URL(brandUrl).hostname.replace(/^www\./, "");
+    const destHost = new URL(destinationUrl).hostname.replace(/^www\./, "");
+    if (brandHost === destHost) return true;
+    // Subdomain of the brand (games.foxybingo.com).
+    if (destHost.endsWith(`.${brandHost}`)) return true;
+    const brand = hostLabel(brandHost);
+    const dest = hostLabel(destHost);
+    if (!brand || !dest) return false;
+    if (dest === brand || dest.startsWith(brand) || brand.startsWith(dest)) {
+      return true;
+    }
+    const stem = brandStem(brand);
+    return stem.length >= 4 && dest.includes(stem);
+  } catch {
+    return false;
+  }
+}
+
 /** Resolve a stored nav path against the brand URL. Absolute http(s)
- * paths (sister sites) are used as-is. */
+ * sister-site paths are used as-is only when they belong to this brand. */
 export function resolveNavUrl(baseUrl: string, path: string): string {
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    if (!isRelatedDestination(baseUrl, path)) {
+      throw new Error(
+        `refusing cross-brand nav path ${path} for ${baseUrl}`
+      );
+    }
+    return path;
+  }
   return new URL(path, baseUrl).toString();
 }
 
@@ -44,15 +94,28 @@ export async function getNavHint(
       .eq("area", area)
       .maybeSingle();
     if (!data) return null;
-    return { hint: data.hint as string, path: (data.path as string) ?? null };
+    const path = (data.path as string) ?? null;
+    // Drop polluted absolute hints that point at another brand's site.
+    if (path && /^https?:\/\//i.test(path) && !isRelatedDestination(url, path)) {
+      await supabase()
+        .from("ps_nav_hints")
+        .delete()
+        .eq("host", host)
+        .eq("area", area);
+      console.error(
+        `[nav-hints] dropped cross-brand hint for ${host}/${area}: ${path}`
+      );
+      return null;
+    }
+    return { hint: data.hint as string, path };
   } catch {
     return null;
   }
 }
 
 /** Remember a route that navigated AND verified onto a real section.
- * Sister-site destinations keep their full origin (Tombola bingo →
- * tombolaarcade.co.uk). Text-only hints with no path are discarded. */
+ * Sister-site destinations keep their full origin only when they share
+ * this brand's stem — never copy another operator's lobby URL. */
 export async function saveNavHint(
   url: string,
   area: string,
@@ -68,7 +131,12 @@ export async function saveNavHint(
     const startHost = start.hostname.replace(/^www\./, "");
     const destHost = dest.hostname.replace(/^www\./, "");
     if (destHost !== startHost) {
-      // Sister / satellite product site — remember the full URL.
+      if (!isRelatedDestination(url, destinationUrl)) {
+        console.error(
+          `[nav-hints] refused cross-brand save ${host} → ${destHost}`
+        );
+        return;
+      }
       path = `${dest.origin}${dest.pathname === "/" ? "/" : dest.pathname}`;
     } else if (dest.pathname && dest.pathname !== "/") {
       path = dest.pathname;
