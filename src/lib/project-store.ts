@@ -11,6 +11,7 @@ import type {
   ActionPlan,
   Brand,
   CaptureRecord,
+  DeviceMode,
   JourneyAnalysis,
   JourneyType,
   Project,
@@ -174,6 +175,7 @@ export interface NewProjectInput {
   products: string[];
   journeys: JourneyType[];
   analysisMode: string;
+  device: DeviceMode;
 }
 
 function hostToName(url: string): string {
@@ -272,6 +274,7 @@ export async function createProject(
     products: input.products,
     journeys: input.journeys,
     analysisMode: input.analysisMode,
+    device: input.device,
     brands,
     sessions: [],
     status: "analyzing",

@@ -17,7 +17,9 @@ import {
   Landmark,
   LoaderCircle,
   Lock,
+  Monitor,
   ShieldCheck,
+  Smartphone,
   Sparkles,
   UserCog,
   UserPlus,
@@ -50,7 +52,33 @@ import {
 import { track } from "@/lib/track";
 import { ensureEmailVerified } from "@/components/verify-email-banner";
 import { VerifyEmailDialog } from "@/components/verify-email-dialog";
-import type { JourneyType } from "@/lib/types";
+import type { DeviceMode, JourneyType } from "@/lib/types";
+
+const DEVICE_OPTIONS: {
+  id: DeviceMode;
+  label: string;
+  hint: string;
+  icons: (typeof Monitor)[];
+}[] = [
+  {
+    id: "desktop",
+    label: "Desktop",
+    hint: "Fastest, most reliable walks",
+    icons: [Monitor],
+  },
+  {
+    id: "mobile",
+    label: "Mobile",
+    hint: "Where ~80% of players are",
+    icons: [Smartphone],
+  },
+  {
+    id: "both",
+    label: "Both",
+    hint: "Slower — journeys may not finish in time",
+    icons: [Monitor, Smartphone],
+  },
+];
 
 const JOURNEY_ICONS: Record<JourneyType, typeof UserPlus> = {
   signup: UserPlus,
@@ -481,6 +509,7 @@ export default function NewProjectPage() {
   } | null>(null);
   const [archiving, setArchiving] = useState(false);
   const [market, setMarket] = useState<string | null>(null);
+  const [device, setDevice] = useState<DeviceMode>("desktop");
   const [products, setProducts] = useState<string[]>(["Casino", "Sports"]);
   const [journeys, setJourneys] = useState<JourneyType[]>([
     "casino",
@@ -680,6 +709,7 @@ export default function NewProjectPage() {
             products,
             journeys: journeys.filter((j) => availableJourneys.includes(j)),
             analysisMode: "Public Audit Mode",
+            device,
           },
           { replaceActive: opts?.replaceActive === true }
         );
@@ -719,6 +749,7 @@ export default function NewProjectPage() {
       products,
       journeys,
       availableJourneys,
+      device,
       router,
     ]
   );
@@ -1076,6 +1107,56 @@ export default function NewProjectPage() {
             hint="Real browsers visit your site and walk each journey, a vision model scores what they see. Public pages only, no credentials needed."
           >
             <div className="flex flex-col gap-2">
+              {/* Device: one viewport per run keeps walks fast enough to
+                  finish inside the serverless time limit. */}
+              <div className="flex flex-col gap-1.5 pb-2">
+                <span className="text-xs font-medium text-muted-foreground">
+                  Audit device
+                </span>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {DEVICE_OPTIONS.map((opt) => {
+                    const selected = device === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setDevice(opt.id)}
+                        className={cn(
+                          "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all",
+                          selected
+                            ? "border-primary/60 bg-primary/10"
+                            : "border-border bg-card/50 hover:border-primary/30"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "mt-0.5 flex shrink-0 items-center gap-0.5",
+                            selected ? "text-primary" : "text-muted-foreground"
+                          )}
+                        >
+                          {opt.icons.map((Icon, i) => (
+                            <Icon key={i} className="size-4" />
+                          ))}
+                        </span>
+                        <span className="flex min-w-0 flex-col gap-0.5">
+                          <span
+                            className={cn(
+                              "font-heading text-sm font-medium",
+                              !selected && "text-muted-foreground"
+                            )}
+                          >
+                            {opt.label}
+                          </span>
+                          <span className="text-xs text-muted-foreground/70">
+                            {opt.hint}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Review strip */}
               <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-border bg-card/50 px-4 py-3 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">

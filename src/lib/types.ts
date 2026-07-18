@@ -375,6 +375,11 @@ export interface ActionPlan {
   recommendations: Recommendation[];
 }
 
+/** Which viewport(s) the agent walks and captures. "both" runs a desktop
+ * walk plus a phone re-capture pass — the slowest option, so serverless
+ * time budgets favour picking one device per report. */
+export type DeviceMode = "desktop" | "mobile" | "both";
+
 export interface Project {
   id: string;
   name: string;
@@ -383,6 +388,8 @@ export interface Project {
   /** Journeys in scope for this audit. */
   journeys: JourneyType[];
   analysisMode: string;
+  /** Viewport(s) for agent walks. Older reports default to "both". */
+  device?: DeviceMode;
   brands: Brand[];
   sessions: CaptureRecord[];
   actionPlan?: ActionPlan;

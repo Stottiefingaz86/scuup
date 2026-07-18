@@ -91,6 +91,7 @@ export function runAgent(
         market: project?.market ?? "",
         brandName: brand.name,
         ownBrand: brand.role === "own_brand",
+        device: project?.device ?? "both",
       }),
     });
     const data = await res.json();

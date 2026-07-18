@@ -23,7 +23,7 @@ import {
 } from "@/lib/credentials-db";
 import { brandProjectArchived, upsertAnalysis } from "@/lib/project-db";
 import { personaVariables } from "@/lib/test-persona";
-import type { JourneyAnalysis } from "@/lib/types";
+import type { DeviceMode, JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,6 +59,7 @@ export async function POST(request: NextRequest) {
   let market = "";
   let brandName = "";
   let ownBrand = false;
+  let device: DeviceMode = "both";
   let chainLoginJourneys: string[] = [];
   try {
     const body = await request.json();
@@ -68,6 +69,9 @@ export async function POST(request: NextRequest) {
     if (typeof body.market === "string") market = body.market;
     if (typeof body.brandName === "string") brandName = body.brandName;
     if (typeof body.ownBrand === "boolean") ownBrand = body.ownBrand;
+    if (body.device === "desktop" || body.device === "mobile") {
+      device = body.device;
+    }
     if (Array.isArray(body.chainLoginJourneys)) {
       chainLoginJourneys = body.chainLoginJourneys.filter(
         (j: unknown): j is string => typeof j === "string"
@@ -168,6 +172,7 @@ export async function POST(request: NextRequest) {
         journey === "signup" ? chainLoginJourneys : undefined,
       loginVars,
       accountExists,
+      device,
     });
     const { chainedAnalyses, ...analysis } = result;
     // Re-runs may be guardrailed against the previous run — return what

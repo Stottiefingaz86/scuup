@@ -17,6 +17,7 @@ import {
   upsertVoc,
 } from "@/lib/project-db";
 import { supabase } from "@/lib/supabase-server";
+import type { DeviceMode } from "@/lib/types";
 import { personaVariables } from "@/lib/test-persona";
 import { buildVocAnalysis, scrapeTrustpilot } from "@/lib/voc";
 
@@ -55,6 +56,7 @@ interface RefreshJob {
   ownBrand: boolean;
   area: string; // journey area, or "voc" / "design"
   staleSince: string;
+  device: DeviceMode;
 }
 
 async function authorized(request: NextRequest): Promise<boolean> {
@@ -74,7 +76,7 @@ async function eligibleBrands() {
   const db = supabase();
   const { data: projects, error } = await db
     .from("ps_projects")
-    .select("id, user_id, market")
+    .select("id, user_id, market, device")
     .eq("status", "complete");
   if (error) throw new Error(error.message);
   if (!projects?.length) return [];
@@ -112,6 +114,8 @@ async function eligibleBrands() {
     url: b.url as string,
     ownBrand: b.role === "own_brand",
     market: (byProject.get(b.project_id as string)?.market as string) ?? "",
+    device: ((byProject.get(b.project_id as string)?.device as string) ??
+      "both") as DeviceMode,
   }));
 }
 
@@ -173,6 +177,7 @@ async function findStaleJobs(): Promise<RefreshJob[]> {
       ownBrand: b.ownBrand,
       area,
       staleSince,
+      device: b.device,
     });
   };
 
@@ -210,6 +215,7 @@ async function runJourneyRefresh(job: RefreshJob): Promise<void> {
   const result = await analyzeJourney(url, job.area, contextId, proxyCountry, {
     loginVars,
     accountExists,
+    device: job.device,
   });
   const { chainedAnalyses: _ignored, ...analysis } = result;
   await upsertAnalysis(job.brandId, analysis);

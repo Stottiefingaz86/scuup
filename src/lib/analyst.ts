@@ -33,6 +33,7 @@ import {
 } from "./retention-scoring";
 import type {
   DetectedFeature,
+  DeviceMode,
   LoyaltySnapshot,
   Observation,
   RetentionMechanicNote,
@@ -426,6 +427,11 @@ async function captureScrollSequence(
 /** ~80% of real players are on phones, so every journey also gets a
  * mobile-viewport pass. iPhone 14/15-class dimensions. */
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
+
+const DESKTOP_VIEWPORT = { width: 1440, height: 900 };
+
+/** Scoring note for reports captured only at the phone viewport. */
+const MOBILE_ONLY_PROMPT = `\n\nDEVICE — every screenshot is a MOBILE capture (390x844 phone viewport); there are no desktop frames. Roughly 80% of real players are on phones, so judge the mobile experience directly: thumb-reachable CTAs, clean nav collapse, readable type at phone size, no overlapping or cut-off elements, product reachable without hunting through menus.`;
 
 /** Re-capture the final page at a phone viewport via CDP device emulation.
  * Runs in the same session (same login state, no extra Browserbase cost)
@@ -1120,12 +1126,16 @@ export async function analyzeJourney(
     /** A previous run confirmed an authenticated session — an account
      * exists, so login is the first port of call everywhere. */
     accountExists?: boolean;
+    /** Which viewport(s) to walk and capture. "both" = desktop walk plus
+     * a phone re-capture pass (slowest). */
+    device?: DeviceMode;
   }
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
   const signupVars = opts?.signupVars ?? null;
   const chainLoginJourneys = opts?.chainLoginJourneys;
   const loginVars = opts?.loginVars ?? null;
   const accountExists = opts?.accountExists ?? false;
+  const device = opts?.device ?? "both";
   const playbook = AGENT_PLAYBOOKS[journey];
   if (playbook) {
     return analyzeWithAgent(
@@ -1137,7 +1147,8 @@ export async function analyzeJourney(
       journey === "signup" ? signupVars : null,
       journey === "signup" ? chainLoginJourneys : undefined,
       loginVars,
-      accountExists
+      accountExists,
+      device
     );
   }
   const loginPlaybook = LOGIN_PLAYBOOKS[journey];
@@ -1156,7 +1167,8 @@ export async function analyzeJourney(
       null,
       undefined,
       loginVars,
-      accountExists
+      accountExists,
+      device
     );
   }
   if (journey !== "landing") {
@@ -1164,7 +1176,7 @@ export async function analyzeJourney(
       `${journey} sits behind a login. Record a live session to score it.`
     );
   }
-  return analyzeLanding(url, contextId, proxyCountry);
+  return analyzeLanding(url, contextId, proxyCountry, device);
 }
 
 /** @deprecated Use checkAgentLoggedIn from agent-login.ts */
@@ -1453,8 +1465,13 @@ async function analyzeWithAgent(
   signupVars?: Record<string, string> | null,
   chainLoginJourneys?: string[],
   loginVars?: Record<string, string> | null,
-  _accountExists?: boolean
+  _accountExists?: boolean,
+  device: DeviceMode = "both"
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
+  // Mobile reports run the whole walk at a phone viewport — one pass, one
+  // device, and evidence that matches where most players actually are.
+  const walkViewport =
+    device === "mobile" ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
   // The serverless platform kills this function at maxDuration and all
   // evidence dies with it. Track the remaining budget from before session
   // creation (its rate-limit retries count too) and stop the walk early —
@@ -1478,7 +1495,7 @@ async function analyzeWithAgent(
           "eu-central-1") as "eu-central-1",
         timeout: 900,
         browserSettings: {
-          viewport: { width: 1440, height: 900 },
+          viewport: walkViewport,
           // Resume the brand's logged-in state so gated areas are scoreable.
           ...(contextId ? { context: { id: contextId, persist: true } } : {}),
         },
@@ -1788,18 +1805,29 @@ async function analyzeWithAgent(
     await waitForPageContent(page);
 
     if (DEEP_SCROLL_JOURNEYS.has(journey)) {
-      const scrollShots = await captureScrollSequence({
-        capture,
-        scrollTo: async (y) => {
-          await page.evaluate(`window.scrollTo(0, ${y})`);
+      const scrollShots = await captureScrollSequence(
+        {
+          capture,
+          scrollTo: async (y) => {
+            await page.evaluate(`window.scrollTo(0, ${y})`);
+          },
+          getHeight: async () =>
+            Number(
+              await page.evaluate("document.documentElement.scrollHeight")
+            ),
         },
-        getHeight: async () =>
-          Number(await page.evaluate("document.documentElement.scrollHeight")),
-      });
+        6,
+        walkViewport.height
+      );
       if (shots.length) scrollShots.shift();
       shots.push(...scrollShots);
     } else {
-      await page.scroll(720, 450, 0, 900);
+      await page.scroll(
+        Math.round(walkViewport.width / 2),
+        450,
+        0,
+        walkViewport.height
+      );
       shots.push(await capture());
     }
 
@@ -1825,17 +1853,19 @@ async function analyzeWithAgent(
       };
     }
 
-    // Mobile-first pass: re-capture the final page at a phone viewport in
-    // the same session, so scoring reflects where ~80% of players are.
-    // Skipped when the budget is nearly spent — desktop evidence that gets
-    // saved beats mobile evidence that dies with a killed function.
+    // Mobile-first pass: only "both" reports re-capture at a phone
+    // viewport — single-device reports already have their evidence.
+    // Skipped when the budget is nearly spent — evidence that gets saved
+    // beats evidence that dies with a killed function.
     const mobileFrom = shots.length;
-    if (timeLeft() > 40_000) {
-      shots.push(...(await captureMobileShots(page, capture)));
-    } else {
-      trail.push("skipped the mobile pass — run time budget reached");
+    if (device === "both") {
+      if (timeLeft() > 40_000) {
+        shots.push(...(await captureMobileShots(page, capture)));
+      } else {
+        trail.push("skipped the mobile pass — run time budget reached");
+      }
     }
-    const hasMobile = shots.length > mobileFrom;
+    const hasMobile = device === "both" && shots.length > mobileFrom;
 
     const [result, screenshots] = await Promise.all([
       scoreScreenshots(
@@ -1846,7 +1876,8 @@ async function analyzeWithAgent(
         trail,
         "agent",
         hasMobile ? mobileFrom : null,
-        discoveryFailure ? discoveryFailurePrompt(journey) : ""
+        (discoveryFailure ? discoveryFailurePrompt(journey) : "") +
+          (device === "mobile" ? MOBILE_ONLY_PROMPT : "")
       ),
       persistShots(shots),
     ]);
@@ -1855,7 +1886,8 @@ async function analyzeWithAgent(
       area: journey,
       analysedAt: new Date().toISOString(),
       screenshots,
-      ...(hasMobile ? { mobileFrom } : {}),
+      // mobileFrom 0 = every shot is a phone capture (mobile-only report).
+      ...(hasMobile ? { mobileFrom } : device === "mobile" ? { mobileFrom: 0 } : {}),
       finalUrl,
       ...(authenticated !== undefined ? { authenticated } : {}),
       // What the session actually was: pre-walk login, a registration that
@@ -1899,7 +1931,8 @@ async function analyzeWithAgent(
             url,
             loginJourney,
             loginPlaybook,
-            [`logged-in pass after signup`]
+            [`logged-in pass after signup`],
+            device
           );
           chainedAnalyses.push(chained);
         } catch (e) {
@@ -1948,9 +1981,12 @@ async function walkPlaybookAndScore(
   url: string,
   journey: string,
   playbook: PlaybookStep[],
-  trailPrefix: string[] = []
+  trailPrefix: string[] = [],
+  device: DeviceMode = "both"
 ): Promise<JourneyAnalysis> {
   const capture = createScreenshotCapture(page);
+  const walkViewport =
+    device === "mobile" ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
 
   const trail = [...trailPrefix];
   const shots: string[] = [];
@@ -2031,29 +2067,41 @@ async function walkPlaybookAndScore(
   await dismissSiteCookiesWithAgent(page, stagehand);
 
   if (DEEP_SCROLL_JOURNEYS.has(journey)) {
-    const scrollShots = await captureScrollSequence({
-      capture,
-      scrollTo: async (y) => {
-        await page.evaluate(`window.scrollTo(0, ${y})`);
+    const scrollShots = await captureScrollSequence(
+      {
+        capture,
+        scrollTo: async (y) => {
+          await page.evaluate(`window.scrollTo(0, ${y})`);
+        },
+        getHeight: async () =>
+          Number(await page.evaluate("document.documentElement.scrollHeight")),
       },
-      getHeight: async () =>
-        Number(await page.evaluate("document.documentElement.scrollHeight")),
-    });
+      6,
+      walkViewport.height
+    );
     if (shots.length) scrollShots.shift();
     shots.push(...scrollShots);
   } else {
-    await page.scroll(720, 450, 0, 900);
+    await page.scroll(
+      Math.round(walkViewport.width / 2),
+      450,
+      0,
+      walkViewport.height
+    );
     shots.push(await capture());
   }
 
   const pageTitle = await page.title().catch(() => "");
   const finalUrl = page.url();
 
-  // Mobile-first pass — same session, phone viewport, restored afterwards
-  // so the next chained journey starts back on desktop.
+  // Mobile-first pass ("both" reports only) — same session, phone
+  // viewport, restored afterwards so the next chained journey starts back
+  // on desktop.
   const mobileFrom = shots.length;
-  shots.push(...(await captureMobileShots(page, capture)));
-  const hasMobile = shots.length > mobileFrom;
+  if (device === "both") {
+    shots.push(...(await captureMobileShots(page, capture)));
+  }
+  const hasMobile = device === "both" && shots.length > mobileFrom;
 
   const [result, screenshots] = await Promise.all([
     scoreScreenshots(
@@ -2063,7 +2111,8 @@ async function walkPlaybookAndScore(
       shots,
       trail,
       "agent",
-      hasMobile ? mobileFrom : null
+      hasMobile ? mobileFrom : null,
+      device === "mobile" ? MOBILE_ONLY_PROMPT : ""
     ),
     persistShots(shots),
   ]);
@@ -2072,7 +2121,7 @@ async function walkPlaybookAndScore(
     area: journey,
     analysedAt: new Date().toISOString(),
     screenshots,
-    ...(hasMobile ? { mobileFrom } : {}),
+    ...(hasMobile ? { mobileFrom } : device === "mobile" ? { mobileFrom: 0 } : {}),
     finalUrl,
     // Chained walks only run inside the authenticated session from signup.
     loggedIn: true,
@@ -2083,9 +2132,12 @@ async function walkPlaybookAndScore(
 async function analyzeLanding(
   url: string,
   contextId?: string | null,
-  proxyCountry?: string | null
+  proxyCountry?: string | null,
+  device: DeviceMode = "both"
 ): Promise<JourneyAnalysis> {
   const journey = "landing";
+  const walkViewport =
+    device === "mobile" ? MOBILE_VIEWPORT : DESKTOP_VIEWPORT;
   const { id, connectUrl } = await createSession(
     undefined,
     contextId ?? undefined,
@@ -2095,7 +2147,7 @@ async function analyzeLanding(
     const browser = await chromium.connectOverCDP(connectUrl);
     const context = browser.contexts()[0] ?? (await browser.newContext());
     const page = context.pages()[0] ?? (await context.newPage());
-    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.setViewportSize(walkViewport);
 
     await page
       .goto(url, { waitUntil: "domcontentloaded", timeout: 25000 })
@@ -2122,32 +2174,38 @@ async function analyzeLanding(
       return data;
     };
 
-    const shots = await captureScrollSequence({
-      capture,
-      scrollTo: async (y) => {
-        await page.evaluate((yy) => window.scrollTo(0, yy), y);
-      },
-      getHeight: async () =>
-        page.evaluate(() => document.documentElement.scrollHeight),
-    });
-
-    // Mobile-first pass over the same page before the session closes.
-    const mobileFrom = shots.length;
-    shots.push(
-      ...(await captureMobileShots(
-        {
-          evaluate: (expr) => page.evaluate(expr),
-          waitForTimeout: (ms) => page.waitForTimeout(ms),
-          sendCDP: async <T,>(method: string, params?: object) =>
-            (await cdp.send(
-              method as Parameters<typeof cdp.send>[0],
-              params
-            )) as T,
+    const shots = await captureScrollSequence(
+      {
+        capture,
+        scrollTo: async (y) => {
+          await page.evaluate((yy) => window.scrollTo(0, yy), y);
         },
-        capture
-      ))
+        getHeight: async () =>
+          page.evaluate(() => document.documentElement.scrollHeight),
+      },
+      6,
+      walkViewport.height
     );
-    const hasMobile = shots.length > mobileFrom;
+
+    // Mobile-first pass ("both" reports only) before the session closes.
+    const mobileFrom = shots.length;
+    if (device === "both") {
+      shots.push(
+        ...(await captureMobileShots(
+          {
+            evaluate: (expr) => page.evaluate(expr),
+            waitForTimeout: (ms) => page.waitForTimeout(ms),
+            sendCDP: async <T,>(method: string, params?: object) =>
+              (await cdp.send(
+                method as Parameters<typeof cdp.send>[0],
+                params
+              )) as T,
+          },
+          capture
+        ))
+      );
+    }
+    const hasMobile = device === "both" && shots.length > mobileFrom;
 
     const pageTitle = await page.title().catch(() => "");
     const finalUrl = page.url();
@@ -2182,7 +2240,8 @@ async function analyzeLanding(
         shots,
         [],
         "agent",
-        hasMobile ? mobileFrom : null
+        hasMobile ? mobileFrom : null,
+        device === "mobile" ? MOBILE_ONLY_PROMPT : ""
       ),
       persistShots(shots),
     ]);
@@ -2191,7 +2250,7 @@ async function analyzeLanding(
       area: journey,
       analysedAt: new Date().toISOString(),
       screenshots,
-      ...(hasMobile ? { mobileFrom } : {}),
+      ...(hasMobile ? { mobileFrom } : device === "mobile" ? { mobileFrom: 0 } : {}),
       finalUrl,
     };
   } finally {

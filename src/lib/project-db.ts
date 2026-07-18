@@ -20,6 +20,7 @@ interface ProjectRow {
   products: string[];
   journeys: string[];
   analysis_mode: string;
+  device: string | null;
   status: string;
   created_at: string;
   analysed_at: string | null;
@@ -96,6 +97,7 @@ function assemble(
     products: row.products,
     journeys: row.journeys as Project["journeys"],
     analysisMode: row.analysis_mode,
+    device: (row.device ?? "both") as Project["device"],
     brands,
     sessions: sessionRows.map((s) => s.data),
     actionPlan: planRow?.data,
@@ -345,6 +347,7 @@ export async function insertProject(
     products: project.products,
     journeys: project.journeys,
     analysis_mode: project.analysisMode,
+    device: project.device ?? "both",
     status: project.status,
     created_at: project.createdAt,
     analysed_at: project.analysedAt ?? null,
