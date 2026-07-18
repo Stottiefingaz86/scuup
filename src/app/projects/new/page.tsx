@@ -75,7 +75,7 @@ const DEVICE_OPTIONS: {
   {
     id: "both",
     label: "Both",
-    hint: "Slower — journeys may not finish in time",
+    hint: "Desktop and mobile in one report",
     icons: [Monitor, Smartphone],
   },
 ];
@@ -709,7 +709,7 @@ export default function NewProjectPage() {
             products,
             journeys: journeys.filter((j) => availableJourneys.includes(j)),
             analysisMode: "Public Audit Mode",
-            device,
+            device: isPaidPlan(plan) ? device : device === "both" ? "desktop" : device,
           },
           { replaceActive: opts?.replaceActive === true }
         );
@@ -1115,23 +1115,33 @@ export default function NewProjectPage() {
                 </span>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {DEVICE_OPTIONS.map((opt) => {
-                    const selected = device === opt.id;
+                    const locked = opt.id === "both" && !isPaidPlan(plan);
+                    const selected = device === opt.id && !locked;
                     return (
                       <button
                         key={opt.id}
                         type="button"
-                        onClick={() => setDevice(opt.id)}
+                        disabled={locked}
+                        onClick={() => {
+                          if (!locked) setDevice(opt.id);
+                        }}
                         className={cn(
                           "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-all",
-                          selected
-                            ? "border-primary/60 bg-primary/10"
-                            : "border-border bg-card/50 hover:border-primary/30"
+                          locked
+                            ? "cursor-not-allowed border-dashed border-border bg-card/30 opacity-60"
+                            : selected
+                              ? "border-primary/60 bg-primary/10"
+                              : "border-border bg-card/50 hover:border-primary/30"
                         )}
                       >
                         <span
                           className={cn(
                             "mt-0.5 flex shrink-0 items-center gap-0.5",
-                            selected ? "text-primary" : "text-muted-foreground"
+                            locked
+                              ? "text-muted-foreground/50"
+                              : selected
+                                ? "text-primary"
+                                : "text-muted-foreground"
                           )}
                         >
                           {opt.icons.map((Icon, i) => (
@@ -1141,11 +1151,17 @@ export default function NewProjectPage() {
                         <span className="flex min-w-0 flex-col gap-0.5">
                           <span
                             className={cn(
-                              "font-heading text-sm font-medium",
-                              !selected && "text-muted-foreground"
+                              "inline-flex items-center gap-1.5 font-heading text-sm font-medium",
+                              (locked || !selected) && "text-muted-foreground"
                             )}
                           >
                             {opt.label}
+                            {locked ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground/60">
+                                <Lock className="size-3" />
+                                Pro
+                              </span>
+                            ) : null}
                           </span>
                           <span className="text-xs text-muted-foreground/70">
                             {opt.hint}
