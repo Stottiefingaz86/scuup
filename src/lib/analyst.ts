@@ -13,6 +13,7 @@ import {
   performAgentLogin,
 } from "./agent-login";
 import {
+  dismissSiteCookies,
   dismissSiteCookiesWithAgent,
   preparePageAfterNavigation,
   type CookieDismissPage,
@@ -79,6 +80,9 @@ interface PlaybookStep {
   /** URL paths tried directly when every phrasing fails (e.g. /sports).
    * Only useful for section-navigation steps. */
   fallbackPaths?: string[];
+  /** Exact nav labels to click via the DOM when Stagehand misses them —
+   * house names like "Arcade" in a left sidebar that vision agents skip. */
+  navLabels?: string[];
   /** Description of what the destination must show. After the step lands,
    * a vision check confirms it — Tipico's "Games" is the casino while its
    * homepage is the sportsbook, so a successful click is not proof the
@@ -102,6 +106,126 @@ async function verifyLandedArea(
   } catch {
     return true;
   }
+}
+
+/** Direct DOM click for a nav/sidebar label Stagehand often misses
+ * (Tombola's left-menu "Arcade", icon-only entries with a text sibling).
+ * Opens a hamburger/menu first when the label isn't visible yet. */
+async function clickNavByLabel(
+  page: {
+    evaluate: (expr: string) => Promise<unknown>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  labels: string[]
+): Promise<{ ok: boolean; matched?: string }> {
+  if (!labels.length) return { ok: false };
+  const script = `(() => {
+    const labels = ${JSON.stringify(labels.map((l) => l.toLowerCase()))};
+    const MENU_RE = /^(menu|open menu|main menu|navigation|nav|more)$/i;
+
+    function visible(el) {
+      if (!(el instanceof HTMLElement)) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) return false;
+      const s = getComputedStyle(el);
+      return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
+    }
+    function textOf(el) {
+      return (el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent || "")
+        .replace(/\\s+/g, " ").trim().toLowerCase();
+    }
+    function click(el) {
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      el.click();
+    }
+    function findLabel() {
+      const nodes = [
+        ...document.querySelectorAll(
+          "nav a, nav button, aside a, aside button, [role='navigation'] a, [role='navigation'] button, [role='menuitem'], [class*='menu' i] a, [class*='menu' i] button, [class*='sidebar' i] a, [class*='sidebar' i] button, [class*='drawer' i] a, [class*='drawer' i] button, header a, header button"
+        ),
+      ];
+      for (const el of nodes) {
+        if (!visible(el)) continue;
+        const t = textOf(el);
+        if (!t || t.length > 40) continue;
+        for (const label of labels) {
+          if (t === label || t.startsWith(label + " ") || t.endsWith(" " + label)) {
+            return { el, matched: label };
+          }
+        }
+      }
+      return null;
+    }
+
+    let hit = findLabel();
+    if (!hit) {
+      // Open hamburger / menu so a collapsed side nav becomes visible.
+      const menuBtns = [
+        ...document.querySelectorAll(
+          "button, a[role='button'], [role='button'], [aria-label*='menu' i], [class*='hamburger' i], [class*='menu-toggle' i]"
+        ),
+      ];
+      for (const el of menuBtns) {
+        if (!visible(el)) continue;
+        const t = textOf(el);
+        const aria = (el.getAttribute("aria-label") || "").toLowerCase();
+        if (MENU_RE.test(t) || /menu|hamburger|nav/.test(aria) || /hamburger|menu-toggle|nav-toggle/.test(el.className)) {
+          click(el);
+          break;
+        }
+      }
+    }
+    return { opened: !hit };
+  })()`;
+
+  try {
+    const opened = (await page.evaluate(script)) as { opened?: boolean };
+    if (opened?.opened) await page.waitForTimeout(1200);
+
+    const clickScript = `(() => {
+      const labels = ${JSON.stringify(labels.map((l) => l.toLowerCase()))};
+      function visible(el) {
+        if (!(el instanceof HTMLElement)) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width < 4 || r.height < 4) return false;
+        const s = getComputedStyle(el);
+        return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
+      }
+      function textOf(el) {
+        return (el.getAttribute("aria-label") || el.getAttribute("title") || el.textContent || "")
+          .replace(/\\s+/g, " ").trim().toLowerCase();
+      }
+      const nodes = [
+        ...document.querySelectorAll(
+          "a, button, [role='button'], [role='menuitem'], [role='link']"
+        ),
+      ];
+      for (const el of nodes) {
+        if (!visible(el)) continue;
+        const t = textOf(el);
+        if (!t || t.length > 40) continue;
+        for (const label of labels) {
+          if (t === label || t.startsWith(label + " ") || t.endsWith(" " + label)) {
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+            el.click();
+            return { ok: true, matched: label };
+          }
+        }
+      }
+      return { ok: false };
+    })()`;
+    const result = (await page.evaluate(clickScript)) as {
+      ok?: boolean;
+      matched?: string;
+    };
+    if (result?.ok) {
+      await page.waitForTimeout(2500);
+      return { ok: true, matched: result.matched };
+    }
+  } catch {
+    // DOM click is best-effort.
+  }
+  return { ok: false };
 }
 
 /** Navigation the agent performs on its own from the public homepage.
@@ -131,20 +255,25 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   casino: [
     {
       instruction:
-        "open the casino games lobby from the main navigation or side menu — brands label it Casino, Games, Vegas, Slots, Live Casino, or a house name like Arcade, sometimes only a slot-machine/cards/dice icon. Bingo-first brands often put it in a left-hand menu under Arcade or Games. Do NOT open the sportsbook, sports betting, or live betting section, and do NOT stay on the homepage",
+        "open the LEFT SIDE MENU or hamburger first if needed, then click Arcade — on bingo-first brands the casino lobby is labelled Arcade in the side navigation. Also try Casino, Games, Vegas, Slots, or Live Casino. Do NOT open sports or bingo, and do NOT stay on the homepage",
       required: true,
       alternatives: [
-        "click the navigation entry that leads to slot games, instant-win games, or live casino tables — try labels like Games, Vegas, Casino, Slots, Arcade, Live Casino, or a games controller / playing-cards icon",
-        "open the site menu (hamburger, left sidebar, or category menu) and choose the casino / games / arcade / slots section from it",
+        "click Arcade in the left-hand side menu or drawer — that is the casino games lobby on brands like Tombola",
+        "open the site menu (hamburger, left sidebar, or category menu) and choose Arcade, Casino, Games, Vegas, or Slots from it",
+        "click the navigation entry that leads to slot games, instant-win games, or live casino tables — try labels like Arcade, Games, Vegas, Casino, Slots, Live Casino, or a games controller / playing-cards icon",
       ],
       fallbackPaths: [
-        "/casino",
-        "/games",
         "/arcade",
+        "/games",
+        "/casino",
         "/vegas",
         "/slots",
         "/live-casino",
+        "/games/arcade",
+        "/play/arcade",
       ],
+      /** Labels tried via a direct DOM click when Stagehand misses icon/side-nav entries. */
+      navLabels: ["Arcade", "Casino", "Games", "Vegas", "Slots", "Live Casino"],
       verify:
         "a DEDICATED casino games lobby page with VISIBLE game tiles — a populated grid or rows of casino/instant-win games (slots, live casino tables, game shows, arcade games). NOT the brand's homepage or hero page; NOT sports matches, odds buttons, or a betslip; NOT an empty or still-loading grid of blank placeholders; NOT a search page without results",
     },
@@ -159,6 +288,7 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "open the site menu (hamburger, left sidebar, or category menu) and choose the bingo section from it",
       ],
       fallbackPaths: ["/bingo", "/rooms", "/bingo-rooms", "/play/bingo"],
+      navLabels: ["Bingo", "Bingo Rooms", "Rooms", "Play Bingo", "90 Ball", "75 Ball"],
       verify:
         "a bingo lobby — bingo rooms or games with ticket prices, prize pots, player counts, or countdown timers to the next game. NOT a slots/casino grid, NOT a sportsbook, NOT the brand's homepage hero",
     },
@@ -363,9 +493,12 @@ function createScreenshotCapture(
   page: CookieDismissPage & {
     sendCDP: <T>(method: string, params?: object) => Promise<T>;
   },
-  opts?: { relaxed?: boolean }
+  opts?: { relaxed?: boolean; stagehand?: Stagehand }
 ): () => Promise<string> {
   return async () => {
+    // Cookie banners reappear after navigation or late CMP paint — never
+    // capture evidence with "Accept cookies" covering the product.
+    await dismissSiteCookies(page, { retries: 2 });
     await waitForPageReady(page, {
       relaxed: opts?.relaxed ?? true,
       initialMs: opts?.relaxed ? 900 : 2000,
@@ -1676,7 +1809,7 @@ async function analyzeWithAgent(
       // before concluding the step failed. A remembered textual route
       // from a past run gets first shot.
       const phrasings = [
-        ...(isNavStep && navHint && !ok
+        ...(isNavStep && navHint?.path && !ok
           ? [
               `${step.instruction}. On a previous visit, this site's ${journey} area was reached like this: ${navHint.hint} — try that route first`,
             ]
@@ -1707,6 +1840,21 @@ async function analyzeWithAgent(
       }
       // Section navigation can fall back to well-known URL paths when the
       // agent can't find the nav entry (mega-menus, icon-only navs).
+      // House labels like "Arcade" are tried via a direct DOM click first —
+      // Stagehand often misses side-menu text that a player would tap.
+      if (!ok && step.navLabels?.length) {
+        const hit = await clickNavByLabel(page, step.navLabels);
+        if (hit.ok) {
+          await preparePageAfterNavigation(page, stagehand);
+          await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
+          if (!step.verify || (await verifyLandedArea(stagehand, step.verify))) {
+            ok = true;
+            message = `clicked "${hit.matched}" in the site navigation`;
+          } else {
+            message = `clicked "${hit.matched}" but landed on the wrong area`;
+          }
+        }
+      }
       if (!ok && step.fallbackPaths?.length) {
         for (const path of step.fallbackPaths) {
           if (timeLeft() < 30_000) break;
@@ -1744,9 +1892,28 @@ async function analyzeWithAgent(
         shots.push(await capture());
         lastUrl = page.url();
         // A verified navigation is knowledge — remember the route so the
-        // next run on this site goes straight there.
+        // next run on this site goes straight there. Only paths that leave
+        // the homepage count (a "clicked menu" hint with no destination
+        // poisons future runs).
         if (isNavStep) {
-          void saveNavHint(url, journey, message || step.instruction, lastUrl);
+          try {
+            const dest = new URL(lastUrl);
+            const start = new URL(url);
+            if (
+              dest.pathname &&
+              dest.pathname !== "/" &&
+              dest.pathname !== start.pathname
+            ) {
+              void saveNavHint(
+                url,
+                journey,
+                message || step.instruction,
+                lastUrl
+              );
+            }
+          } catch {
+            // Ignore bad URLs.
+          }
         }
       } else if (step.required) {
         // Product areas: not finding the section IS the finding. Go back
@@ -2013,6 +2180,17 @@ async function walkPlaybookAndScore(
       }
       if (ok) break;
     }
+    if (!ok && step.navLabels?.length) {
+      const hit = await clickNavByLabel(page, step.navLabels);
+      if (hit.ok) {
+        await preparePageAfterNavigation(page, stagehand);
+        await waitForPageReady(page, { relaxed: true, initialMs: 2000 });
+        if (!step.verify || (await verifyLandedArea(stagehand, step.verify))) {
+          ok = true;
+          message = `clicked "${hit.matched}" in the site navigation`;
+        }
+      }
+    }
     if (!ok && step.fallbackPaths?.length) {
       for (const path of step.fallbackPaths) {
         try {
@@ -2166,6 +2344,7 @@ async function analyzeLanding(
     // stability, so bot-challenge pages that never settle can't stall us.
     const cdp = await context.newCDPSession(page);
     const capture = async () => {
+      await dismissSiteCookies(pageReady, { retries: 2 });
       await waitForPageReady(pageReady, { relaxed: true, initialMs: 900 });
       const { data } = (await cdp.send("Page.captureScreenshot", {
         format: "jpeg",

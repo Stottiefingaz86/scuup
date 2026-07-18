@@ -42,8 +42,9 @@ export async function getNavHint(
   }
 }
 
-/** Remember a route that navigated AND verified. Best-effort — memory
- * must never sink a run. */
+/** Remember a route that navigated AND verified onto a real section path.
+ * Text-only hints with no path (e.g. "opened the menu") are discarded —
+ * they poison the next run. Best-effort — memory must never sink a run. */
 export async function saveNavHint(
   url: string,
   area: string,
@@ -58,8 +59,9 @@ export async function saveNavHint(
     // Only a real section path is worth remembering.
     if (dest.pathname && dest.pathname !== "/") path = dest.pathname;
   } catch {
-    // Keep the textual hint without a path.
+    return;
   }
+  if (!path) return;
   try {
     await supabase()
       .from("ps_nav_hints")

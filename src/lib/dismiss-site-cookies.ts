@@ -11,11 +11,13 @@ type StagehandLike = {
 };
 
 const DISMISS_SCRIPT = `(() => {
+  // Soft match — banners often wrap "Accept cookies" in a longer label or
+  // with a checkmark / icon glyph that textContent picks up.
   const ACCEPT_RE =
-    /^(accept all( cookies)?|allow all( cookies)?|accept( cookies)?|allow( cookies)?|i agree|agree( and continue)?|yes,? i agree|got it|ok,? got it|accept & continue|accept and close|continue|understood|confirm( my choices)?)$/i;
+    /accept\\s*(all|cookies|\\&\\s*continue|and\\s*(close|continue))?|allow\\s*(all|cookies)|i\\s*agree|agree(\\s*and\\s*continue)?|yes,?\\s*i\\s*agree|got\\s*it|ok,?\\s*got\\s*it|understood|confirm(\\s*my\\s*choices)?|consent/i;
 
   const REJECT_RE =
-    /reject|decline|only essential|necessary only|manage (cookies|preferences)|customize|settings/i;
+    /reject|decline|only\\s*essential|necessary\\s*only|manage\\s*(cookies|preferences)|customize|settings|more\\s*info|learn\\s*more|cookie\\s*settings/i;
 
   const SELECTORS = [
     "#onetrust-accept-btn-handler",
@@ -38,11 +40,13 @@ const DISMISS_SCRIPT = `(() => {
     ".cmplz-accept",
     ".cc-accept",
     ".cc-allow",
+    ".cc-btn.cc-dismiss",
     ".js-cookie-consent-agree",
     ".cookie-accept",
     "#cookie-accept",
     "#accept-cookies",
     ".accept-cookies",
+    "button.accept-cookies",
     ".qc-cmp2-summary-buttons button[mode='primary']",
     ".termly-styles-module-accept-btn",
     '[data-test="cookie-accept-all"]',
@@ -51,6 +55,8 @@ const DISMISS_SCRIPT = `(() => {
     ".cky-btn-accept",
     ".fc-cta-consent",
     ".message-button.no-consent",
+    '[aria-label*="accept" i][aria-label*="cookie" i]',
+    '[aria-label*="accept all" i]',
   ];
 
   function visible(el) {
@@ -73,6 +79,7 @@ const DISMISS_SCRIPT = `(() => {
     return (
       el.getAttribute("aria-label") ||
       el.getAttribute("title") ||
+      el.getAttribute("value") ||
       el.textContent ||
       ""
     )
@@ -81,45 +88,58 @@ const DISMISS_SCRIPT = `(() => {
   }
 
   function clickEl(el, method, detail) {
+    try {
+      el.focus({ preventScroll: true });
+    } catch {}
+    el.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, cancelable: true, view: window })
+    );
     el.click();
     return { dismissed: true, method, detail };
   }
 
   for (const sel of SELECTORS) {
-    for (const el of document.querySelectorAll(sel)) {
-      if (visible(el)) return clickEl(el, "selector", sel);
+    try {
+      for (const el of document.querySelectorAll(sel)) {
+        if (visible(el)) return clickEl(el, "selector", sel);
+      }
+    } catch {
+      // Invalid selector in older engines — keep going.
     }
   }
 
   const candidates = [
     ...document.querySelectorAll(
-      "button, a[role='button'], [role='button'], input[type='button'], input[type='submit']"
+      "button, a[role='button'], [role='button'], input[type='button'], input[type='submit'], a"
     ),
   ];
 
   for (const el of candidates) {
     if (!visible(el)) continue;
     const text = label(el);
-    if (!text || text.length > 48) continue;
+    if (!text || text.length > 80) continue;
     if (REJECT_RE.test(text)) continue;
     if (ACCEPT_RE.test(text)) return clickEl(el, "label", text);
   }
 
   const overlays = [
     ...document.querySelectorAll(
-      "[id*='cookie' i], [class*='cookie' i], [id*='consent' i], [class*='consent' i], [class*='gdpr' i], [id*='onetrust' i], [class*='onetrust' i], [class*='CybotCookiebot' i], [class*='didomi' i], [class*='osano' i]"
+      "[id*='cookie' i], [class*='cookie' i], [id*='consent' i], [class*='consent' i], [class*='gdpr' i], [id*='onetrust' i], [class*='onetrust' i], [class*='CybotCookiebot' i], [class*='didomi' i], [class*='osano' i], [class*='cmp' i], [id*='cmp' i], [class*='privacy' i]"
     ),
   ];
   for (const root of overlays) {
     if (!(root instanceof HTMLElement) || !visible(root)) continue;
-    const btn = root.querySelector(
-      "button, a[role='button'], [role='button'], input[type='button'], input[type='submit']"
+    const buttons = root.querySelectorAll(
+      "button, a[role='button'], [role='button'], input[type='button'], input[type='submit'], a"
     );
-    if (!btn || !visible(btn)) continue;
-    const text = label(btn);
-    if (REJECT_RE.test(text)) continue;
-    if (ACCEPT_RE.test(text) || /accept|allow all|agree|got it/i.test(text)) {
-      return clickEl(btn, "overlay", text);
+    for (const btn of buttons) {
+      if (!visible(btn)) continue;
+      const text = label(btn);
+      if (!text || text.length > 80) continue;
+      if (REJECT_RE.test(text)) continue;
+      if (ACCEPT_RE.test(text)) {
+        return clickEl(btn, "overlay", text);
+      }
     }
   }
 
@@ -142,13 +162,13 @@ export async function dismissSiteCookies(
   page: CookieDismissPage,
   opts?: { retries?: number }
 ): Promise<boolean> {
-  const retries = opts?.retries ?? 4;
+  const retries = opts?.retries ?? 5;
   let any = false;
   for (let i = 0; i < retries; i++) {
-    if (i > 0) await page.waitForTimeout(700);
+    if (i > 0) await page.waitForTimeout(800);
     if (await tryDismissOnce(page)) {
       any = true;
-      await page.waitForTimeout(350);
+      await page.waitForTimeout(400);
     }
   }
   return any;
@@ -159,7 +179,7 @@ export async function preparePageAfterNavigation(
   page: CookieDismissPage,
   stagehand?: StagehandLike
 ): Promise<void> {
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1500);
   await dismissSiteCookiesWithAgent(page, stagehand);
 }
 
@@ -171,10 +191,10 @@ export async function dismissSiteCookiesWithAgent(
   if (!dismissed && stagehand) {
     try {
       const result = await stagehand.act(
-        "If a cookie consent banner, privacy popup, or GDPR dialog is visible on the page, click Accept All, Accept Cookies, Allow All, I Agree, or the main green accept button to dismiss it. If no cookie banner is visible, do nothing."
+        "If a cookie consent banner, privacy popup, or GDPR dialog is visible on the page, click the button labelled Accept cookies, Accept All, Allow All, I Agree, or the primary green accept button to dismiss it. Do not click Reject, Manage, or Settings. If no cookie banner is visible, do nothing."
       );
       if (result.success) {
-        await page.waitForTimeout(600);
+        await page.waitForTimeout(800);
         dismissed = (await dismissSiteCookies(page, { retries: 2 })) || true;
       }
     } catch {
