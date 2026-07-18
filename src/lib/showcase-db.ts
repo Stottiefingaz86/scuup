@@ -73,9 +73,21 @@ export async function syncShowcaseFromProject(projectId: string): Promise<number
     if (isShowcaseExcludedBrand(slug)) continue;
     const snap = snapshotFromBrand(brand, project.market, month, projectId);
     if (!snap) continue;
-    const { error: upsertErr } = await db
+    // Preserve an admin homepage toggle across re-syncs.
+    const { data: existing } = await db
       .from("ps_showcase_snapshots")
-      .upsert(snap, { onConflict: "brand_slug,market,month" });
+      .select("homepage")
+      .eq("brand_slug", slug)
+      .eq("market", project.market)
+      .eq("month", month)
+      .maybeSingle();
+    const { error: upsertErr } = await db.from("ps_showcase_snapshots").upsert(
+      {
+        ...snap,
+        homepage: (existing?.homepage as boolean | undefined) ?? true,
+      },
+      { onConflict: "brand_slug,market,month" }
+    );
     if (upsertErr) throw new Error(upsertErr.message);
     n += 1;
   }
@@ -135,7 +147,10 @@ async function liveSnapshotRow(
     if (changed) {
       const { error: upsertErr } = await supabase()
         .from("ps_showcase_snapshots")
-        .upsert(snap, { onConflict: "brand_slug,market,month" });
+        .upsert(
+          { ...snap, homepage: row.homepage ?? true },
+          { onConflict: "brand_slug,market,month" }
+        );
       if (upsertErr) throw new Error(upsertErr.message);
     }
 
@@ -207,6 +222,8 @@ export async function buildShowcaseEntries(opts?: {
   );
 
   const healedRows = await Promise.all(rows.map(liveSnapshotRow));
+  // Admin homepage toggle — only public cards make the landing carousel.
+  const publicRows = healedRows.filter((row) => row.homepage !== false);
 
   const prevMonth = prevMonthKey(month);
   const prevRows = await listShowcaseSnapshots({
@@ -217,7 +234,7 @@ export async function buildShowcaseEntries(opts?: {
     prevRows.map((r) => [`${r.brand_slug}:${r.market}`, r.cx_score])
   );
 
-  const entries = healedRows.map((row) => {
+  const entries = publicRows.map((row) => {
     const prev = prevByKey.get(`${row.brand_slug}:${row.market}`) ?? null;
     return rowToEntry(row, prev);
   });
@@ -321,6 +338,86 @@ export async function globalRankForScore(
   }
 
   return { ...global, marketRank, marketTotal };
+}
+
+/** Admin list: latest snapshot per brand+market, including hidden ones. */
+export interface AdminShowcaseRow {
+  brandSlug: string;
+  brandName: string;
+  brandUrl: string;
+  favicon: string;
+  market: string;
+  month: string;
+  cxScore: number;
+  homepage: boolean;
+  projectId: string | null;
+  projectName: string | null;
+}
+
+export async function listAdminShowcase(): Promise<AdminShowcaseRow[]> {
+  const { data, error } = await supabase()
+    .from("ps_showcase_snapshots")
+    .select(
+      "brand_slug, brand_name, brand_url, favicon, market, month, cx_score, homepage, project_id, updated_at"
+    )
+    .order("month", { ascending: false })
+    .order("cx_score", { ascending: false });
+  if (error) throw new Error(error.message);
+
+  const seen = new Set<string>();
+  const rows: Omit<AdminShowcaseRow, "projectName">[] = [];
+  for (const row of data ?? []) {
+    const key = `${row.brand_slug}:${row.market}`;
+    if (seen.has(key)) continue;
+    if (isShowcaseExcludedBrand(row.brand_slug as string)) continue;
+    seen.add(key);
+    rows.push({
+      brandSlug: row.brand_slug as string,
+      brandName: row.brand_name as string,
+      brandUrl: row.brand_url as string,
+      favicon: row.favicon as string,
+      market: row.market as string,
+      month: row.month as string,
+      cxScore: row.cx_score as number,
+      homepage: (row.homepage as boolean | null) ?? true,
+      projectId: (row.project_id as string | null) ?? null,
+    });
+  }
+
+  const projectIds = [
+    ...new Set(rows.map((r) => r.projectId).filter(Boolean)),
+  ] as string[];
+  const nameById = new Map<string, string>();
+  if (projectIds.length) {
+    const { data: projects } = await supabase()
+      .from("ps_projects")
+      .select("id, name")
+      .in("id", projectIds);
+    for (const p of projects ?? []) {
+      nameById.set(p.id as string, p.name as string);
+    }
+  }
+
+  return rows
+    .map((r) => ({
+      ...r,
+      projectName: r.projectId ? (nameById.get(r.projectId) ?? null) : null,
+    }))
+    .sort((a, b) => b.cxScore - a.cxScore);
+}
+
+/** Flip homepage visibility for every month of a brand+market. */
+export async function setShowcaseHomepage(
+  brandSlug: string,
+  market: string,
+  homepage: boolean
+): Promise<void> {
+  const { error } = await supabase()
+    .from("ps_showcase_snapshots")
+    .update({ homepage, updated_at: new Date().toISOString() })
+    .eq("brand_slug", brandSlug)
+    .eq("market", market);
+  if (error) throw new Error(error.message);
 }
 
 /** Backfill showcase from every completed project (one-time / cron). */

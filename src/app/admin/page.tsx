@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FolderOpen,
   Globe,
+  LayoutGrid,
   Loader2,
   Lock,
   Receipt,
@@ -46,6 +47,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -68,6 +70,8 @@ import type {
   AdminStats,
   AdminUser,
 } from "@/lib/admin-db";
+import type { AdminShowcaseRow } from "@/lib/showcase-db";
+import { MarketTag } from "@/components/market-tag";
 import type { ServiceHealth } from "@/app/api/admin/health/route";
 import type { AnalyticsOverview } from "@/app/api/admin/analytics/route";
 import {
@@ -1181,6 +1185,157 @@ function WebAnalyticsCard() {
   );
 }
 
+function ShowcaseHomepageCard() {
+  const [entries, setEntries] = useState<AdminShowcaseRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/showcase");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setEntries(data.entries ?? []);
+    } catch {
+      toast.error("Couldn't load homepage showcase.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  async function toggle(row: AdminShowcaseRow, homepage: boolean) {
+    const key = `${row.brandSlug}:${row.market}`;
+    setBusy(key);
+    setEntries((all) =>
+      all.map((e) =>
+        e.brandSlug === row.brandSlug && e.market === row.market
+          ? { ...e, homepage }
+          : e
+      )
+    );
+    try {
+      const res = await fetch("/api/admin/showcase", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          brandSlug: row.brandSlug,
+          market: row.market,
+          homepage,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(
+        homepage
+          ? `${row.brandName} is on the homepage`
+          : `${row.brandName} hidden from the homepage`
+      );
+    } catch {
+      setEntries((all) =>
+        all.map((e) =>
+          e.brandSlug === row.brandSlug && e.market === row.market
+            ? { ...e, homepage: !homepage }
+            : e
+        )
+      );
+      toast.error("Couldn't update homepage visibility.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const onCount = entries.filter((e) => e.homepage).length;
+
+  return (
+    <MissionCollapsibleCard
+      sectionId="showcase"
+      title="Homepage showcase"
+      description="Choose which scored brands appear in the public Player CX carousel on the landing page."
+      icon={LayoutGrid}
+      href="/#showcase"
+      hrefLabel="View on site"
+      collapsedHint={
+        loading
+          ? undefined
+          : `${onCount} of ${entries.length} brands showing on homepage`
+      }
+    >
+      {loading && entries.length === 0 ? (
+        <Skeleton className="h-40 w-full" />
+      ) : entries.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No scored brands in the showcase yet. Complete a report and it will
+          show up here.
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-14">Home</TableHead>
+              <TableHead>Brand</TableHead>
+              <TableHead>Market</TableHead>
+              <TableHead className="text-right">Score</TableHead>
+              <TableHead>Report</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {entries.map((row) => {
+              const key = `${row.brandSlug}:${row.market}`;
+              return (
+                <TableRow key={key}>
+                  <TableCell>
+                    <Checkbox
+                      checked={row.homepage}
+                      disabled={busy === key}
+                      onCheckedChange={(v) =>
+                        void toggle(row, v === true)
+                      }
+                      aria-label={`Show ${row.brandName} on homepage`}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2.5">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={row.favicon || "/icon.png"}
+                        alt=""
+                        width={20}
+                        height={20}
+                        className="size-5 rounded-sm"
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">
+                          {row.brandName}
+                        </div>
+                        <div className="truncate text-xs text-muted-foreground">
+                          {row.brandUrl.replace(/^https?:\/\//, "")}
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <MarketTag market={row.market} />
+                  </TableCell>
+                  <TableCell className="text-right font-heading tabular-nums">
+                    {row.cxScore}
+                  </TableCell>
+                  <TableCell className="max-w-[12rem] truncate text-xs text-muted-foreground">
+                    {row.projectName ?? "—"}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </MissionCollapsibleCard>
+  );
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -1459,6 +1614,8 @@ export default function AdminPage() {
           )}
         </CardContent>
       </Card>
+
+      <ShowcaseHomepageCard />
 
       <WebAnalyticsCard />
 

@@ -33,6 +33,8 @@ export interface ShowcaseSnapshotRow {
   project_id: string | null;
   brand_id: string | null;
   updated_at: string;
+  /** False = hidden from the public landing carousel (admin toggle). */
+  homepage: boolean;
 }
 
 export interface ShowcaseEntry {
