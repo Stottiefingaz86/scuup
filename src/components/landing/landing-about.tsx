@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +15,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
 const AboutUsContext = createContext<{ openAbout: () => void } | null>(null);
@@ -28,45 +27,12 @@ export function useAboutUs() {
   return ctx;
 }
 
-const CO_FOUNDERS = [
-  {
-    name: "Christopher Alfred",
-    title: "Co-founder",
-  },
-  {
-    name: null,
-    title: "Co-founder & CTO",
-  },
-  {
-    name: null,
-    title: "Co-founder & COO",
-  },
-] as const;
-
-function FounderCard({
-  name,
-  title,
-}: {
-  name: string | null;
-  title: string;
-}) {
-  return (
-    <figure className="flex min-w-0 flex-col gap-3">
-      <Skeleton
-        className="aspect-[3/4] w-full rounded-xl"
-        aria-label={name ? `${name}, ${title}` : `${title}, photo coming soon`}
-      />
-      <figcaption className="flex flex-col gap-0.5">
-        {name ? (
-          <p className="font-medium text-foreground">{name}</p>
-        ) : (
-          <Skeleton className="h-4 w-28" aria-hidden />
-        )}
-        <p className="text-sm text-muted-foreground">{title}</p>
-      </figcaption>
-    </figure>
-  );
-}
+const FOUNDER = {
+  name: "Christopher Hunt",
+  title: "Founder",
+  photo: "/about-me.png",
+  portfolioUrl: "https://chrisjohnhunt.com",
+} as const;
 
 function AboutUsDialog({
   open,
@@ -121,21 +87,36 @@ function AboutUsDialog({
 
         <div className="border-t border-border/80 bg-card/30 px-6 py-10 sm:px-10">
           <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-            Co-founders
+            Founder
           </p>
           <p className="mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">
-            A small team of product, engineering, and operations people who
-            know what it takes to ship in regulated markets.
+            Built by an iGaming product designer who has shipped in regulated
+            markets and knows what a sceptical board actually wants to see.
           </p>
-          <div className="mt-8 grid grid-cols-3 gap-4 sm:gap-6">
-            {CO_FOUNDERS.map((person) => (
-              <FounderCard
-                key={person.title}
-                name={person.name}
-                title={person.title}
-              />
-            ))}
-          </div>
+          <a
+            href={FOUNDER.portfolioUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group mt-8 flex max-w-xs flex-col gap-3"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- local founder photo */}
+            <img
+              src={FOUNDER.photo}
+              alt={FOUNDER.name}
+              width={480}
+              height={640}
+              className="aspect-[3/4] w-full rounded-xl object-cover object-top ring-1 ring-border/60 transition-opacity group-hover:opacity-90"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="inline-flex items-center gap-1.5 font-medium text-foreground transition-colors group-hover:text-brand">
+                {FOUNDER.name}
+                <ArrowUpRight className="size-3.5 text-muted-foreground transition-colors group-hover:text-brand" />
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {FOUNDER.title}
+              </span>
+            </span>
+          </a>
         </div>
 
         <div className="flex flex-col items-start justify-between gap-4 border-t border-border/80 px-6 py-8 sm:flex-row sm:items-center sm:px-10">
