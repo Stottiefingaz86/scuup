@@ -113,10 +113,10 @@ export default function AccountPage() {
               <Button
                 className="w-full"
                 nativeButton={false}
-                render={<Link href="/upgrade" />}
+                render={<Link href="/#contact" />}
               >
                 <Sparkles data-icon="inline-start" />
-                Upgrade to Pro
+                Contact sales
               </Button>
             ) : plan ? (
               <ManageBillingButton className="w-full" />

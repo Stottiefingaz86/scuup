@@ -145,9 +145,13 @@ export default async function UpgradePage({
                 Upgrade to Pro
               </UpgradeButton>
             ) : (
-              <Button size="lg" className="w-full glow-primary" disabled>
-                <Sparkles data-icon="inline-start" />
-                Upgrade to Pro, coming soon
+              <Button
+                size="lg"
+                className="w-full glow-primary"
+                nativeButton={false}
+                render={<Link href="/#contact" />}
+              >
+                Contact sales
               </Button>
             )}
           </CardContent>
@@ -179,8 +183,14 @@ export default async function UpgradePage({
                 Upgrade to Pro Plus
               </UpgradeButton>
             ) : (
-              <Button size="lg" className="w-full" variant="outline" disabled>
-                Pro Plus, coming soon
+              <Button
+                size="lg"
+                className="w-full"
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/#contact" />}
+              >
+                Contact sales
               </Button>
             )}
           </CardContent>
@@ -190,7 +200,7 @@ export default async function UpgradePage({
       <p className="max-w-md text-center text-xs text-muted-foreground">
         {paymentsLive
           ? "Prices exclude tax. Cancel any time from your account page."
-          : "Payments aren't live yet. Contact us for early Pro or Pro Plus access."}
+          : "Self-serve checkout isn't live yet. Contact sales for Pro or Pro Plus access."}
       </p>
 
       <Button
