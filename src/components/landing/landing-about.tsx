@@ -31,7 +31,7 @@ const FOUNDER = {
   name: "Christopher Hunt",
   title: "Founder",
   photo: "/about-me.png",
-  portfolioUrl: "https://chrisjohnhunt.com",
+  portfolioUrl: "https://www.linkedin.com/in/christopher-hunt-a4193646/",
 } as const;
 
 function AboutUsDialog({
