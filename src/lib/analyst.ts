@@ -6,7 +6,7 @@ import {
   releaseSession,
   withSessionRetry,
 } from "./browserbase";
-import { JOURNEY_HEURISTICS, RETENTION_MECHANICS } from "./constants";
+import { JOURNEY_HEURISTICS, RETENTION_MECHANICS, journeyRequiresLogin } from "./constants";
 import { persistShots } from "./evidence-storage";
 import {
   checkAgentLoggedIn,
@@ -500,10 +500,9 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
  * inside the limit. The gap after the budget covers scoring + persisting. */
 const RUN_BUDGET_MS = 185_000;
 
-/** The most wall-clock time a pre-walk login attempt may take — public
- * journeys must fall back to a logged-out walk quickly instead of burning
- * the whole budget on authentication. */
-const LOGIN_BUDGET_MS = 100_000;
+/** The most wall-clock time a pre-walk login attempt may take — only used
+ * for deposit/withdraw/account walks that cannot score without a session. */
+const LOGIN_BUDGET_MS = 80_000;
 
 /** Journeys where we scroll the full page — lobby footers hide live feeds,
  * jackpots, leaderboards and provider rows below the fold. */
@@ -2075,57 +2074,43 @@ async function analyzeWithAgent(
     let authenticated: boolean | undefined;
     const isLoginJourney = LOGIN_PLAYBOOKS[journey] != null;
     const isSignup = journey === "signup";
+    // Casino / bingo / sports / loyalty / support are public — never burn
+    // the run budget on a failed login. Signup walks registration. Only
+    // deposit / withdraw / my_account require credentials.
+    const mustLogin = journeyRequiresLogin(journey);
 
-    // First port of call for EVERY journey: a logged-in session. Reuse the
-    // persisted context if it's still authenticated; otherwise log in with
-    // the brand's saved test account. Public walks continue logged out when
-    // login isn't possible — only login-gated journeys hard-fail.
+    // Reuse an already-authenticated browser context when present. Do NOT
+    // attempt a fresh login for public product walks — that is what was
+    // blocking casino after signup failures (login burned ~100s, then the
+    // lobby walk hit the time limit still on the homepage).
     let sessionLoggedIn = false;
-    if (contextId || loginVars) {
+    if (contextId) {
       sessionLoggedIn = await agentIsLoggedIn(stagehand);
-      // Always try stored credentials first — reuse an existing account before
-      // walking the journey. Signup is the exception: it must walk the real
-      // registration form, so it never pre-authenticates.
-      const shouldLogin = !sessionLoggedIn && loginVars != null && !isSignup;
-      if (shouldLogin) {
-        // Login is capped: public journeys must fall back to a logged-out
-        // walk with plenty of budget left, not authenticate at any cost.
-        // Login-gated journeys get more room — without a session they have
-        // nothing to score anyway.
-        const loginDeadline =
-          Date.now() +
-          Math.min(
-            isLoginJourney ? LOGIN_BUDGET_MS + 40_000 : LOGIN_BUDGET_MS,
-            Math.max(0, timeLeft() - 60_000)
-          );
-        // Login shots stay out of the evidence for public journeys — a
-        // login modal with a red error box is not casino lobby evidence.
-        const loginShots: string[] = [];
-        sessionLoggedIn = await tryAgentLogin(
-          stagehand,
-          page,
-          loginVars!,
-          trail,
-          isLoginJourney || isSignup ? shots : loginShots,
-          capture,
-          loginDeadline
-        );
-        if (!sessionLoggedIn && !isLoginJourney) {
-          trail.push("continuing the walk logged out");
-        }
-        // Whether login worked or not, restart from a clean homepage so the
-        // playbook walks the product the way a player would — not from a
-        // login-error modal or wherever authentication dropped us.
-        await page.waitForTimeout(2000);
-        await page
-          .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
-          .catch(() => {});
-        await preparePageAfterNavigation(page, stagehand);
-        await page.waitForTimeout(3000);
-      }
-      if (sessionLoggedIn) {
-        trail.push("logged in with the brand's test account before the walk");
-      }
+    }
+    if (mustLogin && !sessionLoggedIn && loginVars != null && !isSignup) {
+      const loginDeadline =
+        Date.now() +
+        Math.min(LOGIN_BUDGET_MS, Math.max(0, timeLeft() - 60_000));
+      sessionLoggedIn = await tryAgentLogin(
+        stagehand,
+        page,
+        loginVars!,
+        trail,
+        shots,
+        capture,
+        loginDeadline
+      );
+      await page.waitForTimeout(2000);
+      await page
+        .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+        .catch(() => {});
+      await preparePageAfterNavigation(page, stagehand);
+      await page.waitForTimeout(2000);
+    }
+    if (sessionLoggedIn) {
+      trail.push("logged in with the brand's test account before the walk");
+    } else if (!mustLogin && !isSignup) {
+      trail.push("walking logged out — login is not required for this area");
     }
 
     if (isLoginJourney && !sessionLoggedIn) {
@@ -2174,11 +2159,89 @@ async function analyzeWithAgent(
     const navHint = await getNavHint(url, journey);
 
     for (const [stepIndex, step] of playbook.entries()) {
-      // Out of time: stop walking and publish what exists. A required step
-      // we never reached means the area wasn't captured — return blocked
-      // WITH the evidence so the report shows exactly how far the agent got.
+      // Out of time: for public product areas, take one last shot at a
+      // known URL (sister-site arcade, etc.) then score discoverability —
+      // never mark casino "Blocked" just because login ate the budget.
       if (timeLeft() < 35_000) {
         if (step.required) {
+          const isNavStep = stepIndex === 0 && Boolean(step.verify);
+          let lastChanceOk = false;
+          if (
+            isNavStep &&
+            DISCOVERY_SCORED_JOURNEYS.has(journey) &&
+            timeLeft() > 12_000
+          ) {
+            const lastChancePaths = [
+              ...(navHint?.path ? [navHint.path] : []),
+              ...(step.fallbackPaths ?? []).filter((p) =>
+                /^https?:\/\//i.test(p)
+              ),
+            ];
+            for (const path of lastChancePaths) {
+              try {
+                await page.goto(resolveNavUrl(url, path), {
+                  waitUntil: "domcontentloaded",
+                  timeoutMs: Math.min(15000, timeLeft() - 5000),
+                });
+                await preparePageAfterNavigation(page, stagehand);
+                if (
+                  await areaVerified(
+                    stagehand,
+                    page.url(),
+                    journey,
+                    step.verify
+                  )
+                ) {
+                  lastChanceOk = true;
+                  trail.push(
+                    `last-chance open of ${path} before the time budget ran out`
+                  );
+                  break;
+                }
+              } catch {
+                // Try the next known path.
+              }
+            }
+          }
+          if (lastChanceOk) {
+            shots.push(await capture());
+            lastUrl = page.url();
+            try {
+              const dest = new URL(lastUrl);
+              const start = new URL(url);
+              const destHost = dest.hostname.replace(/^www\./, "");
+              const startHost = start.hostname.replace(/^www\./, "");
+              if (
+                destHost !== startHost ||
+                (dest.pathname &&
+                  dest.pathname !== "/" &&
+                  dest.pathname !== start.pathname)
+              ) {
+                void saveNavHint(
+                  url,
+                  journey,
+                  "last-chance route before time budget",
+                  lastUrl
+                );
+              }
+            } catch {
+              // Ignore.
+            }
+            continue;
+          }
+          if (DISCOVERY_SCORED_JOURNEYS.has(journey)) {
+            discoveryFailure =
+              "run time budget exhausted before confirming this area";
+            trail.push(
+              `couldn't confirm the ${journey} area before the time budget — scoring discoverability from what is visible`
+            );
+            await page
+              .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 15000 })
+              .catch(() => {});
+            await preparePageAfterNavigation(page, stagehand);
+            shots.push(await capture());
+            break;
+          }
           trail.push("run time budget exhausted before reaching this area");
           const screenshots = await persistShots([...shots, await capture()]);
           return {
@@ -2194,6 +2257,7 @@ async function analyzeWithAgent(
             features: [],
             screenshots,
             finalUrl: page.url(),
+            trail: trail.length ? trail : undefined,
           };
         }
         trail.push("skipped the remaining optional steps — run time budget reached");

@@ -119,10 +119,9 @@ export async function POST(request: NextRequest) {
     contextId = await getBrandContextId(brandId).catch(() => null);
   }
 
-  // Every journey is walked logged in when possible — the agent's first
-  // port of call is the brand's test account. Signup additionally seeds
-  // the persona and a persistent browser context so registration unlocks
-  // the whole brand.
+  // Login credentials are only required for deposit / withdraw / account.
+  // Public journeys (casino, bingo, sports, …) walk logged out so a failed
+  // signup never blocks the lobby audit.
   let signupVars: Record<string, string> | null = null;
   let loginVars: Record<string, string> | null = null;
   let accountExists = false;
