@@ -27,6 +27,7 @@ import {
 import { PLAIN_PROSE_RULE, sanitizeAnalysisProse } from "./prose";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
+import { phoneAlternates } from "./test-persona";
 import {
   applyRetentionGates,
   fillGatedRetentionNotes,
@@ -1390,6 +1391,23 @@ async function completeEmailVerification(
   return mail.otp != null;
 }
 
+/** Detect "please enter a valid UK mobile" style errors so we can rewrite
+ * the phone and retry instead of stalling on a disabled Continue. */
+async function phoneValidationVisible(page: {
+  evaluate: (expr: string) => Promise<unknown>;
+}): Promise<boolean> {
+  try {
+    const text = String(
+      await page.evaluate("document.body?.innerText ?? ''")
+    ).slice(0, 20000);
+    return /valid\s+(uk|irish|mobile|phone)|enter\s+a\s+valid\s+(uk|mobile|phone)|invalid\s+(uk\s+)?(mobile|phone)|mobile\s+number.*(invalid|valid|incorrect)|phone\s+number.*(invalid|valid|incorrect)/i.test(
+      text
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Fill and submit the (possibly multi-step) registration form with the
  * test persona, capturing each step as scoring evidence. Returns true when
  * the walk ended in an authenticated session. */
@@ -1397,6 +1415,7 @@ async function runRegistrationWalk(
   stagehand: Stagehand,
   page: {
     waitForTimeout: (ms: number) => Promise<void>;
+    evaluate?: (expr: string) => Promise<unknown>;
     goto?: (
       url: string,
       opts?: { waitUntil?: "domcontentloaded"; timeoutMs?: number }
@@ -1418,6 +1437,19 @@ async function runRegistrationWalk(
     "click Continue or Next if this is a multi-step form and not the final screen",
   ];
 
+  // UK/IE forms often reject +44… and want national 07… / 08… — try those
+  // spellings when the primary phone trips a validation error.
+  const phoneCandidates = [
+    vars.phone,
+    vars.phoneAlt,
+    ...phoneAlternates(vars.phone ?? "", vars.country ?? ""),
+  ].filter((p, i, arr): p is string => Boolean(p) && arr.indexOf(p) === i);
+  let phoneIndex = 0;
+  const activeVars = () => ({
+    ...vars,
+    phone: phoneCandidates[phoneIndex] ?? vars.phone,
+  });
+
   for (let step = 1; step <= 4; step++) {
     if (timeLeft() < 50_000) {
       trail.push(
@@ -1427,8 +1459,8 @@ async function runRegistrationWalk(
     }
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
-        { variables: vars }
+        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. For UK or Irish mobile fields prefer the national format already in %phone% (starting 07 or 08) — do not add a +44 or +353 prefix. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
+        { variables: activeVars() }
       );
       trail.push(`filled registration step ${step} with the test persona`);
     } catch (e) {
@@ -1438,6 +1470,31 @@ async function runRegistrationWalk(
     }
     await page.waitForTimeout(800);
     shots.push(await capture());
+
+    // If the form is already screaming about the mobile number, rewrite it
+    // before we burn a Continue click on a disabled button.
+    const pageEval = page.evaluate;
+    if (
+      pageEval &&
+      phoneIndex < phoneCandidates.length - 1 &&
+      (await phoneValidationVisible({ evaluate: pageEval }))
+    ) {
+      phoneIndex += 1;
+      const nextPhone = phoneCandidates[phoneIndex]!;
+      trail.push(
+        `mobile number rejected — retrying as ${nextPhone}`
+      );
+      try {
+        await stagehand.act(
+          "clear the mobile or phone number field completely and type %phone% into it, replacing any existing value",
+          { variables: { phone: nextPhone } }
+        );
+        await page.waitForTimeout(600);
+        shots.push(await capture());
+      } catch {
+        // Continue with whatever is in the field.
+      }
+    }
 
     try {
       await stagehand.act(
@@ -1463,6 +1520,44 @@ async function runRegistrationWalk(
     }
     await page.waitForTimeout(6000);
     shots.push(await capture());
+
+    // Continue stayed disabled / form bounced us — try the next phone format
+    // and re-attempt this same step once.
+    if (
+      !submitted &&
+      pageEval &&
+      phoneIndex < phoneCandidates.length - 1 &&
+      (await phoneValidationVisible({ evaluate: pageEval }))
+    ) {
+      phoneIndex += 1;
+      const nextPhone = phoneCandidates[phoneIndex]!;
+      trail.push(
+        `Continue blocked by mobile validation — rewriting phone to ${nextPhone} and retrying this step`
+      );
+      try {
+        await stagehand.act(
+          "clear the mobile or phone number field completely and type %phone% into it, replacing any existing value",
+          { variables: { phone: nextPhone } }
+        );
+        await page.waitForTimeout(600);
+        for (const phrasing of SUBMIT_PHRASINGS) {
+          try {
+            const result = await stagehand.act(phrasing);
+            if (result.success) {
+              submitted = true;
+              trail.push(`registration step ${step} retried: ${phrasing}`);
+              break;
+            }
+          } catch {
+            // Try the next phrasing.
+          }
+        }
+        await page.waitForTimeout(4000);
+        shots.push(await capture());
+      } catch {
+        // Fall through.
+      }
+    }
 
     if (await agentIsLoggedIn(stagehand)) {
       trail.push("registration submitted, account created and logged in");

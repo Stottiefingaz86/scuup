@@ -3,6 +3,7 @@ import { supabase } from "./supabase-server";
 import {
   buildSignupPersona,
   defaultTestPassword,
+  repairPersonaPhone,
   type SignupPersona,
 } from "./test-persona";
 
@@ -157,12 +158,35 @@ export async function getCredentialsForLogin(
     .maybeSingle();
   if (error) throw new Error(error.message);
   const row = data as Row | null;
+  let persona = decryptPersona(row?.persona_enc ?? null);
+  // Older seeds used +44 7700… drama/random numbers that UK operators
+  // reject — rewrite to a national 07… mobile and persist so signup can
+  // get past the contact step.
+  if (persona) {
+    const fixed = repairPersonaPhone(persona);
+    if (fixed.phone !== persona.phone) {
+      persona = fixed;
+      await supabase()
+        .from("ps_brand_credentials")
+        .upsert(
+          {
+            brand_id: brandId,
+            persona_enc: encryptSecret(JSON.stringify(persona)),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "brand_id" }
+        )
+        .then(({ error: e }) => {
+          if (e) console.error("[credentials] phone repair save failed:", e.message);
+        });
+    }
+  }
   return {
     email: row?.email ?? null,
     username: row?.username ?? null,
     password: row?.password_enc ? decryptSecret(row.password_enc) : null,
     contextId: row?.browserbase_context_id ?? null,
-    persona: decryptPersona(row?.persona_enc ?? null),
+    persona,
     loggedInAt: row?.logged_in_at ?? null,
   };
 }
