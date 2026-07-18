@@ -9,7 +9,8 @@ import { supabase } from "./supabase-server";
 export interface NavHint {
   /** Human-readable description of the route that worked last time. */
   hint: string;
-  /** URL path of the destination that verified ("/arcade"). */
+  /** Destination that verified — a same-site path ("/arcade") or an
+   * absolute sister-site URL ("https://www.tombolaarcade.co.uk/arcade-games"). */
   path: string | null;
 }
 
@@ -19,6 +20,13 @@ function hostOf(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Resolve a stored nav path against the brand URL. Absolute http(s)
+ * paths (sister sites) are used as-is. */
+export function resolveNavUrl(baseUrl: string, path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return new URL(path, baseUrl).toString();
 }
 
 /** The route that worked on the last successful visit, if any. */
@@ -42,9 +50,9 @@ export async function getNavHint(
   }
 }
 
-/** Remember a route that navigated AND verified onto a real section path.
- * Text-only hints with no path (e.g. "opened the menu") are discarded —
- * they poison the next run. Best-effort — memory must never sink a run. */
+/** Remember a route that navigated AND verified onto a real section.
+ * Sister-site destinations keep their full origin (Tombola bingo →
+ * tombolaarcade.co.uk). Text-only hints with no path are discarded. */
 export async function saveNavHint(
   url: string,
   area: string,
@@ -55,9 +63,16 @@ export async function saveNavHint(
   if (!host || !hint) return;
   let path: string | null = null;
   try {
+    const start = new URL(url);
     const dest = new URL(destinationUrl);
-    // Only a real section path is worth remembering.
-    if (dest.pathname && dest.pathname !== "/") path = dest.pathname;
+    const startHost = start.hostname.replace(/^www\./, "");
+    const destHost = dest.hostname.replace(/^www\./, "");
+    if (destHost !== startHost) {
+      // Sister / satellite product site — remember the full URL.
+      path = `${dest.origin}${dest.pathname === "/" ? "/" : dest.pathname}`;
+    } else if (dest.pathname && dest.pathname !== "/") {
+      path = dest.pathname;
+    }
   } catch {
     return;
   }
