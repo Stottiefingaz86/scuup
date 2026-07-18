@@ -3,6 +3,7 @@ import { supabase } from "./supabase-server";
 import {
   buildSignupPersona,
   defaultTestPassword,
+  repairPersonaEmail,
   repairPersonaPhone,
   type SignupPersona,
 } from "./test-persona";
@@ -159,30 +160,39 @@ export async function getCredentialsForLogin(
   if (error) throw new Error(error.message);
   const row = data as Row | null;
   let persona = decryptPersona(row?.persona_enc ?? null);
-  // Older seeds used +44 7700… drama/random numbers that UK operators
-  // reject — rewrite to a national 07… mobile and persist so signup can
-  // get past the contact step.
+  // Older seeds used +44 7700… drama numbers and the bare shared inbox
+  // (stottiefingaz@gmail.com) that Tombola rejects as "incorrect" after
+  // partial registrations — rewrite and persist so signup can progress.
   if (persona) {
-    const fixed = repairPersonaPhone(persona);
-    if (fixed.phone !== persona.phone) {
+    const phoneFixed = repairPersonaPhone(persona);
+    const fixed = repairPersonaEmail(phoneFixed, brandId);
+    if (
+      fixed.phone !== persona.phone ||
+      fixed.email !== persona.email
+    ) {
       persona = fixed;
       await supabase()
         .from("ps_brand_credentials")
         .upsert(
           {
             brand_id: brandId,
+            email: persona.email,
             persona_enc: encryptSecret(JSON.stringify(persona)),
             updated_at: new Date().toISOString(),
           },
           { onConflict: "brand_id" }
         )
         .then(({ error: e }) => {
-          if (e) console.error("[credentials] phone repair save failed:", e.message);
+          if (e)
+            console.error(
+              "[credentials] persona repair save failed:",
+              e.message
+            );
         });
     }
   }
   return {
-    email: row?.email ?? null,
+    email: persona?.email ?? row?.email ?? null,
     username: row?.username ?? null,
     password: row?.password_enc ? decryptSecret(row.password_enc) : null,
     contextId: row?.browserbase_context_id ?? null,

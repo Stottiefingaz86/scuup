@@ -78,6 +78,7 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - Regulated books need more (age, address, affordability) — judge proportionality to the licence, not absolute field count.
 - OFFER TYPE (critical): distinguish a one-time welcome deposit bonus/free bet (traditional) from an ongoing rakeback/VIP promise (crypto loop). Score clarity of terms — wagering, expiry, opt-in — NOT "how big is the promo". A site with no welcome bonus but clear permanent rakeback is leader-class, not a miss.
 - MOBILE / PHONE FORMAT (regulated UK/IE especially): leaders show the expected pattern before the player fails — placeholder like 07XXX XXXXXX, helper text ("UK mobiles start with 07"), or a country code control that makes Irish vs UK obvious. A generic "enter a valid UK or Irish mobile" error with no example, after accepting spaced or international input visually, is a Form effort failure — players should not have to guess digits-only vs spaced vs +44.
+- EMAIL VALIDATION COPY: "The value you entered was incorrect. Please recheck your data" with no reason (format vs already registered vs blocked) is poor Form effort — leaders say "email already registered" or "enter a valid email".
 - Watch for: KYC ambush before first deposit, email verification walls before showing the product, CAPTCHAs stacked on CAPTCHAs, bonus opt-in buried.`,
   deposit: `CASHIER/DEPOSIT EXPERTISE — deposit-to-play latency is the conversion metric:
 - Leader pattern: modal cashier over the game, crypto address + QR instantly, network fee guidance, fiat on-ramp options, min/max stated inline.

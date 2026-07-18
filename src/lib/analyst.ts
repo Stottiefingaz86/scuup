@@ -31,6 +31,7 @@ import {
   formatUkMobile,
   generateIeMobile,
   phoneAlternates,
+  freshSignupEmail,
 } from "./test-persona";
 import {
   applyRetentionGates,
@@ -748,7 +749,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   landing:
     "This is the brand's landing/home experience. Judge first impressions: value proposition clarity, trust signals (licence, responsible gambling), CTA prominence, visual hierarchy, perceived speed — and above all, focus.",
   signup:
-    "This is the registration flow. If the agent's trail shows it filled and submitted the form with a test persona, judge the WHOLE flow it walked: number of steps and fields, progressive disclosure, inline validation quality, error recovery, social/fast sign-up options, verification friction (email/SMS walls), and what the post-submit state communicates. If the trail only shows the opened form, judge visible friction: field count, clarity of requirements, trust cues near the form. MOBILE NUMBER UX (critical when visible): if screenshots or the trail show a 'valid UK or Irish mobile' (or similar) error, judge whether the field made the expected format obvious BEFORE failure — placeholder (e.g. 07XXX XXXXXX), helper text, country selector, or auto-format. A bare red error with no format example is a Form effort / Verification friction miss; call it out in observations and name the missing hint. Spaces vs digits-only ambiguity counts as unclear formatting.",
+    "This is the registration flow. If the agent's trail shows it filled and submitted the form with a test persona, judge the WHOLE flow it walked: number of steps and fields, progressive disclosure, inline validation quality, error recovery, social/fast sign-up options, verification friction (email/SMS walls), and what the post-submit state communicates. If the trail only shows the opened form, judge visible friction: field count, clarity of requirements, trust cues near the form. MOBILE NUMBER UX (critical when visible): if screenshots or the trail show a 'valid UK or Irish mobile' (or similar) error, judge whether the field made the expected format obvious BEFORE failure — placeholder (e.g. 07XXX XXXXXX), helper text, country selector, or auto-format. A bare red error with no format example is a Form effort / Verification friction miss; call it out in observations and name the missing hint. Spaces vs digits-only ambiguity counts as unclear formatting. EMAIL / PASSWORD UX: a vague 'The value you entered was incorrect. Please recheck your data' on email without saying whether it is format, already registered, or blocked is a Form effort miss — leaders name the real reason. Password requirements shown only after a red empty field (with Continue disabled) should be credited if always visible, or called out if the rules appear only after failure.",
   deposit:
     "This is the deposit flow. Judge trust and speed: payment method breadth, fee/limit transparency, expected crediting times, security cues, number of steps to complete.",
   withdraw:
@@ -1491,9 +1492,9 @@ async function completeEmailVerification(
   return mail.otp != null;
 }
 
-/** Shared DOM helpers for finding the mobile field and reading its
- * live validation chrome (Tombola turns the border green when accepted). */
-const MOBILE_FIELD_HELPERS = `function visible(el) {
+/** Shared DOM helpers for registration fields — Tombola paints borders
+ * green when accepted, red when rejected. */
+const FORM_FIELD_HELPERS = `function visible(el) {
   if (!(el instanceof HTMLElement)) return false;
   const r = el.getBoundingClientRect();
   if (r.width < 4 || r.height < 4) return false;
@@ -1509,12 +1510,19 @@ function labelFor(el) {
   const wrap = el.closest("label, [class*='field' i], [class*='input' i], form, div");
   return wrap ? wrap.textContent || "" : "";
 }
-function findMobileInput() {
-  const PHONE_RE = /mobile|phone|tel|cell|handset/i;
+function findFormInput(kind) {
+  const RE = {
+    mobile: /mobile|phone|tel|cell|handset/i,
+    email: /e-?mail|emailaddress/i,
+    password: /password|passcode|create password/i,
+  }[kind];
   for (const el of document.querySelectorAll("input, textarea")) {
     if (!visible(el)) continue;
     const type = (el.getAttribute("type") || "text").toLowerCase();
-    if (type === "hidden" || type === "password" || type === "email") continue;
+    if (type === "hidden") continue;
+    if (kind === "password" && type !== "password") continue;
+    if (kind === "email" && type === "password") continue;
+    if (kind === "mobile" && (type === "password" || type === "email")) continue;
     const meta = [
       type,
       el.getAttribute("name") || "",
@@ -1524,7 +1532,9 @@ function findMobileInput() {
       el.getAttribute("aria-label") || "",
       labelFor(el),
     ].join(" ");
-    if (type === "tel" || PHONE_RE.test(meta)) return el;
+    if (kind === "email" && (type === "email" || RE.test(meta))) return el;
+    if (kind === "password" && (type === "password" || RE.test(meta))) return el;
+    if (kind === "mobile" && (type === "tel" || RE.test(meta))) return el;
   }
   return null;
 }
@@ -1553,8 +1563,8 @@ function fieldValidity(el) {
   const outline = colourBucket(getComputedStyle(el).outlineColor);
   if (outline === "green") return "valid";
   if (outline === "red") return "invalid";
-  const near = (wrap?.innerText || "").slice(0, 400);
-  if (/valid\\s+(uk|irish|mobile|phone)|enter\\s+a\\s+valid|invalid\\s+(uk\\s+)?(mobile|phone)/i.test(near)) {
+  const near = (wrap?.innerText || "").slice(0, 500);
+  if (/valid\\s+(uk|irish|mobile|phone)|enter\\s+a\\s+valid|invalid\\s+(uk\\s+)?(mobile|phone)|value you entered was incorrect|recheck your data|already (registered|exists|in use)|password should be/i.test(near)) {
     return "invalid";
   }
   return "unknown";
@@ -1577,15 +1587,30 @@ async function phoneValidationVisible(page: {
   }
 }
 
-/** Read the mobile field's live validation state — green border / success
- * class = accepted, red / error copy = keep typing. */
-async function phoneFieldValidity(page: {
+async function emailValidationVisible(page: {
   evaluate: (expr: string) => Promise<unknown>;
-}): Promise<"valid" | "invalid" | "unknown" | "missing"> {
+}): Promise<boolean> {
+  try {
+    const text = String(
+      await page.evaluate("document.body?.innerText ?? ''")
+    ).slice(0, 20000);
+    return /value you entered was incorrect|recheck your data|already (registered|exists|in use)|email.*(invalid|incorrect|taken|exists)|enter a valid (e-?mail)/i.test(
+      text
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Read a registration field's live validation state. */
+async function formFieldValidity(
+  page: { evaluate: (expr: string) => Promise<unknown> },
+  kind: "mobile" | "email" | "password"
+): Promise<"valid" | "invalid" | "unknown" | "missing"> {
   try {
     const state = await page.evaluate(`(() => {
-      ${MOBILE_FIELD_HELPERS}
-      const el = findMobileInput();
+      ${FORM_FIELD_HELPERS}
+      const el = findFormInput(${JSON.stringify(kind)});
       if (!el) return "missing";
       return fieldValidity(el);
     })()`);
@@ -1598,17 +1623,24 @@ async function phoneFieldValidity(page: {
   }
 }
 
-/** Type the mobile number digit-by-digit so live validators (green/red
- * borders) fire the same way they do for a real player. */
-async function setMobileFieldViaDom(
+async function phoneFieldValidity(page: {
+  evaluate: (expr: string) => Promise<unknown>;
+}): Promise<"valid" | "invalid" | "unknown" | "missing"> {
+  return formFieldValidity(page, "mobile");
+}
+
+/** Type into a registration field character-by-character so live
+ * validators (green/red borders) fire like a real player. */
+async function setFormFieldViaDom(
   page: { evaluate: (expr: string) => Promise<unknown> },
-  phone: string
+  kind: "mobile" | "email" | "password",
+  value: string
 ): Promise<boolean> {
-  const digits = phone.replace(/\D/g, "");
+  const typed = kind === "mobile" ? value.replace(/\D/g, "") : value;
   const script = `(() => {
-    ${MOBILE_FIELD_HELPERS}
-    const want = ${JSON.stringify(digits)};
-    const el = findMobileInput();
+    ${FORM_FIELD_HELPERS}
+    const want = ${JSON.stringify(typed)};
+    const el = findFormInput(${JSON.stringify(kind)});
     if (!el) return { ok: false };
     const proto = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
@@ -1641,15 +1673,18 @@ async function setMobileFieldViaDom(
     return { ok: true, value: String(el.value || ""), state: fieldValidity(el) };
   })()`;
   try {
-    const result = (await page.evaluate(script)) as {
-      ok?: boolean;
-      value?: string;
-      state?: string;
-    };
+    const result = (await page.evaluate(script)) as { ok?: boolean };
     return Boolean(result?.ok);
   } catch {
     return false;
   }
+}
+
+async function setMobileFieldViaDom(
+  page: { evaluate: (expr: string) => Promise<unknown> },
+  phone: string
+): Promise<boolean> {
+  return setFormFieldViaDom(page, "mobile", phone);
 }
 
 /** Keep rewriting the mobile until the field goes green / valid — the same
@@ -1704,7 +1739,6 @@ async function ensureMobileFieldAccepted(
     }
     await page.waitForTimeout(700);
     let state = await phoneFieldValidity(page);
-    // Some validators only paint after a second blur/tick.
     if (state === "unknown") {
       await page.waitForTimeout(500);
       state = await phoneFieldValidity(page);
@@ -1719,21 +1753,101 @@ async function ensureMobileFieldAccepted(
       );
       continue;
     }
-    // Unknown chrome: if the page is also screaming the error copy, treat
-    // as reject; otherwise assume the typed national number is fine.
     if (await phoneValidationVisible(page)) {
-      trail.push(
-        `mobile ${phone} hit validation copy — trying another`
-      );
+      trail.push(`mobile ${phone} hit validation copy — trying another`);
       continue;
     }
-    trail.push(
-      `mobile set to ${phone} (no red/green chrome — continuing)`
-    );
+    trail.push(`mobile set to ${phone} (no red/green chrome — continuing)`);
     return { ok: true, phone };
   }
   trail.push("could not get the mobile field to a valid/green state");
   return { ok: false, phone: null };
+}
+
+/** Fill email + password via the DOM and retry a fresh plus-alias when the
+ * site shows a vague "incorrect" email error (often a prior partial
+ * registration on the shared inbox). Password fields are set explicitly —
+ * Stagehand frequently leaves them empty. */
+async function ensureEmailPasswordAccepted(
+  page: {
+    evaluate: (expr: string) => Promise<unknown>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  vars: Record<string, string>,
+  brandHint: string,
+  trail: string[],
+  timeLeft: () => number
+): Promise<{ email: string; passwordFilled: boolean }> {
+  let email = vars.email ?? "";
+  const password = vars.password ?? "";
+  let passwordFilled = false;
+
+  const emailPresent = (await formFieldValidity(page, "email")) !== "missing";
+  if (emailPresent && email) {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (timeLeft() < 40_000) break;
+      const candidate =
+        attempt === 0 ? email : freshSignupEmail(brandHint || "brand");
+      await setFormFieldViaDom(page, "email", candidate);
+      await page.waitForTimeout(800);
+      let state = await formFieldValidity(page, "email");
+      if (state === "unknown") {
+        await page.waitForTimeout(600);
+        state = await formFieldValidity(page, "email");
+      }
+      if (state === "valid") {
+        email = candidate;
+        vars.email = candidate;
+        trail.push(
+          attempt === 0
+            ? "email accepted — field went valid/green"
+            : `email accepted after retry with a fresh plus-alias`
+        );
+        break;
+      }
+      if (
+        state === "invalid" ||
+        (await emailValidationVisible(page))
+      ) {
+        trail.push(
+          attempt === 0
+            ? "email rejected (vague incorrect/already-used style error) — trying a fresh plus-alias"
+            : "email still rejected — trying another plus-alias"
+        );
+        email = candidate;
+        vars.email = candidate;
+        continue;
+      }
+      email = candidate;
+      vars.email = candidate;
+      trail.push("email set (no red/green chrome — continuing)");
+      break;
+    }
+  }
+
+  const passwordPresent =
+    (await formFieldValidity(page, "password")) !== "missing";
+  if (passwordPresent && password) {
+    await setFormFieldViaDom(page, "password", password);
+    await page.waitForTimeout(700);
+    let state = await formFieldValidity(page, "password");
+    if (state === "unknown") {
+      await page.waitForTimeout(500);
+      state = await formFieldValidity(page, "password");
+    }
+    passwordFilled = state !== "missing";
+    if (state === "valid") {
+      trail.push("password accepted — field went valid/green");
+    } else if (state === "invalid") {
+      trail.push(
+        "password field still invalid after fill — check complexity requirements visible on the form"
+      );
+    } else {
+      trail.push("password filled via DOM");
+    }
+  }
+
+  return { email, passwordFilled };
 }
 
 /** Fill and submit the (possibly multi-step) registration form with the
@@ -1796,8 +1910,26 @@ async function runRegistrationWalk(
         `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
       );
     }
-    // Type until the field goes green — same loop a player does when the
-    // border flips from red to valid.
+    // Email / password via DOM — Stagehand often leaves password empty, and
+    // the shared inbox can trip a vague "incorrect" error after prior runs.
+    if (page.evaluate) {
+      const brandHint =
+        vars.email?.match(/\+([a-z0-9]+)/i)?.[1] ??
+        vars.country ??
+        "brand";
+      await ensureEmailPasswordAccepted(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        vars,
+        brandHint,
+        trail,
+        timeLeft
+      );
+    }
+    // Type until the mobile field goes green — same loop a player does when
+    // the border flips from red to valid.
     if (page.evaluate) {
       const accepted = await ensureMobileFieldAccepted(
         {

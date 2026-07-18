@@ -1,5 +1,6 @@
 import {
   DEFAULT_TEST_EMAIL,
+  defaultTestEmailForBrand,
 } from "./constants";
 
 /** Address + identity bundle for registration forms — varies by project market. */
@@ -294,6 +295,32 @@ export function defaultTestPassword(): string {
   );
 }
 
+/** Fresh Gmail plus-alias for this brand — same inbox, unique address so
+ * partial registrations from earlier agent runs don't trip "incorrect"
+ * / already-registered errors on the shared base address. */
+export function freshSignupEmail(brandName: string): string {
+  const base = defaultTestEmailForBrand(brandName);
+  const at = base.indexOf("@");
+  if (at === -1) return `${DEFAULT_TEST_EMAIL.split("@")[0]}+${randomDigits(6)}@${DEFAULT_TEST_EMAIL.split("@")[1]}`;
+  return `${base.slice(0, at)}${randomDigits(4)}${base.slice(at)}`;
+}
+
+/** Bare shared inbox addresses collide across brands and retries — rewrite. */
+export function repairPersonaEmail(
+  persona: SignupPersona,
+  brandName: string
+): SignupPersona {
+  const email = persona.email?.trim() ?? "";
+  if (
+    !email ||
+    email.toLowerCase() === DEFAULT_TEST_EMAIL.toLowerCase() ||
+    !email.includes("+")
+  ) {
+    return { ...persona, email: freshSignupEmail(brandName) };
+  }
+  return persona;
+}
+
 export function buildSignupPersona(opts: {
   market: string;
   brandName: string;
@@ -301,7 +328,6 @@ export function buildSignupPersona(opts: {
 }): SignupPersona {
   const region = personaRegionForMarket(opts.market);
   const base = PERSONA_BY_REGION[region];
-  const email = DEFAULT_TEST_EMAIL;
   const firstName = pick(FIRST_NAMES);
   const lastName = pick(LAST_NAMES);
   const dob = randomDob(region);
@@ -311,7 +337,7 @@ export function buildSignupPersona(opts: {
     lastName,
     username: `${firstName}${lastName}${randomDigits(4)}`.toLowerCase(),
     phone: phoneForRegion(region, base.phone),
-    email,
+    email: freshSignupEmail(opts.brandName),
     dateOfBirth: dob.iso,
     dateOfBirthDisplay: dob.display,
   };
