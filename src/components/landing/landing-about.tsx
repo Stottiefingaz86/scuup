@@ -97,15 +97,15 @@ function AboutUsDialog({
             href={FOUNDER.portfolioUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="group mt-8 flex max-w-xs flex-col gap-3"
+            className="group mt-8 flex max-w-md flex-col gap-3"
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- local founder photo */}
             <img
               src={FOUNDER.photo}
               alt={FOUNDER.name}
-              width={480}
-              height={640}
-              className="aspect-[3/4] w-full rounded-xl object-cover object-top ring-1 ring-border/60 transition-opacity group-hover:opacity-90"
+              width={640}
+              height={400}
+              className="aspect-[16/10] w-full rounded-xl object-cover object-center ring-1 ring-border/60 transition-opacity group-hover:opacity-90"
             />
             <span className="flex flex-col gap-0.5">
               <span className="inline-flex items-center gap-1.5 font-medium text-foreground transition-colors group-hover:text-brand">
