@@ -57,7 +57,7 @@ async function fillRegistrationStep(
   vars: Record<string, string>
 ): Promise<void> {
   await stagehand.act(
-    `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. For UK or Irish mobile fields type %phone% exactly (digits only, no spaces, no +44/+353). Tick age-verification or terms checkboxes if required and visible. Only fill empty fields — do not submit yet.`,
+    `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each with %dateOfBirthDay%, %dateOfBirthMonth%, %dateOfBirthYear%. For UK or Irish mobile fields type %phone% exactly (digits only, no spaces, no +44/+353). Tick age-verification or terms checkboxes if required and visible. Only fill empty fields — do not submit yet.`,
     { variables: vars }
   );
 }

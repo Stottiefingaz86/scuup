@@ -1835,6 +1835,103 @@ async function ensureEmailPasswordAccepted(
   return { email, passwordFilled };
 }
 
+/** Fill split DD / MM / YYYY (or a single DOB field) so Tombola-style
+ * personal-details steps are never left blank. */
+async function ensureDobFieldsFilled(
+  page: {
+    evaluate: (expr: string) => Promise<unknown>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  vars: Record<string, string>,
+  trail: string[]
+): Promise<boolean> {
+  const day = vars.dateOfBirthDay ?? "15";
+  const month = vars.dateOfBirthMonth ?? "03";
+  const year = vars.dateOfBirthYear ?? "1986";
+  const display = vars.dateOfBirthDisplay ?? `${day}/${month}/${year}`;
+  const script = `(() => {
+    ${FORM_FIELD_HELPERS}
+    const day = ${JSON.stringify(day)};
+    const month = ${JSON.stringify(month)};
+    const year = ${JSON.stringify(year)};
+    const display = ${JSON.stringify(display)};
+    const proto = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    );
+    const setVal = (el, v) => {
+      el.focus();
+      if (proto && proto.set) proto.set.call(el, v);
+      else el.value = v;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: v, inputType: "insertText" }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("blur", { bubbles: true }));
+    };
+    const inputs = [...document.querySelectorAll("input, select, textarea")].filter(visible);
+    const byPh = (re) =>
+      inputs.find((el) => re.test(el.getAttribute("placeholder") || ""));
+    const byMeta = (re) =>
+      inputs.find((el) => {
+        const meta = [
+          el.getAttribute("name") || "",
+          el.getAttribute("id") || "",
+          el.getAttribute("autocomplete") || "",
+          el.getAttribute("aria-label") || "",
+          labelFor(el),
+        ].join(" ");
+        return re.test(meta);
+      });
+    let filled = 0;
+    const dayEl =
+      byPh(/^dd$/i) ||
+      byMeta(/\\b(dob[_-]?day|birth[_-]?day|dayofbirth|dateofbirthday)\\b|^day$/i);
+    const monthEl =
+      byPh(/^mm$/i) ||
+      byMeta(/\\b(dob[_-]?month|birth[_-]?month|monthofbirth|dateofbirthmonth)\\b|^month$/i);
+    const yearEl =
+      byPh(/^yyyy$/i) ||
+      byMeta(/\\b(dob[_-]?year|birth[_-]?year|yearofbirth|dateofbirthyear)\\b|^year$/i);
+    if (dayEl && monthEl && yearEl) {
+      if (dayEl.tagName === "SELECT") dayEl.value = String(Number(day));
+      else setVal(dayEl, day);
+      if (monthEl.tagName === "SELECT") monthEl.value = String(Number(month));
+      else setVal(monthEl, month);
+      if (yearEl.tagName === "SELECT") yearEl.value = year;
+      else setVal(yearEl, year);
+      filled = 3;
+      return { ok: true, mode: "split", filled };
+    }
+    const single =
+      byMeta(/date\\s*of\\s*birth|dob|birthdate|birthday/i) ||
+      inputs.find((el) => (el.getAttribute("type") || "") === "date");
+    if (single) {
+      const type = (single.getAttribute("type") || "").toLowerCase();
+      setVal(single, type === "date" ? year + "-" + month + "-" + day : display);
+      return { ok: true, mode: "single", filled: 1 };
+    }
+    return { ok: false, mode: "none", filled: 0 };
+  })()`;
+  try {
+    const result = (await page.evaluate(script)) as {
+      ok?: boolean;
+      mode?: string;
+      filled?: number;
+    };
+    if (result?.ok) {
+      trail.push(
+        result.mode === "split"
+          ? `filled date of birth as ${day}/${month}/${year} (age ~40)`
+          : `filled date of birth as ${display} (age ~40)`
+      );
+      await page.waitForTimeout(400);
+      return true;
+    }
+  } catch {
+    // Best-effort.
+  }
+  return false;
+}
+
 /** Fill and submit the (possibly multi-step) registration form with the
  * test persona, capturing each step as scoring evidence. Returns true when
  * the walk ended in an authenticated session. */
@@ -1886,7 +1983,7 @@ async function runRegistrationWalk(
     }
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
+        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each box separately with %dateOfBirthDay%, %dateOfBirthMonth%, and %dateOfBirthYear% — do not leave them blank. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
         { variables: activeVars() }
       );
       trail.push(`filled registration step ${step} with the test persona`);
@@ -1911,6 +2008,14 @@ async function runRegistrationWalk(
         brandHint,
         trail,
         timeLeft
+      );
+      await ensureDobFieldsFilled(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        activeVars(),
+        trail
       );
     }
     // Type until the mobile field goes green — same loop a player does when

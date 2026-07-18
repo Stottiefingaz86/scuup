@@ -43,18 +43,27 @@ function randomDigits(n: number): string {
   return Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join("");
 }
 
-function randomDob(region: string): { iso: string; display: string } {
-  const year = 1986 + Math.floor(Math.random() * 12); // 21+ everywhere
-  const month = 1 + Math.floor(Math.random() * 12);
-  const day = 3 + Math.floor(Math.random() * 25);
-  const mm = String(month).padStart(2, "0");
-  const dd = String(day).padStart(2, "0");
+/** Fixed ~40 years old (as of 2026) — UK forms often use separate
+ * DD / MM / YYYY boxes that agents miss when only given a single string. */
+function fortyYearOldDob(region: string): {
+  iso: string;
+  display: string;
+  day: string;
+  month: string;
+  year: string;
+} {
+  const year = "1986";
+  const month = "03";
+  const day = "15";
   return {
-    iso: `${year}-${mm}-${dd}`,
+    iso: `${year}-${month}-${day}`,
     display:
       region === "us" || region === "ca"
-        ? `${mm}/${dd}/${year}`
-        : `${dd}/${mm}/${year}`,
+        ? `${month}/${day}/${year}`
+        : `${day}/${month}/${year}`,
+    day,
+    month,
+    year,
   };
 }
 
@@ -322,7 +331,7 @@ export function buildSignupPersona(opts: {
   const base = PERSONA_BY_REGION[region];
   const firstName = pick(FIRST_NAMES);
   const lastName = pick(LAST_NAMES);
-  const dob = randomDob(region);
+  const dob = fortyYearOldDob(region);
   return {
     ...base,
     firstName,
@@ -341,6 +350,8 @@ export function personaVariables(
   password: string
 ): Record<string, string> {
   const alts = phoneAlternates(persona.phone, persona.country);
+  const iso = persona.dateOfBirth || "1986-03-15";
+  const [year = "1986", month = "03", day = "15"] = iso.split("-");
   return {
     email: persona.email,
     loginId: persona.email,
@@ -353,6 +364,10 @@ export function personaVariables(
     fullName: `${persona.firstName} ${persona.lastName}`,
     dateOfBirth: persona.dateOfBirth,
     dateOfBirthDisplay: persona.dateOfBirthDisplay,
+    // Split parts for UK-style DD / MM / YYYY fields (Tombola etc.).
+    dateOfBirthDay: day,
+    dateOfBirthMonth: month,
+    dateOfBirthYear: year,
     phone: persona.phone,
     // First alternate for a quick retry without regenerating the persona.
     phoneAlt: alts[0] ?? persona.phone,
