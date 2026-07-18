@@ -58,25 +58,29 @@ function randomDob(region: string): { iso: string; display: string } {
   };
 }
 
-/** UK mobiles operators expect the national form (07…). Avoid Ofcom's
- * drama range 07700 900xxx and +44-with-spaces — both fail Tombola-class
- * validators even though they look "internationally correct". */
-function formatUkMobile(): string {
-  // Common valid-looking UK mobile prefixes (07 + 3 digits + 6 digits).
+/** UK mobiles — national digits only (07XXXXXXXXX). Spaced forms and +44
+ * prefixes both fail Tombola-class validators; Ofcom's drama range
+ * 07700 900xxx is also rejected. Prefer TEST_UK_MOBILE when set (real
+ * numbers may be required if the operator does a live line check). */
+export function formatUkMobile(): string {
+  const fromEnv = process.env.TEST_UK_MOBILE?.replace(/\D/g, "");
+  if (fromEnv && /^07\d{9}$/.test(fromEnv)) return fromEnv;
+  // Allocated-looking mobile stems (avoid 070 personal / 07700900 drama).
   const prefixes = [
-    "7400", "7411", "7422", "7433", "7444", "7455", "7466", "7477", "7488", "7499",
-    "7500", "7511", "7522", "7533", "7544", "7555", "7566", "7577", "7588", "7599",
-    "7701", "7711", "7722", "7733", "7744", "7755", "7766", "7777", "7788", "7799",
-    "7800", "7811", "7822", "7833", "7844", "7855", "7866", "7877", "7888", "7899",
-    "7900", "7911", "7922", "7933", "7944", "7955", "7966", "7977", "7988", "7999",
+    "7400", "7415", "7425", "7432", "7455", "7460", "7477", "7485", "7490",
+    "7500", "7515", "7525", "7535", "7540", "7555", "7560", "7575", "7585", "7590",
+    "7701", "7715", "7725", "7735", "7745", "7755", "7760", "7775", "7785", "7790",
+    "7800", "7815", "7825", "7835", "7840", "7855", "7860", "7875", "7885", "7890",
+    "7900", "7915", "7925", "7935", "7940", "7955", "7960", "7975", "7985", "7990",
   ];
-  const body = pick(prefixes) + randomDigits(6); // 10 digits after leading 0
-  return `0${body.slice(0, 4)} ${body.slice(4, 7)} ${body.slice(7)}`;
+  return `0${pick(prefixes)}${randomDigits(6)}`;
 }
 
-function generateIeMobile(): string {
+export function generateIeMobile(): string {
+  const fromEnv = process.env.TEST_IE_MOBILE?.replace(/\D/g, "");
+  if (fromEnv && /^08[35679]\d{7}$/.test(fromEnv)) return fromEnv;
   const third = pick(["3", "5", "6", "7", "9"]);
-  return `08${third} ${randomDigits(3)} ${randomDigits(4)}`;
+  return `08${third}${randomDigits(7)}`;
 }
 
 /** Randomise the trailing digits of a region phone number so each brand
@@ -209,15 +213,18 @@ function phoneForRegion(region: string, template?: string): string {
 }
 
 /** True when a stored UK/IE phone will fail common operator validators
- * (+44 with spaces, Ofcom drama range, missing leading 0). */
+ * (+44, spaces, Ofcom drama range, missing leading 0). */
 export function phoneNeedsRepair(phone: string, country: string): boolean {
   const digits = phone.replace(/\D/g, "");
   if (/united kingdom|uk/i.test(country)) {
-    // Accept national 07XXXXXXXXX (11 digits) only.
-    if (/^07\d{9}$/.test(digits)) return false;
+    // Compact national only — spaced strings still "look" valid but trip
+    // validators that don't strip whitespace before the regex.
+    if (phone !== digits) return true;
+    if (/^07\d{9}$/.test(digits) && !/^07700900/.test(digits)) return false;
     return true;
   }
   if (/ireland/i.test(country)) {
+    if (phone !== digits) return true;
     if (/^08[35679]\d{7}$/.test(digits)) return false;
     return true;
   }
@@ -236,7 +243,8 @@ export function repairPersonaPhone(persona: SignupPersona): SignupPersona {
   return persona;
 }
 
-/** Alternate phone spellings to try when a form rejects the primary. */
+/** Alternate phone spellings to try when a form rejects the primary.
+ * Order matters: compact national first, then common display masks. */
 export function phoneAlternates(phone: string, country: string): string[] {
   const digits = phone.replace(/\D/g, "");
   const alts: string[] = [];
@@ -245,17 +253,22 @@ export function phoneAlternates(phone: string, country: string): string[] {
   };
 
   if (/united kingdom|uk/i.test(country)) {
-    // National compact / spaced, then E.164.
     let national = digits;
     if (digits.startsWith("44") && digits.length === 12) {
       national = `0${digits.slice(2)}`;
     }
     if (national.startsWith("07") && national.length === 11) {
       push(national);
-      push(`${national.slice(0, 5)} ${national.slice(5, 8)} ${national.slice(8)}`);
+      // Common display masks players might guess from the error copy.
+      push(`${national.slice(0, 5)} ${national.slice(5)}`);
+      push(
+        `${national.slice(0, 5)} ${national.slice(5, 8)} ${national.slice(8)}`
+      );
+      push(national.slice(1)); // without leading 0 (country code already selected)
       push(`+44${national.slice(1)}`);
-      push(`+44 ${national.slice(1, 5)} ${national.slice(5, 8)} ${national.slice(8)}`);
     }
+    // Fresh number if this one may have failed a live line check.
+    push(formatUkMobile());
   } else if (/ireland/i.test(country)) {
     let national = digits;
     if (digits.startsWith("353") && digits.length >= 12) {
@@ -264,8 +277,10 @@ export function phoneAlternates(phone: string, country: string): string[] {
     if (national.startsWith("08") && national.length === 10) {
       push(national);
       push(`${national.slice(0, 3)} ${national.slice(3, 6)} ${national.slice(6)}`);
+      push(national.slice(1));
       push(`+353${national.slice(1)}`);
     }
+    push(generateIeMobile());
   }
 
   return alts;

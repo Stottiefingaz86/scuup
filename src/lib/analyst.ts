@@ -68,6 +68,10 @@ export interface JourneyAnalysis extends AnalysisResult {
   /** True when this visit was scored while logged in — what the agent
    * actually observed, not what the journey type implies. */
   loggedIn?: boolean;
+  /** Index into screenshots where mobile-viewport frames start. */
+  mobileFrom?: number | null;
+  /** Agent navigation / fill trail for scoring context and debugging. */
+  trail?: string[];
 }
 
 interface PlaybookStep {
@@ -741,7 +745,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   landing:
     "This is the brand's landing/home experience. Judge first impressions: value proposition clarity, trust signals (licence, responsible gambling), CTA prominence, visual hierarchy, perceived speed — and above all, focus.",
   signup:
-    "This is the registration flow. If the agent's trail shows it filled and submitted the form with a test persona, judge the WHOLE flow it walked: number of steps and fields, progressive disclosure, inline validation quality, error recovery, social/fast sign-up options, verification friction (email/SMS walls), and what the post-submit state communicates. If the trail only shows the opened form, judge visible friction: field count, clarity of requirements, trust cues near the form.",
+    "This is the registration flow. If the agent's trail shows it filled and submitted the form with a test persona, judge the WHOLE flow it walked: number of steps and fields, progressive disclosure, inline validation quality, error recovery, social/fast sign-up options, verification friction (email/SMS walls), and what the post-submit state communicates. If the trail only shows the opened form, judge visible friction: field count, clarity of requirements, trust cues near the form. MOBILE NUMBER UX (critical when visible): if screenshots or the trail show a 'valid UK or Irish mobile' (or similar) error, judge whether the field made the expected format obvious BEFORE failure — placeholder (e.g. 07XXX XXXXXX), helper text, country selector, or auto-format. A bare red error with no format example is a Form effort / Verification friction miss; call it out in observations and name the missing hint. Spaces vs digits-only ambiguity counts as unclear formatting.",
   deposit:
     "This is the deposit flow. Judge trust and speed: payment method breadth, fee/limit transparency, expected crediting times, security cues, number of steps to complete.",
   withdraw:
@@ -991,7 +995,13 @@ Journey: ${journey}. ${guidance}
 
 Page title: "${pageTitle}". Final URL: ${finalUrl}.${
     trail.length
-      ? `\n\nAn autonomous agent navigated here from the homepage by: ${trail.join("; then ")}. Factor in how discoverable this area was — if it took obscure steps to find, that itself is a CX finding.`
+      ? `\n\nAn autonomous agent navigated here from the homepage by: ${trail.join("; then ")}. Factor in how discoverable this area was — if it took obscure steps to find, that itself is a CX finding.${
+          /mobile number rejected|mobile validation|set mobile field/i.test(
+            trail.join(" ")
+          )
+            ? " The trail shows mobile-number validation friction — in observations, explicitly judge whether the field showed the expected format (placeholder, helper text, country selector) before the error, and score Form effort lower when the only feedback is a bare 'valid UK or Irish mobile' message with no format example."
+            : ""
+        }`
       : ""
   }
 
@@ -1495,6 +1505,79 @@ async function phoneValidationVisible(page: {
   }
 }
 
+/** Set the mobile/phone field via the DOM — more reliable than Stagehand
+ * when the field already has a rejected value (act often skips non-empty
+ * fields, and spaced numbers need a hard replace). */
+async function setMobileFieldViaDom(
+  page: { evaluate: (expr: string) => Promise<unknown> },
+  phone: string
+): Promise<boolean> {
+  const script = `(() => {
+    const want = ${JSON.stringify(phone)};
+    const PHONE_RE = /mobile|phone|tel|cell|handset/i;
+    function visible(el) {
+      if (!(el instanceof HTMLElement)) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4) return false;
+      const s = getComputedStyle(el);
+      return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
+    }
+    function labelFor(el) {
+      const id = el.getAttribute("id");
+      if (id) {
+        const lab = document.querySelector('label[for="' + CSS.escape(id) + '"]');
+        if (lab) return lab.textContent || "";
+      }
+      const wrap = el.closest("label, [class*='field' i], [class*='input' i], form, div");
+      return wrap ? wrap.textContent || "" : "";
+    }
+    const inputs = [...document.querySelectorAll("input, textarea")];
+    let target = null;
+    for (const el of inputs) {
+      if (!visible(el)) continue;
+      const type = (el.getAttribute("type") || "text").toLowerCase();
+      if (type === "hidden" || type === "password" || type === "email") continue;
+      const meta = [
+        type,
+        el.getAttribute("name") || "",
+        el.getAttribute("id") || "",
+        el.getAttribute("autocomplete") || "",
+        el.getAttribute("placeholder") || "",
+        el.getAttribute("aria-label") || "",
+        labelFor(el),
+      ].join(" ");
+      if (type === "tel" || PHONE_RE.test(meta)) {
+        target = el;
+        break;
+      }
+    }
+    if (!target) return { ok: false };
+    const proto = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    );
+    target.focus();
+    if (proto && proto.set) proto.set.call(target, "");
+    else target.value = "";
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    if (proto && proto.set) proto.set.call(target, want);
+    else target.value = want;
+    for (const ev of ["input", "change", "blur", "keyup"]) {
+      target.dispatchEvent(new Event(ev, { bubbles: true }));
+    }
+    return { ok: true, value: String(target.value || "") };
+  })()`;
+  try {
+    const result = (await page.evaluate(script)) as {
+      ok?: boolean;
+      value?: string;
+    };
+    return Boolean(result?.ok);
+  } catch {
+    return false;
+  }
+}
+
 /** Fill and submit the (possibly multi-step) registration form with the
  * test persona, capturing each step as scoring evidence. Returns true when
  * the walk ended in an authenticated session. */
@@ -1524,8 +1607,8 @@ async function runRegistrationWalk(
     "click Continue or Next if this is a multi-step form and not the final screen",
   ];
 
-  // UK/IE forms often reject +44… and want national 07… / 08… — try those
-  // spellings when the primary phone trips a validation error.
+  // UK/IE forms often reject spaced / +44 numbers — try compact national
+  // first, then display masks, then a fresh number.
   const phoneCandidates = [
     vars.phone,
     vars.phoneAlt,
@@ -1537,6 +1620,32 @@ async function runRegistrationWalk(
     phone: phoneCandidates[phoneIndex] ?? vars.phone,
   });
 
+  const rewritePhone = async (reason: string): Promise<boolean> => {
+    const pageEval = page.evaluate;
+    if (!pageEval || phoneIndex >= phoneCandidates.length - 1) return false;
+    if (!(await phoneValidationVisible({ evaluate: pageEval }))) return false;
+    phoneIndex += 1;
+    const nextPhone = phoneCandidates[phoneIndex]!;
+    trail.push(`${reason} — retrying as ${nextPhone}`);
+    const viaDom = await setMobileFieldViaDom(
+      { evaluate: pageEval },
+      nextPhone
+    );
+    if (!viaDom) {
+      try {
+        await stagehand.act(
+          "clear the mobile or phone number field completely and type %phone% as digits only with no spaces, replacing any existing value",
+          { variables: { phone: nextPhone } }
+        );
+      } catch {
+        return false;
+      }
+    }
+    await page.waitForTimeout(600);
+    shots.push(await capture());
+    return true;
+  };
+
   for (let step = 1; step <= 4; step++) {
     if (timeLeft() < 50_000) {
       trail.push(
@@ -1546,7 +1655,7 @@ async function runRegistrationWalk(
     }
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. For UK or Irish mobile fields prefer the national format already in %phone% (starting 07 or 08) — do not add a +44 or +353 prefix. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
+        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
         { variables: activeVars() }
       );
       trail.push(`filled registration step ${step} with the test persona`);
@@ -1555,33 +1664,23 @@ async function runRegistrationWalk(
         `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
       );
     }
+    // Hard-set the phone after Stagehand — empty-field fills and auto-masks
+    // often leave a spaced or partial value that the site then rejects.
+    if (page.evaluate && activeVars().phone) {
+      const set = await setMobileFieldViaDom(
+        { evaluate: page.evaluate },
+        activeVars().phone!
+      );
+      if (set) {
+        trail.push(
+          `set mobile field via DOM to ${activeVars().phone}`
+        );
+      }
+    }
     await page.waitForTimeout(800);
     shots.push(await capture());
 
-    // If the form is already screaming about the mobile number, rewrite it
-    // before we burn a Continue click on a disabled button.
-    const pageEval = page.evaluate;
-    if (
-      pageEval &&
-      phoneIndex < phoneCandidates.length - 1 &&
-      (await phoneValidationVisible({ evaluate: pageEval }))
-    ) {
-      phoneIndex += 1;
-      const nextPhone = phoneCandidates[phoneIndex]!;
-      trail.push(
-        `mobile number rejected — retrying as ${nextPhone}`
-      );
-      try {
-        await stagehand.act(
-          "clear the mobile or phone number field completely and type %phone% into it, replacing any existing value",
-          { variables: { phone: nextPhone } }
-        );
-        await page.waitForTimeout(600);
-        shots.push(await capture());
-      } catch {
-        // Continue with whatever is in the field.
-      }
-    }
+    await rewritePhone("mobile number rejected");
 
     try {
       await stagehand.act(
@@ -1612,38 +1711,22 @@ async function runRegistrationWalk(
     // and re-attempt this same step once.
     if (
       !submitted &&
-      pageEval &&
-      phoneIndex < phoneCandidates.length - 1 &&
-      (await phoneValidationVisible({ evaluate: pageEval }))
+      (await rewritePhone("Continue blocked by mobile validation"))
     ) {
-      phoneIndex += 1;
-      const nextPhone = phoneCandidates[phoneIndex]!;
-      trail.push(
-        `Continue blocked by mobile validation — rewriting phone to ${nextPhone} and retrying this step`
-      );
-      try {
-        await stagehand.act(
-          "clear the mobile or phone number field completely and type %phone% into it, replacing any existing value",
-          { variables: { phone: nextPhone } }
-        );
-        await page.waitForTimeout(600);
-        for (const phrasing of SUBMIT_PHRASINGS) {
-          try {
-            const result = await stagehand.act(phrasing);
-            if (result.success) {
-              submitted = true;
-              trail.push(`registration step ${step} retried: ${phrasing}`);
-              break;
-            }
-          } catch {
-            // Try the next phrasing.
+      for (const phrasing of SUBMIT_PHRASINGS) {
+        try {
+          const result = await stagehand.act(phrasing);
+          if (result.success) {
+            submitted = true;
+            trail.push(`registration step ${step} retried: ${phrasing}`);
+            break;
           }
+        } catch {
+          // Try the next phrasing.
         }
-        await page.waitForTimeout(4000);
-        shots.push(await capture());
-      } catch {
-        // Fall through.
       }
+      await page.waitForTimeout(4000);
+      shots.push(await capture());
     }
 
     if (await agentIsLoggedIn(stagehand)) {
@@ -2275,6 +2358,7 @@ async function analyzeWithAgent(
       // mobileFrom 0 = every shot is a phone capture (mobile-only report).
       ...(hasMobile ? { mobileFrom } : device === "mobile" ? { mobileFrom: 0 } : {}),
       finalUrl,
+      trail: trail.length ? trail : undefined,
       ...(authenticated !== undefined ? { authenticated } : {}),
       // What the session actually was: pre-walk login, a registration that
       // ended authenticated, or a verified gated-journey session.
@@ -2522,6 +2606,7 @@ async function walkPlaybookAndScore(
     screenshots,
     ...(hasMobile ? { mobileFrom } : device === "mobile" ? { mobileFrom: 0 } : {}),
     finalUrl,
+    trail: trail.length ? trail : undefined,
     // Chained walks only run inside the authenticated session from signup.
     loggedIn: true,
   };

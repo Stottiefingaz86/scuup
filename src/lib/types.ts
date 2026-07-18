@@ -160,6 +160,9 @@ export interface JourneyAnalysis {
   /** True when this specific visit was scored while logged in — set from
    * what the agent actually observed, not the journey type. */
   loggedIn?: boolean;
+  /** Agent navigation / fill trail — what the walk actually did. Used for
+   * scoring context and debugging (e.g. mobile number retries). */
+  trail?: string[];
   finalUrl: string;
 }
 
