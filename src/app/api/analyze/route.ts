@@ -195,6 +195,29 @@ export async function POST(request: NextRequest) {
       tags: { route: "analyze", journey },
       extra: { url, brandId, userId },
     });
+    // Last resort: the report must never show "nothing" for this area.
+    // Persist a blocked row carrying the error so the journeys page shows
+    // what happened and offers a retry. (upsertAnalysis keeps a previous
+    // good result instead when this is a re-run.)
+    if (brandId) {
+      const fallback: JourneyAnalysis = {
+        area: journey,
+        analysedAt: new Date().toISOString(),
+        score: 0,
+        blocked: true,
+        blockReason: `The run failed before it could finish (${message}). Retry the run, or take control to walk this area yourself.`,
+        summary: "",
+        heuristics: [],
+        observations: [],
+        features: [],
+        screenshots: [],
+        finalUrl: url,
+      };
+      const published = await upsertAnalysis(brandId, fallback).catch(
+        () => null
+      );
+      if (published) return NextResponse.json(published);
+    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

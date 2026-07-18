@@ -456,6 +456,14 @@ export async function upsertAnalysis(
   let toSave = analysis;
   try {
     const prev = await getAnalysis(brandId, analysis.area);
+    // A failed re-run never replaces a good result — the previous scored
+    // analysis stays published, the blocked attempt is only logged.
+    if (analysis.blocked && prev && !prev.blocked) {
+      console.error(
+        `[analysis] ${analysis.area} re-run blocked (${analysis.blockReason}); keeping the previous scored result`
+      );
+      return prev;
+    }
     const { applyScoreGuardrail } = await import("./score-guardrail");
     toSave = applyScoreGuardrail(analysis, prev);
   } catch (e) {
@@ -468,7 +476,17 @@ export async function upsertAnalysis(
     data: toSave,
     analysed_at: toSave.analysedAt,
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    // 23503: the report (and its brands) was deleted while this run was
+    // in flight — there is nowhere to save to and nothing to fix.
+    if (error.code === "23503") {
+      console.error(
+        `[analysis] ${analysis.area} finished after its report was deleted — result discarded`
+      );
+      return toSave;
+    }
+    throw new Error(error.message);
+  }
   if (!toSave.blocked) {
     await recordScoreHistory(
       brandId,

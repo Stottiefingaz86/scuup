@@ -67,7 +67,8 @@ async function attemptLogin(
   loginId: string,
   password: string,
   isRetry: boolean,
-  trail?: string[]
+  trail?: string[],
+  deadlineAt?: number
 ): Promise<"success" | "rejected" | "failed"> {
   if (!isRetry) {
     const open = await stagehand.act(
@@ -104,6 +105,10 @@ async function attemptLogin(
       trail?.push(`site rejected the credentials for ${loginId}`);
       return "rejected";
     }
+    if (deadlineAt && Date.now() > deadlineAt) {
+      trail?.push("login attempt stopped — time budget for login reached");
+      return "failed";
+    }
   }
   return "failed";
 }
@@ -119,10 +124,14 @@ export async function performAgentLogin(
     shots?: string[];
     capture?: () => Promise<string>;
     dismissCookies?: boolean;
+    /** Hard wall-clock stop for the whole login attempt — the caller's run
+     * budget matters more than authenticating at any cost. */
+    deadlineAt?: number;
   }
 ): Promise<boolean> {
   const candidates = loginIdCandidates(creds);
   if (candidates.length === 0 || !creds.password) return false;
+  if (opts?.deadlineAt && Date.now() > opts.deadlineAt) return false;
 
   const trail = opts?.trail;
   const shots = opts?.shots;
@@ -140,13 +149,18 @@ export async function performAgentLogin(
     // At most 2 candidates keeps the worst case inside the run budget.
     const tryIds = candidates.slice(0, 2);
     for (let c = 0; c < tryIds.length; c++) {
+      if (c > 0 && opts?.deadlineAt && Date.now() > opts.deadlineAt) {
+        trail?.push("no time left for another login attempt");
+        break;
+      }
       const outcome = await attemptLogin(
         stagehand,
         page,
         tryIds[c],
         creds.password,
         c > 0,
-        trail
+        trail,
+        opts?.deadlineAt
       );
       if (outcome === "success") {
         trail?.push("authenticated with stored test credentials");

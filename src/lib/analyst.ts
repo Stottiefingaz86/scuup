@@ -267,6 +267,17 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   ],
 };
 
+/** Wall-clock budget for one agent walk. Vercel kills the whole function
+ * at maxDuration (300s on Hobby) and every screenshot captured dies with
+ * it — the walk must stop itself early, score what it has, and return
+ * inside the limit. The gap after the budget covers scoring + persisting. */
+const RUN_BUDGET_MS = 185_000;
+
+/** The most wall-clock time a pre-walk login attempt may take — public
+ * journeys must fall back to a logged-out walk quickly instead of burning
+ * the whole budget on authentication. */
+const LOGIN_BUDGET_MS = 100_000;
+
 /** Journeys where we scroll the full page — lobby footers hide live feeds,
  * jackpots, leaderboards and provider rows below the fold. */
 const DEEP_SCROLL_JOURNEYS = new Set([
@@ -1250,7 +1261,8 @@ async function runRegistrationWalk(
   vars: Record<string, string>,
   trail: string[],
   shots: string[],
-  capture: () => Promise<string>
+  capture: () => Promise<string>,
+  timeLeft: () => number = () => Number.MAX_SAFE_INTEGER
 ): Promise<boolean> {
   // Verification emails triggered anywhere in this walk arrive after this
   // moment (small buffer for clock skew between us and Gmail).
@@ -1262,6 +1274,12 @@ async function runRegistrationWalk(
   ];
 
   for (let step = 1; step <= 4; step++) {
+    if (timeLeft() < 50_000) {
+      trail.push(
+        `stopped the registration walk at step ${step} — run time budget reached`
+      );
+      break;
+    }
     try {
       await stagehand.act(
         `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
@@ -1315,17 +1333,22 @@ async function runRegistrationWalk(
 
   // "Verify your email" walls are the most common reason a submitted
   // registration doesn't end authenticated. The agent owns the inbox —
-  // fetch the code or link and finish verification in this session.
-  const firstVerify = await completeEmailVerification(
-    stagehand,
-    page,
-    vars.email ?? "",
-    siteUrl,
-    walkStart,
-    trail,
-    shots,
-    capture
-  );
+  // fetch the code or link and finish verification in this session. The
+  // inbox wait shrinks to whatever budget remains after saving headroom.
+  const firstVerifyBudget = Math.min(75_000, timeLeft() - 45_000);
+  const firstVerify =
+    firstVerifyBudget > 10_000 &&
+    (await completeEmailVerification(
+      stagehand,
+      page,
+      vars.email ?? "",
+      siteUrl,
+      walkStart,
+      trail,
+      shots,
+      capture,
+      firstVerifyBudget
+    ));
   if (firstVerify) {
     await page.waitForTimeout(4000);
     if (await agentIsLoggedIn(stagehand)) {
@@ -1337,11 +1360,25 @@ async function runRegistrationWalk(
   // (e.g. a login-triggered OTP) — never re-consume the signup email.
   const afterFirstVerify = new Date(Date.now() - 10_000);
 
-  if (await performAgentLogin(stagehand, page, {
-    email: vars.email,
-    username: vars.username,
-    password: vars.password,
-  }, { trail, shots, capture, dismissCookies: false })) {
+  if (
+    timeLeft() > 60_000 &&
+    (await performAgentLogin(
+      stagehand,
+      page,
+      {
+        email: vars.email,
+        username: vars.username,
+        password: vars.password,
+      },
+      {
+        trail,
+        shots,
+        capture,
+        dismissCookies: false,
+        deadlineAt: Date.now() + Math.max(0, timeLeft() - 45_000),
+      }
+    ))
+  ) {
     return true;
   }
 
@@ -1354,7 +1391,8 @@ async function runRegistrationWalk(
   // The login attempt itself can trip an OTP check — give the inbox one
   // short chance for a login-triggered code before giving up.
   if (
-    await completeEmailVerification(
+    timeLeft() > 55_000 &&
+    (await completeEmailVerification(
       stagehand,
       page,
       vars.email ?? "",
@@ -1364,7 +1402,7 @@ async function runRegistrationWalk(
       shots,
       capture,
       40_000
-    )
+    ))
   ) {
     await page.waitForTimeout(4000);
     if (await agentIsLoggedIn(stagehand)) {
@@ -1389,7 +1427,8 @@ async function tryAgentLogin(
   vars: Record<string, string>,
   trail: string[],
   shots: string[],
-  capture: () => Promise<string>
+  capture: () => Promise<string>,
+  deadlineAt?: number
 ): Promise<boolean> {
   return performAgentLogin(
     stagehand,
@@ -1399,7 +1438,7 @@ async function tryAgentLogin(
       username: vars.username,
       password: vars.password,
     },
-    { trail, shots, capture }
+    { trail, shots, capture, deadlineAt }
   );
 }
 
@@ -1416,6 +1455,12 @@ async function analyzeWithAgent(
   loginVars?: Record<string, string> | null,
   _accountExists?: boolean
 ): Promise<JourneyAnalysis & { chainedAnalyses?: JourneyAnalysis[] }> {
+  // The serverless platform kills this function at maxDuration and all
+  // evidence dies with it. Track the remaining budget from before session
+  // creation (its rate-limit retries count too) and stop the walk early —
+  // a scored partial walk beats a silent kill every time.
+  const deadline = Date.now() + RUN_BUDGET_MS;
+  const timeLeft = () => deadline - Date.now();
   // Session creation hits Browserbase's 5-per-minute burst limit when many
   // journeys launch together — retry with a fresh instance on 429.
   const stagehand = await withSessionRetry(async () => {
@@ -1477,6 +1522,16 @@ async function analyzeWithAgent(
       // registration form, so it never pre-authenticates.
       const shouldLogin = !sessionLoggedIn && loginVars != null && !isSignup;
       if (shouldLogin) {
+        // Login is capped: public journeys must fall back to a logged-out
+        // walk with plenty of budget left, not authenticate at any cost.
+        // Login-gated journeys get more room — without a session they have
+        // nothing to score anyway.
+        const loginDeadline =
+          Date.now() +
+          Math.min(
+            isLoginJourney ? LOGIN_BUDGET_MS + 40_000 : LOGIN_BUDGET_MS,
+            Math.max(0, timeLeft() - 60_000)
+          );
         // Login shots stay out of the evidence for public journeys — a
         // login modal with a red error box is not casino lobby evidence.
         const loginShots: string[] = [];
@@ -1486,8 +1541,12 @@ async function analyzeWithAgent(
           loginVars!,
           trail,
           isLoginJourney || isSignup ? shots : loginShots,
-          capture
+          capture,
+          loginDeadline
         );
+        if (!sessionLoggedIn && !isLoginJourney) {
+          trail.push("continuing the walk logged out");
+        }
         // Whether login worked or not, restart from a clean homepage so the
         // playbook walks the product the way a player would — not from a
         // login-error modal or wherever authentication dropped us.
@@ -1549,6 +1608,31 @@ async function analyzeWithAgent(
     const navHint = await getNavHint(url, journey);
 
     for (const [stepIndex, step] of playbook.entries()) {
+      // Out of time: stop walking and publish what exists. A required step
+      // we never reached means the area wasn't captured — return blocked
+      // WITH the evidence so the report shows exactly how far the agent got.
+      if (timeLeft() < 35_000) {
+        if (step.required) {
+          trail.push("run time budget exhausted before reaching this area");
+          const screenshots = await persistShots([...shots, await capture()]);
+          return {
+            area: journey,
+            analysedAt: new Date().toISOString(),
+            score: 0,
+            blocked: true,
+            blockReason:
+              "The run hit its time limit before the agent reached this area. The screenshots show how far it got — retry the run; revisits are faster because the agent remembers the route.",
+            summary: "",
+            heuristics: [],
+            observations: [],
+            features: [],
+            screenshots,
+            finalUrl: page.url(),
+          };
+        }
+        trail.push("skipped the remaining optional steps — run time budget reached");
+        break;
+      }
       let ok = false;
       let message = "";
       const isNavStep = stepIndex === 0 && Boolean(step.verify);
@@ -1585,6 +1669,7 @@ async function analyzeWithAgent(
       ];
       for (const phrasing of phrasings) {
         if (ok) break;
+        if (timeLeft() < 35_000) break;
         try {
           const result = await stagehand.act(phrasing);
           ok = result.success;
@@ -1607,6 +1692,7 @@ async function analyzeWithAgent(
       // agent can't find the nav entry (mega-menus, icon-only navs).
       if (!ok && step.fallbackPaths?.length) {
         for (const path of step.fallbackPaths) {
+          if (timeLeft() < 30_000) break;
           try {
             await page.goto(new URL(path, url).toString(), {
               waitUntil: "domcontentloaded",
@@ -1691,7 +1777,8 @@ async function analyzeWithAgent(
         signupVars,
         trail,
         shots,
-        capture
+        capture,
+        timeLeft
       );
     }
 
@@ -1740,8 +1827,14 @@ async function analyzeWithAgent(
 
     // Mobile-first pass: re-capture the final page at a phone viewport in
     // the same session, so scoring reflects where ~80% of players are.
+    // Skipped when the budget is nearly spent — desktop evidence that gets
+    // saved beats mobile evidence that dies with a killed function.
     const mobileFrom = shots.length;
-    shots.push(...(await captureMobileShots(page, capture)));
+    if (timeLeft() > 40_000) {
+      shots.push(...(await captureMobileShots(page, capture)));
+    } else {
+      trail.push("skipped the mobile pass — run time budget reached");
+    }
     const hasMobile = shots.length > mobileFrom;
 
     const [result, screenshots] = await Promise.all([
@@ -1782,6 +1875,12 @@ async function analyzeWithAgent(
       for (const loginJourney of chainLoginJourneys) {
         const loginPlaybook = LOGIN_PLAYBOOKS[loginJourney];
         if (!loginPlaybook) continue;
+        if (timeLeft() < 90_000) {
+          trail.push(
+            `skipped the chained ${loginJourney} walk — not enough time left in this run; it runs as its own request instead`
+          );
+          break;
+        }
         try {
           await page
             .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 25000 })
