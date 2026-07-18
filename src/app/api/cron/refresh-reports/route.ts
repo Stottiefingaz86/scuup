@@ -23,7 +23,7 @@ import { buildVocAnalysis, scrapeTrustpilot } from "@/lib/voc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /**
  * Monthly report refresh — keeps paying customers' active reports living.

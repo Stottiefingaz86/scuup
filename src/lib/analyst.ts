@@ -496,13 +496,13 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
 };
 
 /** Wall-clock budget for one agent walk. Soft-stop must stay under the
- * platform kill (Vercel maxDuration). Default assumes Hobby 300s; after
- * upgrading, set ANALYZE_BUDGET_MS=520000 and raise analyze maxDuration. */
-const RUN_BUDGET_MS = Number(process.env.ANALYZE_BUDGET_MS) || 185_000;
+ * platform kill (analyze maxDuration = 800s on Pro). Leave ~150s for
+ * scoring + screenshot persist so evidence is never lost to a hard kill. */
+const RUN_BUDGET_MS = Number(process.env.ANALYZE_BUDGET_MS) || 650_000;
 
-/** The most wall-clock time a pre-walk login attempt may take — only used
- * for deposit/withdraw/account walks that cannot score without a session. */
-const LOGIN_BUDGET_MS = 80_000;
+/** Pre-walk login for deposit/withdraw/account only — public journeys skip
+ * auth entirely so casino/bingo never burn this budget. */
+const LOGIN_BUDGET_MS = 120_000;
 
 /** Journeys where we scroll the full page — lobby footers hide live feeds,
  * jackpots, leaderboards and provider rows below the fold. */
@@ -2362,16 +2362,31 @@ async function analyzeWithAgent(
             }
             continue;
           }
-          if (DISCOVERY_SCORED_JOURNEYS.has(journey)) {
+          // Never publish a bare "Blocked" time-out for public product or
+          // signup walks when we already have evidence — score what the
+          // player would see instead.
+          if (
+            DISCOVERY_SCORED_JOURNEYS.has(journey) ||
+            (journey === "signup" && shots.length > 0)
+          ) {
             discoveryFailure =
-              "run time budget exhausted before confirming this area";
+              journey === "signup"
+                ? "registration walk ran out of time before completion"
+                : "run time budget exhausted before confirming this area";
             trail.push(
-              `couldn't confirm the ${journey} area before the time budget — scoring discoverability from what is visible`
+              journey === "signup"
+                ? "registration incomplete before the time budget — scoring the form UX captured so far"
+                : `couldn't confirm the ${journey} area before the time budget — scoring discoverability from what is visible`
             );
-            await page
-              .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 15000 })
-              .catch(() => {});
-            await preparePageAfterNavigation(page, stagehand);
+            if (DISCOVERY_SCORED_JOURNEYS.has(journey)) {
+              await page
+                .goto(url, {
+                  waitUntil: "domcontentloaded",
+                  timeoutMs: 15000,
+                })
+                .catch(() => {});
+              await preparePageAfterNavigation(page, stagehand);
+            }
             shots.push(await capture());
             break;
           }

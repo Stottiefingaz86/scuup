@@ -27,8 +27,8 @@ import type { DeviceMode, JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Soft-stop budget is ANALYZE_BUDGET_MS (default 185s for Hobby 300s).
-// After upgrading Vercel, set maxDuration to 800 and ANALYZE_BUDGET_MS=520000.
+// Pro plan: 800s platform ceiling. Soft-stop is RUN_BUDGET_MS (~650s) so
+// scoring always finishes before Vercel kills the function.
 export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
