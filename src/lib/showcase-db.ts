@@ -7,6 +7,7 @@ import {
   monthKey,
   prevMonthKey,
   rowToEntry,
+  type GlobalRank,
   type ShowcaseEntry,
   type ShowcaseSnapshotRow,
 } from "./showcase";
@@ -237,6 +238,89 @@ export async function buildShowcaseEntries(opts?: {
   });
 
   return { entries: merged, markets: meta.markets, months: meta.months };
+}
+
+export type { GlobalRank } from "./showcase";
+
+/** Latest CX score per brand across the whole corpus (all markets/months). */
+async function latestScoresByBrand(opts?: {
+  market?: string;
+}): Promise<{ slug: string; name: string; score: number }[]> {
+  let q = supabase()
+    .from("ps_showcase_snapshots")
+    .select("brand_slug, brand_name, cx_score, month, updated_at")
+    .order("month", { ascending: false })
+    .order("updated_at", { ascending: false });
+  if (opts?.market) q = q.eq("market", opts.market);
+
+  const { data, error } = await q;
+  if (error) throw new Error(error.message);
+
+  const seen = new Set<string>();
+  const out: { slug: string; name: string; score: number }[] = [];
+  for (const row of data ?? []) {
+    const slug = (row.brand_slug as string).toLowerCase();
+    if (isShowcaseExcludedBrand(slug) || seen.has(slug)) continue;
+    seen.add(slug);
+    out.push({
+      slug,
+      name: row.brand_name as string,
+      score: row.cx_score as number,
+    });
+  }
+  return out;
+}
+
+function rankInList(
+  score: number,
+  peers: { slug: string; name: string; score: number }[],
+  selfSlug?: string | null
+): Pick<
+  GlobalRank,
+  "rank" | "total" | "percentile" | "leaderScore" | "leaderName"
+> {
+  const slug = selfSlug?.toLowerCase() ?? null;
+  const others = peers.filter((p) => p.slug !== slug);
+  const scores = [...others.map((p) => p.score), score].sort(
+    (a, b) => b - a
+  );
+  const rank = scores.findIndex((s) => s === score) + 1;
+  const total = scores.length;
+  const beaten = scores.filter((s) => s < score).length;
+  const percentile =
+    total <= 1 ? 100 : Math.round((beaten / (total - 1)) * 100);
+
+  const topPeer = [...others].sort((a, b) => b.score - a.score)[0];
+  const selfLeads = !topPeer || score >= topPeer.score;
+  return {
+    rank: rank || total,
+    total,
+    percentile,
+    leaderScore: selfLeads ? score : topPeer.score,
+    leaderName: selfLeads ? null : topPeer.name,
+  };
+}
+
+/** Where a CX score sits among every brand Scuup has scored. */
+export async function globalRankForScore(
+  score: number,
+  opts?: { market?: string; brandSlug?: string }
+): Promise<GlobalRank> {
+  const all = await latestScoresByBrand();
+  const global = rankInList(score, all, opts?.brandSlug);
+
+  let marketRank: number | null = null;
+  let marketTotal: number | null = null;
+  if (opts?.market) {
+    const marketPeers = await latestScoresByBrand({ market: opts.market });
+    if (marketPeers.length >= 2) {
+      const m = rankInList(score, marketPeers, opts.brandSlug);
+      marketRank = m.rank;
+      marketTotal = m.total;
+    }
+  }
+
+  return { ...global, marketRank, marketTotal };
 }
 
 /** Backfill showcase from every completed project (one-time / cron). */

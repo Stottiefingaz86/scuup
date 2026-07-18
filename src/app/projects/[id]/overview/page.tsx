@@ -32,6 +32,7 @@ import { ScoreBar } from "@/components/score-bar";
 import { TierLegend } from "@/components/score-chip";
 import { getCoverage } from "@/lib/coverage";
 import { agentCanReachLoggedIn, LANDING } from "@/lib/constants";
+import { useGlobalRank } from "@/lib/use-global-rank";
 import { overallTrendDelta, useProjectTrends } from "@/lib/use-trends";
 import {
   areaScore,
@@ -56,7 +57,7 @@ function OverviewContent({ project }: { project: Project }) {
     .filter((b): b is { brand: Brand; score: number } => b.score !== null)
     .sort((a, b) => b.score - a.score);
   const ownScore = overallScore(ownBrand);
-  const ownRank =
+  const setRank =
     ownScore === null
       ? null
       : scored.findIndex((s) => s.brand.id === ownBrand.id) + 1;
@@ -64,24 +65,41 @@ function OverviewContent({ project }: { project: Project }) {
   const rankByBrand = Object.fromEntries(
     scored.map((s, i) => [s.brand.id, i + 1])
   );
+  const global = useGlobalRank(ownScore, {
+    market: project.market,
+    brandUrl: ownBrand.url,
+  });
 
   const ownLanding = ownBrand.analyses[LANDING];
 
   const heroStats = [
     {
       label: "Player CX rank",
-      value: ownRank === null ? "N/A" : ordinal(ownRank),
+      value:
+        ownScore === null
+          ? "N/A"
+          : global
+            ? ordinal(global.rank)
+            : setRank === null
+              ? "…"
+              : ordinal(setRank),
       detail:
-        ownRank === null
+        ownScore === null
           ? "no scored analysis yet"
-          : `of ${scored.length} scored brands`,
+          : global
+            ? `of ${global.total} brands scored globally`
+            : scored.length > 1
+              ? `of ${scored.length} in this set`
+              : "ranking against every Scuup report…",
     },
     {
       label: "Player CX Score",
       value: ownScore ?? "N/A",
-      detail: leader
-        ? `leader ${leader.brand.name} at ${leader.score}`
-        : "no brands scored yet",
+      detail: global?.leaderName
+        ? `leader ${global.leaderName} at ${global.leaderScore}`
+        : leader
+          ? `set leader ${leader.brand.name} at ${leader.score}`
+          : "no brands scored yet",
     },
     {
       label: "Data coverage",
@@ -103,7 +121,7 @@ function OverviewContent({ project }: { project: Project }) {
       return {
         headline: (
           <>
-            We couldn&apos;t score your brand yet, 
+            We couldn&apos;t score your brand yet,{" "}
             <span className="text-brand">take over a live session</span> to
             get your baseline.
           </>
@@ -113,7 +131,8 @@ function OverviewContent({ project }: { project: Project }) {
           "The agent was blocked before it could observe your site. Launch it in a recorded session, a human passes the checks our agent can't.",
       };
     }
-    if (leader && leader.brand.id !== ownBrand.id) {
+    // Multi-brand set: still call out the competitor gap first.
+    if (leader && leader.brand.id !== ownBrand.id && scored.length > 1) {
       return {
         headline: (
           <>
@@ -127,16 +146,39 @@ function OverviewContent({ project }: { project: Project }) {
           "Run more analyses to understand where the gap comes from.",
       };
     }
+    // Solo brand (or you lead the set): frame against the global corpus.
+    if (global && global.total > 1) {
+      const beats = global.percentile;
+      return {
+        headline: (
+          <>
+            You&apos;re{" "}
+            <span className="text-brand">{ordinal(global.rank)}</span> of{" "}
+            {global.total} brands we&apos;ve scored, at{" "}
+            <span className="text-brand">{ownScore}</span>
+            {beats >= 50
+              ? ` — ahead of ${beats}% of the field.`
+              : "."}
+          </>
+        ),
+        body:
+          ownLanding?.summary ??
+          (global.leaderName
+            ? `${global.leaderName} leads the field at ${global.leaderScore}. Close the gap by going deeper than first impressions.`
+            : "Protect the lead by going deeper than first impressions."),
+      };
+    }
     return {
       headline: (
         <>
-          You lead the set at <span className="text-brand">{ownScore}</span>,
-          now protect it by going deeper than first impressions.
+          You score <span className="text-brand">{ownScore}</span>
+          {scored.length > 1 ? ", leading this set" : ""}
+          — keep going deeper than first impressions.
         </>
       ),
       body:
         ownLanding?.summary ??
-        "Record live sessions to extend your lead into cashier, rewards and support.",
+        "Record live sessions to extend coverage into cashier, rewards and support.",
     };
   })();
 

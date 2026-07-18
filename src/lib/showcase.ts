@@ -59,6 +59,20 @@ export interface ShowcaseResponse {
   months: string[];
 }
 
+/** Where a CX score sits among every brand Scuup has scored. */
+export interface GlobalRank {
+  /** 1 = best among brands we've scored. */
+  rank: number;
+  total: number;
+  /** 0–100: share of brands this score beats (100 = top). */
+  percentile: number;
+  leaderScore: number | null;
+  leaderName: string | null;
+  /** Same rank but limited to the project's market, when enough peers exist. */
+  marketRank: number | null;
+  marketTotal: number | null;
+}
+
 export function brandSlugFromUrl(url: string): string {
   try {
     const host = new URL(
