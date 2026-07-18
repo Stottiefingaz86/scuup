@@ -1,16 +1,41 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { LandingReveal } from "@/components/landing/landing-reveal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  PRO_PLUS_PRICE_MONTHLY,
+  PRO_PRICE_MONTHLY,
+  type Plan,
+} from "@/lib/plan";
 
 type FormState = "idle" | "submitting" | "success" | "error";
 
+export type ContactSalesPlan = Extract<Plan, "pro" | "pro_plus">;
+
+export function contactSalesHref(plan: ContactSalesPlan): string {
+  return `/?plan=${plan}#contact`;
+}
+
+function salesMessageFor(plan: ContactSalesPlan): string {
+  if (plan === "pro_plus") {
+    return `Hi, I'm interested in the Pro Plus plan (€${PRO_PLUS_PRICE_MONTHLY}/month). Please get in touch about getting five reports set up for our team.`;
+  }
+  return `Hi, I'm interested in the Pro plan (€${PRO_PRICE_MONTHLY}/month). Please get in touch about upgrading for competitor benchmarks and monthly refreshes.`;
+}
+
+function planFromParam(value: string | null): ContactSalesPlan | null {
+  if (value === "pro" || value === "pro_plus") return value;
+  return null;
+}
+
 export function LandingContact() {
+  const searchParams = useSearchParams();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [company, setCompany] = useState("");
@@ -18,6 +43,20 @@ export function LandingContact() {
   const [state, setState] = useState<FormState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [successEmail, setSuccessEmail] = useState("");
+
+  // Pre-fill from Contact sales CTAs: /?plan=pro#contact
+  useEffect(() => {
+    const plan = planFromParam(searchParams.get("plan"));
+    if (!plan) return;
+    setMessage(salesMessageFor(plan));
+    setState("idle");
+    requestAnimationFrame(() => {
+      document
+        .getElementById("contact")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("contact-message")?.focus();
+    });
+  }, [searchParams]);
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

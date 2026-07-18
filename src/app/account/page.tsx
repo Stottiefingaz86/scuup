@@ -113,7 +113,7 @@ export default function AccountPage() {
               <Button
                 className="w-full"
                 nativeButton={false}
-                render={<Link href="/#contact" />}
+                render={<Link href="/?plan=pro#contact" />}
               >
                 <Sparkles data-icon="inline-start" />
                 Contact sales

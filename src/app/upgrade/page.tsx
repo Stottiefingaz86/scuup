@@ -149,7 +149,7 @@ export default async function UpgradePage({
                 size="lg"
                 className="w-full glow-primary"
                 nativeButton={false}
-                render={<Link href="/#contact" />}
+                render={<Link href="/?plan=pro#contact" />}
               >
                 Contact sales
               </Button>
@@ -188,7 +188,7 @@ export default async function UpgradePage({
                 className="w-full"
                 variant="outline"
                 nativeButton={false}
-                render={<Link href="/#contact" />}
+                render={<Link href="/?plan=pro_plus#contact" />}
               >
                 Contact sales
               </Button>

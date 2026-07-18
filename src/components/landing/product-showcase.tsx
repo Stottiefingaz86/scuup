@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -239,7 +239,7 @@ const PRICING = [
     description: "One competitive report",
     features: PRO_SELLING_POINTS,
     cta: "Contact sales",
-    href: "/#contact",
+    href: "/?plan=pro#contact",
     variant: "default" as const,
     highlight: true,
   },
@@ -251,7 +251,7 @@ const PRICING = [
     description: "Five reports in parallel",
     features: PRO_PLUS_SELLING_POINTS,
     cta: "Contact sales",
-    href: "/#contact",
+    href: "/?plan=pro_plus#contact",
     variant: "outline" as const,
   },
 ];
@@ -467,7 +467,9 @@ export function LandingShowcase() {
 
         <LandingFaq />
 
-        <LandingContact />
+        <Suspense fallback={null}>
+          <LandingContact />
+        </Suspense>
 
         {/* Final CTA */}
         <section className="relative isolate overflow-hidden border-t border-border">
