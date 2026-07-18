@@ -165,7 +165,7 @@ export async function getCredentialsForLogin(
   // partial registrations — rewrite and persist so signup can progress.
   if (persona) {
     const phoneFixed = repairPersonaPhone(persona);
-    const fixed = repairPersonaEmail(phoneFixed, brandId);
+    const fixed = repairPersonaEmail(phoneFixed);
     if (
       fixed.phone !== persona.phone ||
       fixed.email !== persona.email

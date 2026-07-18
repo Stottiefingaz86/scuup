@@ -1,6 +1,5 @@
 import {
   DEFAULT_TEST_EMAIL,
-  defaultTestEmailForBrand,
 } from "./constants";
 
 /** Address + identity bundle for registration forms — varies by project market. */
@@ -295,28 +294,21 @@ export function defaultTestPassword(): string {
   );
 }
 
-/** Fresh Gmail plus-alias for this brand — same inbox, unique address so
- * partial registrations from earlier agent runs don't trip "incorrect"
- * / already-registered errors on the shared base address. */
-export function freshSignupEmail(brandName: string): string {
-  const base = defaultTestEmailForBrand(brandName);
-  const at = base.indexOf("@");
-  if (at === -1) return `${DEFAULT_TEST_EMAIL.split("@")[0]}+${randomDigits(6)}@${DEFAULT_TEST_EMAIL.split("@")[1]}`;
-  return `${base.slice(0, at)}${randomDigits(4)}${base.slice(at)}`;
+/** Always the real shared inbox. Gmail plus-aliases look fake in evidence,
+ * many operators reject or drop them, and verification mail must land in
+ * the IMAP inbox we actually read. */
+export function signupEmail(): string {
+  return DEFAULT_TEST_EMAIL;
 }
 
-/** Bare shared inbox addresses collide across brands and retries — rewrite. */
-export function repairPersonaEmail(
-  persona: SignupPersona,
-  brandName: string
-): SignupPersona {
+/** Rewrite plus-aliases / empties back to the real inbox address. */
+export function repairPersonaEmail(persona: SignupPersona): SignupPersona {
   const email = persona.email?.trim() ?? "";
   if (
     !email ||
-    email.toLowerCase() === DEFAULT_TEST_EMAIL.toLowerCase() ||
-    !email.includes("+")
+    email.toLowerCase() !== DEFAULT_TEST_EMAIL.toLowerCase()
   ) {
-    return { ...persona, email: freshSignupEmail(brandName) };
+    return { ...persona, email: DEFAULT_TEST_EMAIL };
   }
   return persona;
 }
@@ -337,7 +329,7 @@ export function buildSignupPersona(opts: {
     lastName,
     username: `${firstName}${lastName}${randomDigits(4)}`.toLowerCase(),
     phone: phoneForRegion(region, base.phone),
-    email: freshSignupEmail(opts.brandName),
+    email: signupEmail(),
     dateOfBirth: dob.iso,
     dateOfBirthDisplay: dob.display,
   };

@@ -236,18 +236,14 @@ export const MARKET_OPTIONS: MarketOption[] = [
 
 export const MARKETS = MARKET_OPTIONS.map((m) => m.label);
 
-/** Default test-account inbox for agent logins. Gmail plus-addresses per
- * brand (stottiefingaz+stake@gmail.com) all land here — one inbox for every
- * site's verification email. */
+/** Default test-account inbox for agent signups and logins. One real
+ * address — verification mail must land where IMAP can read it. */
 export const DEFAULT_TEST_EMAIL = "stottiefingaz@gmail.com";
 
-/** Per-brand signup email — same inbox, unique address per operator. */
-export function defaultTestEmailForBrand(brandName: string): string {
-  const slug = brandName.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 24);
-  if (!slug) return DEFAULT_TEST_EMAIL;
-  const at = DEFAULT_TEST_EMAIL.indexOf("@");
-  if (at === -1) return DEFAULT_TEST_EMAIL;
-  return `${DEFAULT_TEST_EMAIL.slice(0, at)}+${slug}${DEFAULT_TEST_EMAIL.slice(at)}`;
+/** @deprecated Prefer DEFAULT_TEST_EMAIL — plus-aliases look fake in
+ * evidence and many operators drop or reject them. */
+export function defaultTestEmailForBrand(_brandName: string): string {
+  return DEFAULT_TEST_EMAIL;
 }
 
 /** Resolve a stored market label (including legacy aliases) for flags and proxy. */

@@ -31,7 +31,7 @@ import {
   formatUkMobile,
   generateIeMobile,
   phoneAlternates,
-  freshSignupEmail,
+  signupEmail,
 } from "./test-persona";
 import {
   applyRetentionGates,
@@ -1770,31 +1770,28 @@ async function ensureMobileFieldAccepted(
   return { ok: false, phone: null };
 }
 
-/** Fill email + password via the DOM and retry a fresh plus-alias when the
- * site shows a vague "incorrect" email error (often a prior partial
- * registration on the shared inbox). Password fields are set explicitly —
- * Stagehand frequently leaves them empty. */
+/** Fill email + password via the DOM. On a vague "incorrect" / already-used
+ * email error, keep the real shared inbox address — never invent plus-aliases
+ * that look fake in evidence and often never receive operator mail. */
 async function ensureEmailPasswordAccepted(
   page: {
     evaluate: (expr: string) => Promise<unknown>;
     waitForTimeout: (ms: number) => Promise<void>;
   },
   vars: Record<string, string>,
-  brandHint: string,
+  _brandHint: string,
   trail: string[],
   timeLeft: () => number
 ): Promise<{ email: string; passwordFilled: boolean }> {
-  let email = vars.email ?? "";
+  let email = signupEmail();
+  vars.email = email;
   const password = vars.password ?? "";
   let passwordFilled = false;
 
   const emailPresent = (await formFieldValidity(page, "email")) !== "missing";
   if (emailPresent && email) {
-    for (let attempt = 0; attempt < 4; attempt++) {
-      if (timeLeft() < 40_000) break;
-      const candidate =
-        attempt === 0 ? email : freshSignupEmail(brandHint || "brand");
-      await setFormFieldViaDom(page, "email", candidate);
+    if (timeLeft() >= 40_000) {
+      await setFormFieldViaDom(page, "email", email);
       await page.waitForTimeout(800);
       let state = await formFieldValidity(page, "email");
       if (state === "unknown") {
@@ -1802,32 +1799,14 @@ async function ensureEmailPasswordAccepted(
         state = await formFieldValidity(page, "email");
       }
       if (state === "valid") {
-        email = candidate;
-        vars.email = candidate;
+        trail.push("email accepted — field went valid/green");
+      } else if (state === "invalid" || (await emailValidationVisible(page))) {
         trail.push(
-          attempt === 0
-            ? "email accepted — field went valid/green"
-            : `email accepted after retry with a fresh plus-alias`
+          "email rejected on the shared inbox address — likely already registered or opaque validation (scoring Form effort); not inventing a fake alias"
         );
-        break;
+      } else {
+        trail.push("email set to the shared test inbox");
       }
-      if (
-        state === "invalid" ||
-        (await emailValidationVisible(page))
-      ) {
-        trail.push(
-          attempt === 0
-            ? "email rejected (vague incorrect/already-used style error) — trying a fresh plus-alias"
-            : "email still rejected — trying another plus-alias"
-        );
-        email = candidate;
-        vars.email = candidate;
-        continue;
-      }
-      email = candidate;
-      vars.email = candidate;
-      trail.push("email set (no red/green chrome — continuing)");
-      break;
     }
   }
 

@@ -2,10 +2,8 @@ import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 
 /** Server-only access to the shared test inbox (stottiefingaz@gmail.com).
- * Every brand's signup uses a plus-alias of this inbox, so verification
- * emails from any operator land here. The agent reads them mid-run to get
- * past "verify your email" walls: fetch the OTP code or confirmation link
- * and complete verification in the same browser session. */
+ * Every brand's signup uses this same address so verification emails land
+ * here and the agent can fetch OTP / confirm links mid-run. */
 
 export interface VerificationEmail {
   /** One-time code found in the message (prefers 6 digits). */
@@ -76,7 +74,13 @@ async function fetchLatestMatch(
           .join(", ")
           .toLowerCase();
         const from = parsed.from?.value[0]?.address?.toLowerCase() ?? "";
-        const matchesAlias = to.includes(alias);
+        // Match the exact signup address, or any delivery to the shared
+        // inbox local-part (operators sometimes rewrite plus-aliases).
+        const local = alias.split("@")[0]?.split("+")[0] ?? "";
+        const matchesAlias =
+          to.includes(alias) ||
+          (local.length > 2 &&
+            (to.includes(`${local}@`) || to.includes(`${local}+`)));
         const matchesDomain = domain
           ? from.endsWith(domain) || from.includes(domain.split(".")[0]!)
           : false;
