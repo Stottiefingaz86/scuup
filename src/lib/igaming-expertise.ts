@@ -59,6 +59,12 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - Originals section = margin + provably-fair trust; its prominence is strategy, not filler.
 - Below the fold matters: live wins feeds, races/leaderboards, promo rows often live at the bottom — judge the WHOLE page.
 - Watch for: search that can't handle typos, no recently-played, dead grids without lazy-load, games that open into broken sessions.`,
+  bingo: `BINGO LOBBY EXPERTISE — bingo is scheduled, communal, and price-sensitive:
+- The lobby must answer instantly: which rooms are open, when the next game starts, what a ticket costs, and what I can win. Countdown timers, pot sizes, and player counts on room cards are the category standard.
+- Community is the product: chat hosts, roomie culture, winner celebrations, and free bingo rooms drive retention more than raw prize value.
+- Variant breadth (90/80/75-ball, speed bingo, themed rooms) and a clear free-vs-paid split signal a serious bingo operator.
+- Bingo-first brands (Tombola-class) often run proprietary variants — judge them as originals/exclusives strength, not as non-standard clutter.
+- Watch for: lobbies that bury bingo under slots cross-sell, missing ticket prices before commit, no schedule visibility, rooms that need a deposit before you can even preview.`,
   sports_betslip: `SPORTSBOOK EXPERTISE — speed from intent to placed bet is everything:
 - Odds tap → betslip populated → stake entry → place: every extra step bleeds conversion. Bet builder and cashout presence signal a serious book.
 - Live/in-play section with fast-updating odds is table stakes; latency or frozen odds are critical failures.
@@ -102,6 +108,7 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 const CALIBRATION: Record<string, string> = {
   landing: `CALIBRATION: 85+ = Stake-class landing — product visible immediately, rakeback/VIP value prop above the fold, one primary CTA, live social proof, licence in footer. 50 = average licensed operator: generic welcome-bonus hero, working nav, product reachable. Below 40 = promo wall obscuring the product or trust signals absent.`,
   casino: `CALIBRATION: 85+ = lobby with working search, recently played, provider filters, originals section, and live wins/races below the fold. 50 = usable grid with categories but no personalisation and weak search. Below 40 = broken search, no structure, dead ends.`,
+  bingo: `CALIBRATION: 85+ = Tombola/Mecca-class lobby — room cards with live countdowns, ticket price and pot upfront, player counts, free rooms clearly marked, one tap from lobby to room. 50 = functional room list but prices or schedules need extra clicks. Below 40 = bingo buried under casino cross-sell, no schedule, prices hidden until purchase.`,
   sports_betslip: `CALIBRATION: 85+ = one-tap slip population, bet builder, cashout, live section with fresh odds. 50 = functional slip with extra steps. Below 40 = slip failures, stale odds, missing stake clarity.`,
   signup: `CALIBRATION: 85+ = ≤3 fields or social/one-click, instant account, deposit reachable in seconds, offer terms visible. 50 = standard form with reasonable fields and clear offer. Below 40 = KYC before deposit, verification walls, opaque bonus terms.`,
   deposit: `CALIBRATION: 85+ = modal cashier, instant crypto address + QR, fee/min-max transparency, on-ramp breadth. 50 = working deposit with a redirect or unclear fees. Below 40 = late fee reveals, broken methods, no confirmation states.`,

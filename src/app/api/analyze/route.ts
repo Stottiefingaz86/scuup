@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "That journey is a Pro feature. Free audits cover first impression, casino and sports.",
+          "That journey is a Pro feature. Free audits cover first impression, casino, bingo and sports.",
         code: "limit_reached",
       },
       { status: 402 }

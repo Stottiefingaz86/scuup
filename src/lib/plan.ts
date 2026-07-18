@@ -4,7 +4,7 @@ import type { JourneyType } from "./types";
 export type Plan = "free" | "pro" | "pro_plus";
 
 /** Free tier: own brand only on public journeys — one report, no re-runs. */
-export const FREE_JOURNEYS: JourneyType[] = ["casino", "sports_betslip"];
+export const FREE_JOURNEYS: JourneyType[] = ["casino", "bingo", "sports_betslip"];
 
 export const PLAN_COMPETITOR_LIMIT: Record<Plan, number> = {
   free: 0,
@@ -47,7 +47,7 @@ export function journeyAllowedOnPlan(plan: Plan, journey: string): boolean {
 
 export const FREE_PLAN_FEATURES = [
   "Your brand only — no competitors",
-  "First impression, casino & sports journeys",
+  "First impression, casino, bingo & sports journeys",
   "Full heuristic scoring and evidence",
   "One report — no updates or re-runs",
 ];

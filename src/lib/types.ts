@@ -3,6 +3,7 @@ export type JourneyType =
   | "deposit"
   | "withdraw"
   | "casino"
+  | "bingo"
   | "sports_betslip"
   | "loyalty_rewards"
   | "support"

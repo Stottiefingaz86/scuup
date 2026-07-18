@@ -205,13 +205,15 @@ export default function AnalyzingPage() {
 
       const brands = [...project.brands];
       const projectId = project.id;
-      const publicAreas = [
-        LANDING,
-        ...project.journeys.filter((j) => agentCanReach(j)),
-      ];
-      // Gated journeys run in a second phase: the signup run in phase one
-      // registers a test account, and phase two reuses that logged-in
-      // session for deposit / withdraw / account.
+      const hasSignup = project.journeys.includes("signup");
+      // Everything after signup tries the test account first and falls
+      // back to a logged-out walk, so signup must settle before the
+      // product journeys start.
+      const laterPublicAreas = project.journeys.filter(
+        (j) => j !== "signup" && agentCanReach(j)
+      );
+      // Gated journeys (deposit / withdraw / account) only work with the
+      // logged-in session signup created.
       const gatedAreas = project.journeys.filter(
         (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
       );
@@ -224,79 +226,108 @@ export default function AnalyzingPage() {
       const quotaMessage =
         "Browser session quota exhausted, upgrade Browserbase or wait for the monthly reset.";
 
+      // Global concurrency + session-creation pacing, shared by every
+      // brand's pipeline.
       let nextStartAt = 0;
-      const runQueue = async (queue: { brand: Brand; area: string }[]) => {
-        const workers = Array.from(
-          { length: Math.min(MAX_CONCURRENT, queue.length) },
-          async () => {
-            for (;;) {
-              const job = queue.shift();
-              if (!job) return;
-              const key = jobKey(job.brand.id, job.area);
-
-              if (abortRef.current) return;
-
-              if (quotaExhausted) {
-                setJob(key, { phase: "failed", reason: quotaMessage });
-                continue;
-              }
-
-              const wait = Math.max(0, nextStartAt - Date.now());
-              nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
-              if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-              if (abortRef.current) return;
-              setJob(key, { phase: "running" });
-              try {
-                if (job.area === "voc") {
-                  const voc = await runVoc(projectId, job.brand.id);
-                  setJob(key, {
-                    phase: "done",
-                    score: Math.round((voc.trustScore ?? 0) * 20),
-                  });
-                } else if (job.area === "design") {
-                  const design = await runDesignReview(projectId, job.brand.id);
-                  setJob(key, { phase: "done", score: design.score });
-                } else {
-                  const analysis = await runAgent(projectId, job.brand, job.area);
-                  if (!analysis.blocked) successCount += 1;
-                  setJob(
-                    key,
-                    analysis.blocked
-                      ? { phase: "blocked" }
-                      : { phase: "done", score: analysis.score }
-                  );
-                }
-              } catch (e) {
-                const reason = friendlyAgentError(
-                  e instanceof Error ? e : new Error("analysis failed")
-                );
-                if (isBrowserbaseQuotaError(reason)) {
-                  quotaExhausted = true;
-                  setQuotaError(reason);
-                }
-                setJob(key, { phase: "failed", reason });
-              }
-            }
-          }
-        );
-        await Promise.all(workers);
+      let active = 0;
+      const waiters: (() => void)[] = [];
+      const acquireSlot = async () => {
+        while (active >= MAX_CONCURRENT) {
+          await new Promise<void>((r) => waiters.push(r));
+        }
+        active += 1;
+        const wait = Math.max(0, nextStartAt - Date.now());
+        nextStartAt = Date.now() + wait + MIN_START_GAP_MS;
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      };
+      const releaseSlot = () => {
+        active -= 1;
+        waiters.shift()?.();
       };
 
-      const buildBrandJobs = (brand: Brand) => [
-        ...publicAreas.map((area) => ({ brand, area })),
-        ...gatedAreas.map((area) => ({ brand, area })),
-        ...EXTRA_AREAS.map((area) => ({ brand, area })),
-      ];
+      const runJob = async (job: { brand: Brand; area: string }) => {
+        const key = jobKey(job.brand.id, job.area);
+        if (abortRef.current) return;
+        if (quotaExhausted) {
+          setJob(key, { phase: "failed", reason: quotaMessage });
+          return;
+        }
+        await acquireSlot();
+        try {
+          if (abortRef.current) return;
+          if (quotaExhausted) {
+            setJob(key, { phase: "failed", reason: quotaMessage });
+            return;
+          }
+          setJob(key, { phase: "running" });
+          if (job.area === "voc") {
+            const voc = await runVoc(projectId, job.brand.id);
+            setJob(key, {
+              phase: "done",
+              score: Math.round((voc.trustScore ?? 0) * 20),
+            });
+          } else if (job.area === "design") {
+            const design = await runDesignReview(projectId, job.brand.id);
+            setJob(key, { phase: "done", score: design.score });
+          } else {
+            const analysis = await runAgent(projectId, job.brand, job.area);
+            if (!analysis.blocked) successCount += 1;
+            setJob(
+              key,
+              analysis.blocked
+                ? { phase: "blocked" }
+                : { phase: "done", score: analysis.score }
+            );
+          }
+        } catch (e) {
+          const reason = friendlyAgentError(
+            e instanceof Error ? e : new Error("analysis failed")
+          );
+          if (isBrowserbaseQuotaError(reason)) {
+            quotaExhausted = true;
+            setQuotaError(reason);
+          }
+          setJob(key, { phase: "failed", reason });
+        } finally {
+          releaseSlot();
+        }
+      };
 
-      // Per-brand pipeline: VoC and Design start as soon as *this* brand's
-      // journeys finish, not after every competitor clears the queue.
-      await runQueue(brands.flatMap(buildBrandJobs));
+      // Each brand runs staged: first impression + signup (which registers
+      // the test account), THEN every product journey — those try the
+      // fresh login first and fall back to a logged-out walk — and
+      // finally VoC + Design once the journeys settle.
+      const brandStages = (brand: Brand): { brand: Brand; area: string }[][] =>
+        [
+          [
+            { brand, area: LANDING },
+            ...(hasSignup ? [{ brand, area: "signup" }] : []),
+          ],
+          [...laterPublicAreas, ...gatedAreas].map((area) => ({
+            brand,
+            area,
+          })),
+          EXTRA_AREAS.map((area) => ({ brand, area })),
+        ].filter((stage) => stage.length > 0);
+
+      await Promise.all(
+        brands.map(async (brand) => {
+          for (const stage of brandStages(brand)) {
+            if (abortRef.current) return;
+            await Promise.all(stage.map(runJob));
+          }
+        })
+      );
       if (cancelled || finishedRef.current || !getProject(projectId)) return;
       finishedRef.current = true;
 
       const totalRunJobs =
         brands.length *
-        (publicAreas.length + gatedAreas.length + EXTRA_AREAS.length);
+        (1 +
+          (hasSignup ? 1 : 0) +
+          laterPublicAreas.length +
+          gatedAreas.length +
+          EXTRA_AREAS.length);
       setRunFinished({
         scored: successCount,
         failed: totalRunJobs - successCount,
@@ -318,10 +349,13 @@ export default function AnalyzingPage() {
     );
   }
 
+  // Chip order mirrors the run order: first impression + signup, then the
+  // product journeys, then login-gated areas.
   const journeyAreas = project
     ? [
         LANDING,
-        ...project.journeys.filter((j) => agentCanReach(j)),
+        ...project.journeys.filter((j) => j === "signup"),
+        ...project.journeys.filter((j) => j !== "signup" && agentCanReach(j)),
         ...project.journeys.filter(
           (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
         ),

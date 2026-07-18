@@ -14,7 +14,8 @@ const JOURNEY_URL_PATTERNS: [string, RegExp][] = [
   ["support", /support|help|faq|contact/],
   ["my_account", /account|profile|settings|verification|kyc/],
   ["sports_betslip", /sport|betslip/],
-  ["casino", /casino|game|slot|live-?dealer|play/],
+  ["bingo", /bingo/],
+  ["casino", /casino|game|slot|arcade|live-?dealer|play/],
 ];
 
 export function classifyUrl(url: string): string | null {

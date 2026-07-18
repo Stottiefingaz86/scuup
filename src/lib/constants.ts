@@ -5,6 +5,7 @@ export const ALL_JOURNEYS: JourneyType[] = [
   "deposit",
   "withdraw",
   "casino",
+  "bingo",
   "sports_betslip",
   "loyalty_rewards",
   "support",
@@ -16,6 +17,7 @@ export const JOURNEY_LABELS: Record<JourneyType, string> = {
   deposit: "Deposit",
   withdraw: "Withdraw",
   casino: "Casino Lobby",
+  bingo: "Bingo Lobby",
   sports_betslip: "Sports Betslip",
   loyalty_rewards: "Loyalty & Rewards",
   support: "Support",
@@ -30,6 +32,7 @@ export const LANDING = "landing" as const;
 export const AGENT_JOURNEYS: JourneyType[] = [
   "signup",
   "casino",
+  "bingo",
   "sports_betslip",
   "loyalty_rewards",
   "support",
@@ -107,6 +110,13 @@ export const JOURNEY_HEURISTICS: Record<string, string[]> = {
     "Personalisation & recency",
     "Originals & exclusives",
     "Social proof & energy",
+  ],
+  bingo: [
+    "Room discovery & schedule",
+    "Ticket price & prize clarity",
+    "Time-to-play",
+    "Community & social energy",
+    "Cross-sell balance",
   ],
   sports_betslip: [
     "Betslip speed",
@@ -285,6 +295,7 @@ export const PRODUCTS = [
  * Signup, support, and account apply to every operator and are always offered. */
 const JOURNEY_PRODUCT_GATE: Partial<Record<JourneyType, string[]>> = {
   casino: ["Casino", "Live Casino"],
+  bingo: ["Bingo"],
   sports_betslip: ["Sports"],
   loyalty_rewards: ["Rewards"],
   deposit: ["Payments"],

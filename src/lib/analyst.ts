@@ -105,22 +105,64 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   signup: [
     {
       instruction:
-        "click the sign up, join, or register button to open the registration form",
+        "click the sign up, join, join now, or register button to open the registration form",
       required: true,
+      alternatives: [
+        "click the Join, Join Now, Register, Create Account, or Sign Up button in the header or hero",
+        "open the site menu (hamburger or account menu) and choose the sign up / join / register entry",
+      ],
+      fallbackPaths: [
+        "/register",
+        "/registration",
+        "/signup",
+        "/sign-up",
+        "/join",
+      ],
+      verify:
+        "a registration or sign-up form with visible input fields (email, username, phone, or personal details) or the first step of a join wizard. NOT a login-only form, NOT the homepage hero",
     },
   ],
   casino: [
     {
       instruction:
-        "open the casino games lobby from the main navigation — brands label it Casino, Games, Vegas, Slots, or Live Casino, sometimes only a slot-machine/cards/dice icon. Do NOT open the sportsbook, sports betting, or live betting section",
+        "open the casino games lobby from the main navigation or side menu — brands label it Casino, Games, Vegas, Slots, Live Casino, or a house name like Arcade, sometimes only a slot-machine/cards/dice icon. Bingo-first brands often put it in a left-hand menu under Arcade or Games. Do NOT open the sportsbook, sports betting, or live betting section, and do NOT stay on the homepage",
       required: true,
       alternatives: [
-        "click the navigation entry that leads to slot games or live casino tables — try labels like Games, Vegas, Casino, Slots, Live Casino, or a games controller / playing-cards icon",
-        "open the site menu (hamburger or category menu) and choose the casino / games / slots section from it",
+        "click the navigation entry that leads to slot games, instant-win games, or live casino tables — try labels like Games, Vegas, Casino, Slots, Arcade, Live Casino, or a games controller / playing-cards icon",
+        "open the site menu (hamburger, left sidebar, or category menu) and choose the casino / games / arcade / slots section from it",
       ],
-      fallbackPaths: ["/casino", "/games", "/vegas", "/slots", "/live-casino"],
+      fallbackPaths: [
+        "/casino",
+        "/games",
+        "/arcade",
+        "/vegas",
+        "/slots",
+        "/live-casino",
+      ],
       verify:
-        "a casino games lobby with VISIBLE game tiles — a populated grid or rows of casino games (slots, live casino tables, game shows). NOT sports matches, odds buttons, or a betslip; NOT an empty or still-loading grid of blank placeholders; NOT a search page without results",
+        "a DEDICATED casino games lobby page with VISIBLE game tiles — a populated grid or rows of casino/instant-win games (slots, live casino tables, game shows, arcade games). NOT the brand's homepage or hero page; NOT sports matches, odds buttons, or a betslip; NOT an empty or still-loading grid of blank placeholders; NOT a search page without results",
+    },
+  ],
+  bingo: [
+    {
+      instruction:
+        "open the bingo lobby from the main navigation or side menu — brands label it Bingo, Bingo Rooms, Rooms, or Play Bingo, sometimes a bingo-ball icon. Do NOT open slots, casino, or sports sections",
+      required: true,
+      alternatives: [
+        "click the navigation entry that leads to bingo rooms or bingo games — try labels like Bingo, Rooms, 90 Ball, 75 Ball, or a bingo-ball icon",
+        "open the site menu (hamburger, left sidebar, or category menu) and choose the bingo section from it",
+      ],
+      fallbackPaths: ["/bingo", "/rooms", "/bingo-rooms", "/play/bingo"],
+      verify:
+        "a bingo lobby — bingo rooms or games with ticket prices, prize pots, player counts, or countdown timers to the next game. NOT a slots/casino grid, NOT a sportsbook, NOT the brand's homepage hero",
+    },
+    {
+      instruction:
+        "open one bingo room or game card so its details are visible — ticket price, prize breakdown, or the pre-game screen (do NOT buy tickets or wager)",
+      required: false,
+      alternatives: [
+        "click a featured or soonest-starting bingo room to see its detail or pre-game view",
+      ],
     },
   ],
   sports_betslip: [
@@ -222,7 +264,12 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
 
 /** Journeys where we scroll the full page — lobby footers hide live feeds,
  * jackpots, leaderboards and provider rows below the fold. */
-const DEEP_SCROLL_JOURNEYS = new Set(["landing", "casino", "sports_betslip"]);
+const DEEP_SCROLL_JOURNEYS = new Set([
+  "landing",
+  "casino",
+  "bingo",
+  "sports_betslip",
+]);
 
 const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan ALL screenshots — including scrolled sections at the bottom of the page — for product features. Casino lobbies often hide live win feeds, jackpot rows, leaderboards, provider carousels and recently-played rows below the fold; loyalty hubs show tier grids and reward calendars. Return a "features" array for every feature with visible evidence. Use standard names when possible: "Live wins feed", "Leaderboards", "Jackpot games", "VIP levels", "Rakeback", "Weekly bonus", "Status transfer", "Originals", "Provider filters", "Casino search", "Live casino", "Bet builder", "Cashout", "Live chat", "Crypto payments", "Provably fair", "Free spins", "Missions / streaks", etc. Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account. Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (VISIBLE in a screenshot but buried in obscure navigation — never use hidden for something you cannot see). Include note (one-line evidence) and shot (screenshot index — REQUIRED for every feature; if you cannot point at a screenshot showing it, do not list it). Only list features you can SEE — omit absent ones; a feature you cannot see is simply not listed, never marked hidden or no.`;
 
@@ -441,6 +488,8 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
     "This is the withdrawal flow. Judge trust: KYC clarity, processing time promises, fee transparency, status tracking, friction relative to depositing.",
   casino:
     "This is the casino lobby. Judge discovery: search quality, category clarity, game tile information, load speed, personalisation.",
+  bingo:
+    "This is the bingo lobby. Judge how fast a player gets into a game they can afford: room/schedule clarity (start times, countdowns), ticket prices and prize pots visible before committing, community signals (player counts, chat, winner callouts), and whether cross-sell to slots/casino supports or drowns the bingo experience.",
   sports_betslip:
     "This is the sportsbook/betslip experience, captured while the agent walked a real betting flow: sportsbook → match view → adding a selection → the betslip with a stake entered. Judge usability across that flow: market depth visibility (how many markets per match and how discoverable), odds presentation, how clearly the slip shows the selection, stake input and potential returns, single/multi/bet-builder access, and cash-out cues. If the agent's trail shows a selection was added, score the betslip UX from the screenshots that show it; if no selection could be added, judge what that friction says about the product and note it.",
   loyalty_rewards:
@@ -1245,6 +1294,10 @@ async function analyzeWithAgent(
     await sh.init();
     return sh;
   });
+  // Hoisted so a crash mid-walk can still persist the captured evidence.
+  const trail: string[] = [];
+  const shots: string[] = [];
+  let lastUrl = url;
   try {
     const page =
       stagehand.context.activePage() ?? (await stagehand.context.newPage());
@@ -1255,9 +1308,8 @@ async function analyzeWithAgent(
       .catch(() => {});
     await preparePageAfterNavigation(page, stagehand);
     await waitForPageContent(page);
+    lastUrl = page.url();
 
-    const trail: string[] = [];
-    const shots: string[] = [];
     let authenticated: boolean | undefined;
     const isLoginJourney = LOGIN_PLAYBOOKS[journey] != null;
     const isSignup = journey === "signup";
@@ -1397,8 +1449,11 @@ async function analyzeWithAgent(
       if (ok) {
         trail.push(message || step.instruction);
         shots.push(await capture());
+        lastUrl = page.url();
       } else if (step.required) {
-        const screenshots = await persistShots([await capture()]);
+        // The failed attempt is still evidence — keep everything captured
+        // so far (login tries, partial navigation) plus the final state.
+        const screenshots = await persistShots([...shots, await capture()]);
         return {
           area: journey,
           analysedAt: new Date().toISOString(),
@@ -1547,6 +1602,27 @@ async function analyzeWithAgent(
     return chainedAnalyses.length > 0
       ? { ...analysis, chainedAnalyses }
       : analysis;
+  } catch (e) {
+    // A crash mid-walk must never throw the evidence away — persist what
+    // the agent captured and report a blocked run the user can see.
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[analyst] ${journey} walk crashed:`, message);
+    const screenshots = await persistShots(shots).catch(() => [] as string[]);
+    return {
+      area: journey,
+      analysedAt: new Date().toISOString(),
+      score: 0,
+      blocked: true,
+      blockReason: `The run failed partway through this walk (${message}). The screenshots show how far the agent got — retry, or take control to walk it yourself.`,
+      summary: "",
+      heuristics: [],
+      observations: [],
+      features: [],
+      screenshots,
+      finalUrl: lastUrl,
+      ...(journey === "signup" && signupVars ? { authenticated: false } : {}),
+      loggedIn: false,
+    };
   } finally {
     await stagehand.close().catch(() => {});
   }

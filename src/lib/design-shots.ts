@@ -6,6 +6,7 @@ import type { Brand, JourneyAnalysis } from "./types";
 export const DESIGN_REVIEW_AREA_ORDER = [
   LANDING,
   "casino",
+  "bingo",
   "sports_betslip",
   "loyalty_rewards",
   "signup",
@@ -17,6 +18,7 @@ export const DESIGN_REVIEW_AREA_ORDER = [
 
 const PRODUCT_AREAS = new Set([
   "casino",
+  "bingo",
   "sports_betslip",
   "loyalty_rewards",
   "deposit",
