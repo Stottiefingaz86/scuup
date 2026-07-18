@@ -27,7 +27,11 @@ import {
 import { PLAIN_PROSE_RULE, sanitizeAnalysisProse } from "./prose";
 import { expertiseFor } from "./igaming-expertise";
 import { knowledgeFor } from "./igaming-knowledge";
-import { phoneAlternates } from "./test-persona";
+import {
+  formatUkMobile,
+  generateIeMobile,
+  phoneAlternates,
+} from "./test-persona";
 import {
   applyRetentionGates,
   fillGatedRetentionNotes,
@@ -1488,6 +1492,75 @@ async function completeEmailVerification(
   return mail.otp != null;
 }
 
+/** Shared DOM helpers for finding the mobile field and reading its
+ * live validation chrome (Tombola turns the border green when accepted). */
+const MOBILE_FIELD_HELPERS = `function visible(el) {
+  if (!(el instanceof HTMLElement)) return false;
+  const r = el.getBoundingClientRect();
+  if (r.width < 4 || r.height < 4) return false;
+  const s = getComputedStyle(el);
+  return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
+}
+function labelFor(el) {
+  const id = el.getAttribute("id");
+  if (id) {
+    const lab = document.querySelector('label[for="' + CSS.escape(id) + '"]');
+    if (lab) return lab.textContent || "";
+  }
+  const wrap = el.closest("label, [class*='field' i], [class*='input' i], form, div");
+  return wrap ? wrap.textContent || "" : "";
+}
+function findMobileInput() {
+  const PHONE_RE = /mobile|phone|tel|cell|handset/i;
+  for (const el of document.querySelectorAll("input, textarea")) {
+    if (!visible(el)) continue;
+    const type = (el.getAttribute("type") || "text").toLowerCase();
+    if (type === "hidden" || type === "password" || type === "email") continue;
+    const meta = [
+      type,
+      el.getAttribute("name") || "",
+      el.getAttribute("id") || "",
+      el.getAttribute("autocomplete") || "",
+      el.getAttribute("placeholder") || "",
+      el.getAttribute("aria-label") || "",
+      labelFor(el),
+    ].join(" ");
+    if (type === "tel" || PHONE_RE.test(meta)) return el;
+  }
+  return null;
+}
+function colourBucket(cssColour) {
+  const m = String(cssColour || "").match(/rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/i);
+  if (!m) return "other";
+  const r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
+  if (g > r + 25 && g > b + 15 && g > 90) return "green";
+  if (r > g + 25 && r > b + 15 && r > 90) return "red";
+  return "other";
+}
+function fieldValidity(el) {
+  if (!el) return "unknown";
+  const ariaInvalid = el.getAttribute("aria-invalid");
+  if (ariaInvalid === "true") return "invalid";
+  if (ariaInvalid === "false") return "valid";
+  const wrap = el.closest(
+    "[class*='field' i], [class*='input' i], [class*='form' i], label, div"
+  ) || el.parentElement;
+  const cls = ((el.className || "") + " " + (wrap?.className || "")).toLowerCase();
+  if (/\\b(invalid|error|danger|fail|has-error)\\b/.test(cls)) return "invalid";
+  if (/\\b(valid|success|complete|ok|is-valid|validated)\\b/.test(cls)) return "valid";
+  const border = colourBucket(getComputedStyle(el).borderColor);
+  if (border === "green") return "valid";
+  if (border === "red") return "invalid";
+  const outline = colourBucket(getComputedStyle(el).outlineColor);
+  if (outline === "green") return "valid";
+  if (outline === "red") return "invalid";
+  const near = (wrap?.innerText || "").slice(0, 400);
+  if (/valid\\s+(uk|irish|mobile|phone)|enter\\s+a\\s+valid|invalid\\s+(uk\\s+)?(mobile|phone)/i.test(near)) {
+    return "invalid";
+  }
+  return "unknown";
+}`;
+
 /** Detect "please enter a valid UK mobile" style errors so we can rewrite
  * the phone and retry instead of stalling on a disabled Continue. */
 async function phoneValidationVisible(page: {
@@ -1505,77 +1578,163 @@ async function phoneValidationVisible(page: {
   }
 }
 
-/** Set the mobile/phone field via the DOM — more reliable than Stagehand
- * when the field already has a rejected value (act often skips non-empty
- * fields, and spaced numbers need a hard replace). */
+/** Read the mobile field's live validation state — green border / success
+ * class = accepted, red / error copy = keep typing. */
+async function phoneFieldValidity(page: {
+  evaluate: (expr: string) => Promise<unknown>;
+}): Promise<"valid" | "invalid" | "unknown" | "missing"> {
+  try {
+    const state = await page.evaluate(`(() => {
+      ${MOBILE_FIELD_HELPERS}
+      const el = findMobileInput();
+      if (!el) return "missing";
+      return fieldValidity(el);
+    })()`);
+    if (state === "valid" || state === "invalid" || state === "missing") {
+      return state;
+    }
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** Type the mobile number digit-by-digit so live validators (green/red
+ * borders) fire the same way they do for a real player. */
 async function setMobileFieldViaDom(
   page: { evaluate: (expr: string) => Promise<unknown> },
   phone: string
 ): Promise<boolean> {
+  const digits = phone.replace(/\D/g, "");
   const script = `(() => {
-    const want = ${JSON.stringify(phone)};
-    const PHONE_RE = /mobile|phone|tel|cell|handset/i;
-    function visible(el) {
-      if (!(el instanceof HTMLElement)) return false;
-      const r = el.getBoundingClientRect();
-      if (r.width < 4 || r.height < 4) return false;
-      const s = getComputedStyle(el);
-      return s.display !== "none" && s.visibility !== "hidden" && Number(s.opacity) > 0.05;
-    }
-    function labelFor(el) {
-      const id = el.getAttribute("id");
-      if (id) {
-        const lab = document.querySelector('label[for="' + CSS.escape(id) + '"]');
-        if (lab) return lab.textContent || "";
-      }
-      const wrap = el.closest("label, [class*='field' i], [class*='input' i], form, div");
-      return wrap ? wrap.textContent || "" : "";
-    }
-    const inputs = [...document.querySelectorAll("input, textarea")];
-    let target = null;
-    for (const el of inputs) {
-      if (!visible(el)) continue;
-      const type = (el.getAttribute("type") || "text").toLowerCase();
-      if (type === "hidden" || type === "password" || type === "email") continue;
-      const meta = [
-        type,
-        el.getAttribute("name") || "",
-        el.getAttribute("id") || "",
-        el.getAttribute("autocomplete") || "",
-        el.getAttribute("placeholder") || "",
-        el.getAttribute("aria-label") || "",
-        labelFor(el),
-      ].join(" ");
-      if (type === "tel" || PHONE_RE.test(meta)) {
-        target = el;
-        break;
-      }
-    }
-    if (!target) return { ok: false };
+    ${MOBILE_FIELD_HELPERS}
+    const want = ${JSON.stringify(digits)};
+    const el = findMobileInput();
+    if (!el) return { ok: false };
     const proto = Object.getOwnPropertyDescriptor(
       window.HTMLInputElement.prototype,
       "value"
     );
-    target.focus();
-    if (proto && proto.set) proto.set.call(target, "");
-    else target.value = "";
-    target.dispatchEvent(new Event("input", { bubbles: true }));
-    if (proto && proto.set) proto.set.call(target, want);
-    else target.value = want;
-    for (const ev of ["input", "change", "blur", "keyup"]) {
-      target.dispatchEvent(new Event(ev, { bubbles: true }));
+    const setVal = (v) => {
+      if (proto && proto.set) proto.set.call(el, v);
+      else el.value = v;
+    };
+    el.focus();
+    setVal("");
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    let built = "";
+    for (const ch of want) {
+      built += ch;
+      setVal(built);
+      el.dispatchEvent(
+        new InputEvent("input", {
+          bubbles: true,
+          data: ch,
+          inputType: "insertText",
+        })
+      );
+      el.dispatchEvent(
+        new KeyboardEvent("keyup", { bubbles: true, key: ch })
+      );
     }
-    return { ok: true, value: String(target.value || "") };
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    el.dispatchEvent(new Event("blur", { bubbles: true }));
+    return { ok: true, value: String(el.value || ""), state: fieldValidity(el) };
   })()`;
   try {
     const result = (await page.evaluate(script)) as {
       ok?: boolean;
       value?: string;
+      state?: string;
     };
     return Boolean(result?.ok);
   } catch {
     return false;
   }
+}
+
+/** Keep rewriting the mobile until the field goes green / valid — the same
+ * loop a player does when they "type until it goes green". */
+async function ensureMobileFieldAccepted(
+  page: {
+    evaluate: (expr: string) => Promise<unknown>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  candidates: string[],
+  country: string,
+  trail: string[],
+  timeLeft: () => number
+): Promise<{ ok: boolean; phone: string | null }> {
+  const tried = new Set<string>();
+  const queue = [...candidates];
+  const maxAttempts = 8;
+
+  const nextPhone = (): string | null => {
+    while (queue.length) {
+      const p = queue.shift()!;
+      const digits = p.replace(/\D/g, "");
+      if (!digits || tried.has(digits)) continue;
+      tried.add(digits);
+      return digits;
+    }
+    if (/united kingdom|uk/i.test(country)) {
+      const fresh = formatUkMobile();
+      if (!tried.has(fresh)) {
+        tried.add(fresh);
+        return fresh;
+      }
+    }
+    if (/ireland/i.test(country)) {
+      const fresh = generateIeMobile();
+      if (!tried.has(fresh)) {
+        tried.add(fresh);
+        return fresh;
+      }
+    }
+    return null;
+  };
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (timeLeft() < 45_000) break;
+    const phone = nextPhone();
+    if (!phone) break;
+    const set = await setMobileFieldViaDom(page, phone);
+    if (!set) {
+      trail.push("could not find a mobile number field to fill");
+      return { ok: false, phone: null };
+    }
+    await page.waitForTimeout(700);
+    let state = await phoneFieldValidity(page);
+    // Some validators only paint after a second blur/tick.
+    if (state === "unknown") {
+      await page.waitForTimeout(500);
+      state = await phoneFieldValidity(page);
+    }
+    if (state === "valid") {
+      trail.push(`mobile accepted (${phone}) — field went valid/green`);
+      return { ok: true, phone };
+    }
+    if (state === "invalid") {
+      trail.push(
+        `mobile ${phone} rejected (field still invalid) — trying another`
+      );
+      continue;
+    }
+    // Unknown chrome: if the page is also screaming the error copy, treat
+    // as reject; otherwise assume the typed national number is fine.
+    if (await phoneValidationVisible(page)) {
+      trail.push(
+        `mobile ${phone} hit validation copy — trying another`
+      );
+      continue;
+    }
+    trail.push(
+      `mobile set to ${phone} (no red/green chrome — continuing)`
+    );
+    return { ok: true, phone };
+  }
+  trail.push("could not get the mobile field to a valid/green state");
+  return { ok: false, phone: null };
 }
 
 /** Fill and submit the (possibly multi-step) registration form with the
@@ -1608,43 +1767,17 @@ async function runRegistrationWalk(
   ];
 
   // UK/IE forms often reject spaced / +44 numbers — try compact national
-  // first, then display masks, then a fresh number.
+  // first, then display masks, then fresh numbers until the field goes green.
   const phoneCandidates = [
     vars.phone,
     vars.phoneAlt,
     ...phoneAlternates(vars.phone ?? "", vars.country ?? ""),
   ].filter((p, i, arr): p is string => Boolean(p) && arr.indexOf(p) === i);
-  let phoneIndex = 0;
+  let acceptedPhone = phoneCandidates[0] ?? vars.phone;
   const activeVars = () => ({
     ...vars,
-    phone: phoneCandidates[phoneIndex] ?? vars.phone,
+    phone: acceptedPhone ?? vars.phone,
   });
-
-  const rewritePhone = async (reason: string): Promise<boolean> => {
-    const pageEval = page.evaluate;
-    if (!pageEval || phoneIndex >= phoneCandidates.length - 1) return false;
-    if (!(await phoneValidationVisible({ evaluate: pageEval }))) return false;
-    phoneIndex += 1;
-    const nextPhone = phoneCandidates[phoneIndex]!;
-    trail.push(`${reason} — retrying as ${nextPhone}`);
-    const viaDom = await setMobileFieldViaDom(
-      { evaluate: pageEval },
-      nextPhone
-    );
-    if (!viaDom) {
-      try {
-        await stagehand.act(
-          "clear the mobile or phone number field completely and type %phone% as digits only with no spaces, replacing any existing value",
-          { variables: { phone: nextPhone } }
-        );
-      } catch {
-        return false;
-      }
-    }
-    await page.waitForTimeout(600);
-    shots.push(await capture());
-    return true;
-  };
 
   for (let step = 1; step <= 4; step++) {
     if (timeLeft() < 50_000) {
@@ -1664,23 +1797,27 @@ async function runRegistrationWalk(
         `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
       );
     }
-    // Hard-set the phone after Stagehand — empty-field fills and auto-masks
-    // often leave a spaced or partial value that the site then rejects.
-    if (page.evaluate && activeVars().phone) {
-      const set = await setMobileFieldViaDom(
-        { evaluate: page.evaluate },
-        activeVars().phone!
+    // Type until the field goes green — same loop a player does when the
+    // border flips from red to valid.
+    if (page.evaluate) {
+      const accepted = await ensureMobileFieldAccepted(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        [
+          acceptedPhone ?? "",
+          ...phoneCandidates,
+          ...phoneAlternates(acceptedPhone ?? "", vars.country ?? ""),
+        ].filter(Boolean),
+        vars.country ?? "",
+        trail,
+        timeLeft
       );
-      if (set) {
-        trail.push(
-          `set mobile field via DOM to ${activeVars().phone}`
-        );
-      }
+      if (accepted.phone) acceptedPhone = accepted.phone;
     }
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(400);
     shots.push(await capture());
-
-    await rewritePhone("mobile number rejected");
 
     try {
       await stagehand.act(
@@ -1707,12 +1844,26 @@ async function runRegistrationWalk(
     await page.waitForTimeout(6000);
     shots.push(await capture());
 
-    // Continue stayed disabled / form bounced us — try the next phone format
-    // and re-attempt this same step once.
+    // Continue stayed disabled — if the mobile went red again, type until
+    // green and retry submit once.
     if (
       !submitted &&
-      (await rewritePhone("Continue blocked by mobile validation"))
+      page.evaluate &&
+      ((await phoneFieldValidity({ evaluate: page.evaluate })) === "invalid" ||
+        (await phoneValidationVisible({ evaluate: page.evaluate })))
     ) {
+      trail.push("Continue blocked — re-typing mobile until valid/green");
+      const accepted = await ensureMobileFieldAccepted(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        phoneCandidates,
+        vars.country ?? "",
+        trail,
+        timeLeft
+      );
+      if (accepted.phone) acceptedPhone = accepted.phone;
       for (const phrasing of SUBMIT_PHRASINGS) {
         try {
           const result = await stagehand.act(phrasing);
