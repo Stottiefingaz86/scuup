@@ -27,10 +27,9 @@ import type { DeviceMode, JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// Hobby-plan ceiling. Signup and each gated journey run as separate
-// requests — the persisted browser context (plus credential re-login)
-// carries the session between them, so no single run needs longer.
-export const maxDuration = 300;
+// Soft-stop budget is ANALYZE_BUDGET_MS (default 185s for Hobby 300s).
+// After upgrading Vercel, set maxDuration to 800 and ANALYZE_BUDGET_MS=520000.
+export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
   let userId = "";

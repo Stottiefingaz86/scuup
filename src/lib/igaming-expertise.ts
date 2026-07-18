@@ -44,7 +44,15 @@ LOYALTY-LED / REGULATED (BetOnline, FanDuel, bet365-class) — same strategic in
 
 HYBRID: welcome promo surface PLUS a visible VIP/points/reload layer — BetOnline and many regulated brands sit here. Score each half; a promo hero does not mean the brand is promo-only.
 
-PROMO PAGE ONLY (no loop): campaign carousel and T&Cs with no tiers, points, recurring value mechanics, or VIP path — reserve this label for sites that truly lack an ongoing rewards system.`;
+PROMO PAGE ONLY (no loop): campaign carousel and T&Cs with no tiers, points, recurring value mechanics, or VIP path — reserve this label for sites that truly lack an ongoing rewards system.
+
+SHARP CRITIQUE RULES — this product exists to OUT issues, not to soothe operators:
+- Prefer the uncomfortable truth. If a page is bland, static, corporate, or FAQ-heavy with weak product energy, say so and score Content density / discovery below 55. Do not reward "clean and trustworthy" as if that equals good CX.
+- Hidden product is a failure: casino labelled "Arcade" only inside a hamburger, sister-site lobbies, or footer-only game links must tank Search & discovery and Above-the-fold clarity. Name the hide pattern.
+- Vague form errors are a failure: "The value you entered was incorrect" / "valid UK or Irish mobile" with no format example / password rules that appear only after a red empty field — score Form effort and Verification friction down and name the missing hint in observations.
+- Do not inflate Form effort just because field count is low when validation copy is opaque or Continue stays disabled without a clear fix.
+- Regulated UK bingo competitors (Foxy-class) often win on clarity: visible rooms, timers, prices, and category nav. Use that as the peer bar for bingo-first brands — a tidy Tombola-style brochure page that hides Arcade/casino and leans on FAQ blocks should lose to a clearer lobby peer even when both are licensed.
+- Every analysis needs at least 2 critical observations when score < 70 — specific UI elements a product team must fix, not soft praise.`;
 
 /** Journey-specific expert lens. Falls back to landing for unknown areas. */
 const JOURNEY_EXPERTISE: Record<string, string> = {
@@ -61,12 +69,13 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - Provider filters, category rows (Originals, Slots, Live, Game Shows), and jackpot/leaderboard sections signal depth.
 - Originals section = margin + provably-fair trust; its prominence is strategy, not filler.
 - Below the fold matters: live wins feeds, races/leaderboards, promo rows often live at the bottom — judge the WHOLE page.
-- Watch for: search that can't handle typos, no recently-played, dead grids without lazy-load, games that open into broken sessions.`,
+- Bingo-first brands often bury casino under house names ("Arcade") in a hamburger/side menu or on a sister domain — that is a discoverability failure for this journey. Score Search & discovery hard and name the hide pattern.
+- Watch for: search that can't handle typos, no recently-played, dead grids without lazy-load, games that open into broken sessions, marketing homepages scored as if they were lobbies.`,
   bingo: `BINGO LOBBY EXPERTISE — bingo is scheduled, communal, and price-sensitive:
 - The lobby must answer instantly: which rooms are open, when the next game starts, what a ticket costs, and what I can win. Countdown timers, pot sizes, and player counts on room cards are the category standard.
 - Community is the product: chat hosts, roomie culture, winner celebrations, and free bingo rooms drive retention more than raw prize value.
 - Variant breadth (90/80/75-ball, speed bingo, themed rooms) and a clear free-vs-paid split signal a serious bingo operator.
-- Bingo-first brands (Tombola-class) often run proprietary variants — judge them as originals/exclusives strength, not as non-standard clutter.
+- Peer bar for UK bingo-first: Foxy-class clarity (visible rooms, timers, prices, category nav) beats a bland brochure homepage with FAQ blocks and product tucked in menus — even when both are fully licensed.
 - Watch for: lobbies that bury bingo under slots cross-sell, missing ticket prices before commit, no schedule visibility, rooms that need a deposit before you can even preview.`,
   sports_betslip: `SPORTSBOOK EXPERTISE — speed from intent to placed bet is everything:
 - Odds tap → betslip populated → stake entry → place: every extra step bleeds conversion. Bet builder and cashout presence signal a serious book.
@@ -77,8 +86,9 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - Crypto-native leaders: email + password (or one-click OAuth/Telegram/metamask), NO KYC at signup, deposit address available immediately. Every extra field is measurable drop-off.
 - Regulated books need more (age, address, affordability) — judge proportionality to the licence, not absolute field count.
 - OFFER TYPE (critical): distinguish a one-time welcome deposit bonus/free bet (traditional) from an ongoing rakeback/VIP promise (crypto loop). Score clarity of terms — wagering, expiry, opt-in — NOT "how big is the promo". A site with no welcome bonus but clear permanent rakeback is leader-class, not a miss.
-- MOBILE / PHONE FORMAT (regulated UK/IE especially): leaders show the expected pattern before the player fails — placeholder like 07XXX XXXXXX, helper text ("UK mobiles start with 07"), or a country code control that makes Irish vs UK obvious. A generic "enter a valid UK or Irish mobile" error with no example, after accepting spaced or international input visually, is a Form effort failure — players should not have to guess digits-only vs spaced vs +44.
+- MOBILE / PHONE FORMAT (regulated UK/IE especially): leaders show the expected pattern before the player fails — placeholder like 07XXX XXXXXX, helper text ("UK mobiles start with 07"), or a country code control that makes Irish vs UK obvious. A generic "enter a valid UK or Irish mobile" error with no example is a Form effort failure — do not score Form effort 70+ when the only feedback is opaque.
 - EMAIL VALIDATION COPY: "The value you entered was incorrect. Please recheck your data" with no reason (format vs already registered vs blocked) is poor Form effort — leaders say "email already registered" or "enter a valid email".
+- PASSWORD RULES must be visible before failure (8+, upper/lower/number). Showing them only under a red empty field with Continue disabled is weak recovery UX.
 - Watch for: KYC ambush before first deposit, email verification walls before showing the product, CAPTCHAs stacked on CAPTCHAs, bonus opt-in buried.`,
   deposit: `CASHIER/DEPOSIT EXPERTISE — deposit-to-play latency is the conversion metric:
 - Leader pattern: modal cashier over the game, crypto address + QR instantly, network fee guidance, fiat on-ramp options, min/max stated inline.
@@ -112,10 +122,11 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 /** What 85+ looks like — concrete anchors so scores stay calibrated. */
 const CALIBRATION: Record<string, string> = {
   landing: `CALIBRATION: 85+ = Stake-class landing — product visible immediately, rakeback/VIP value prop above the fold, one primary CTA, live social proof, licence in footer. 50 = average licensed operator: generic welcome-bonus hero, working nav, product reachable. 40-55 = bland-but-functional: trustworthy and clean but flat — no product energy, thin game/odds visibility, key sections tucked in menus, next steps unclear after the hero. Below 40 = promo wall obscuring the product, product effectively hidden, or trust signals absent. A page can be tidy and licensed and still land in the 40s if it gives a player no reason or route to explore.`,
-  casino: `CALIBRATION: 85+ = lobby with working search, recently played, provider filters, originals section, and live wins/races below the fold. 50 = usable grid with categories but no personalisation and weak search. Below 40 = broken search, no structure, dead ends.`,
-  bingo: `CALIBRATION: 85+ = Tombola/Mecca-class lobby — room cards with live countdowns, ticket price and pot upfront, player counts, free rooms clearly marked, one tap from lobby to room. 50 = functional room list but prices or schedules need extra clicks. Below 40 = bingo buried under casino cross-sell, no schedule, prices hidden until purchase.`,
+  casino: `CALIBRATION: 85+ = lobby with working search, recently played, provider filters, originals section, and live wins/races below the fold. 50 = usable grid with categories but no personalisation and weak search. Below 40 = broken search, no structure, dead ends, or casino only reachable via obscure house labels / sister sites.
+  Below 45 also fits a capture that never left the bingo homepage because the casino entry was hidden.`,
+  bingo: `CALIBRATION: 85+ = Foxy/Mecca-class lobby — room cards with live countdowns, ticket price and pot upfront, player counts, free rooms clearly marked, one tap from lobby to room. 50 = functional room list but prices or schedules need extra clicks. Below 40 = bingo buried under casino cross-sell, no schedule, prices hidden until purchase. A bland brochure landing with FAQ blocks and no live room strip should land in the 40s for discovery/energy even if compliance is strong.`,
   sports_betslip: `CALIBRATION: 85+ = one-tap slip population, bet builder, cashout, live section with fresh odds. 50 = functional slip with extra steps. Below 40 = slip failures, stale odds, missing stake clarity.`,
-  signup: `CALIBRATION: 85+ = ≤3 fields or social/one-click, instant account, deposit reachable in seconds, offer terms visible. 50 = standard form with reasonable fields and clear offer. Below 40 = KYC before deposit, verification walls, opaque bonus terms.`,
+  signup: `CALIBRATION: 85+ = ≤3 fields or social/one-click, instant account, deposit reachable in seconds, offer terms visible, validation that names the real fix. 50 = standard multi-step form with clear field labels AND clear error copy. Cap Form effort around 45-55 when errors are vague ("incorrect value") or format rules appear only after failure — low field count does not rescue opaque validation. Below 40 = KYC before deposit, verification walls, opaque bonus terms.`,
   deposit: `CALIBRATION: 85+ = modal cashier, instant crypto address + QR, fee/min-max transparency, on-ramp breadth. 50 = working deposit with a redirect or unclear fees. Below 40 = late fee reveals, broken methods, no confirmation states.`,
   withdraw: `CALIBRATION: 85+ = same-modal withdrawal, minutes-fast crypto, upfront fees/minimums, clear pending states, KYC expectations set early. 50 = working but slow/ambiguous. Below 40 = KYC ambush, black-hole pending, support-gated payouts.`,
   loyalty_rewards: `CALIBRATION: 85+ = Winna Bonus Center / Stake VIP class — tier ladder with real thresholds, rakeback per tier, claim tiles, cadence explained, status transfer. 50 = BetOnline/FanDuel-class — real VIP/points/reloads but weaker cadence, opaque conversion, thin gamification, progress often login-gated. Below 40 = promo carousel only with no meaningful ongoing rewards mechanics, or terms so opaque the loop fails in practice.`,

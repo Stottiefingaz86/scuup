@@ -495,11 +495,10 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   ],
 };
 
-/** Wall-clock budget for one agent walk. Vercel kills the whole function
- * at maxDuration (300s on Hobby) and every screenshot captured dies with
- * it — the walk must stop itself early, score what it has, and return
- * inside the limit. The gap after the budget covers scoring + persisting. */
-const RUN_BUDGET_MS = 185_000;
+/** Wall-clock budget for one agent walk. Soft-stop must stay under the
+ * platform kill (Vercel maxDuration). Default assumes Hobby 300s; after
+ * upgrading, set ANALYZE_BUDGET_MS=520000 and raise analyze maxDuration. */
+const RUN_BUDGET_MS = Number(process.env.ANALYZE_BUDGET_MS) || 185_000;
 
 /** The most wall-clock time a pre-walk login attempt may take — only used
  * for deposit/withdraw/account walks that cannot score without a session. */
@@ -1000,10 +999,10 @@ Journey: ${journey}. ${guidance}
 Page title: "${pageTitle}". Final URL: ${finalUrl}.${
     trail.length
       ? `\n\nAn autonomous agent navigated here from the homepage by: ${trail.join("; then ")}. Factor in how discoverable this area was — if it took obscure steps to find, that itself is a CX finding.${
-          /mobile number rejected|mobile validation|set mobile field/i.test(
+          /mobile number rejected|mobile validation|set mobile field|email rejected|email accepted after retry|password field still invalid|vague incorrect/i.test(
             trail.join(" ")
           )
-            ? " The trail shows mobile-number validation friction — in observations, explicitly judge whether the field showed the expected format (placeholder, helper text, country selector) before the error, and score Form effort lower when the only feedback is a bare 'valid UK or Irish mobile' message with no format example."
+            ? " The trail shows registration validation friction — in observations, explicitly judge unclear format hints, vague 'incorrect value' email errors, and password rules that appear only after failure. Score Form effort and Verification friction down when the player cannot tell how to fix the field."
             : ""
         }`
       : ""
@@ -1011,13 +1010,15 @@ Page title: "${pageTitle}". Final URL: ${finalUrl}.${
 
 Scoring philosophy — judge DECISION EASE within the vertical's own conventions. A promo-stuffed hero or wall of competing CTAs with no obvious next action lowers the score; but dense game grids, modal hubs, tier locks and reward layering are the category language, not clutter (see the domain brief). Marketing claims ("Trusted by millions") are not trust signals — only verifiable cues (licence numbers, regulator seals, RG links) count.
 
-Score 0-100 calibrated to THIS vertical: 50 = an average licensed operator, 80+ = the Stake/Winna/Rainbet class of execution. If what you see matches how the category leaders do it, the score must reflect that — an analyst who marks the vertical's best practice as a failure has misread the market.
+CRITICAL: this report must OUT real CX issues. Soft praise of bland, FAQ-heavy, or menu-hidden experiences helps nobody. If Foxy-class clarity (visible rooms, prices, category nav) beats a bland brochure peer, the scores and observations must show that gap. When score is under 70, include at least two critical observations naming specific UI to fix (vague validation, hidden Arcade/casino, static energy, disabled Continue with no clear fix).
+
+Score 0-100 calibrated to THIS vertical: 50 = an average licensed operator, 80+ = the Stake/Winna/Rainbet class of execution. If what you see matches how the category leaders do it, the score must reflect that — an analyst who marks the vertical's best practice as a failure has misread the market. Equally, an analyst who scores a bland licensed brochure page in the mid-60s without calling out flat energy and hidden product has failed the brief.
 
 Heuristics: score EXACTLY these, using these exact names (they are compared across brands): ${(JOURNEY_HEURISTICS[journey] ?? JOURNEY_HEURISTICS.landing).map((h) => `"${h}"`).join(", ")}. Each gets a 0-100 score and a one-line note naming the actual UI elements that earned it. Use these anchors: 90+ = best-in-class (Stake/Winna level), 75–89 = strong execution, 60–74 = average licensed operator, 40–59 = below category standard, below 40 = seriously broken. The overall journey score is computed from these heuristic scores — focus on scoring each heuristic accurately and consistently; do not invent a separate overall number.
 
 Summary: MAXIMUM 2 short sentences. Sentence 1 = the verdict — what drives this score, in plain product language. Sentence 2 = the single biggest gap (or standout) versus the category leaders. No hedging, no filler, no restating the score.
 
-Observations: concrete findings a product team could act on. Be specific: name actual UI elements you can see. Critique what genuinely underperforms; equally, identify what is executed at a leader level and say why it works.
+Observations: concrete findings a product team could act on. Be specific: name actual UI elements you can see. Lead with what underperforms when the experience is weak; only then credit leader-level execution. Do not bury criticism under polite filler.
 
 For each observation, point at the evidence: set "shot" to the screenshot index (0 or 1) showing the element you're discussing, and "region" to that element's bounding box as PERCENTAGES of the image (x,y = top-left corner, w,h = size, all 0-100). Keep regions tight around the specific element. Use null for shot/region only when the observation is about the page as a whole.
 
@@ -1033,7 +1034,7 @@ ${PLAIN_PROSE_RULE}${journey === "loyalty_rewards" ? RETENTION_PROMPT : ""}${FEA
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      reasoning: { effort: "low" },
+      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT ?? "medium" },
       input: [
         {
           role: "user",
@@ -1148,7 +1149,7 @@ export async function extractFeaturesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      reasoning: { effort: "low" },
+      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT ?? "medium" },
       input: [
         {
           role: "user",
@@ -1247,7 +1248,7 @@ export async function extractRetentionNotesFromShots(
     },
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
-      reasoning: { effort: "low" },
+      reasoning: { effort: process.env.OPENAI_REASONING_EFFORT ?? "medium" },
       input: [
         {
           role: "user",
