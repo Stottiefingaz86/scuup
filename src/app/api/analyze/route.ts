@@ -167,7 +167,11 @@ export async function POST(request: NextRequest) {
     const result = await analyzeJourney(url, journey, contextId, proxyCountry, {
       signupVars: journey === "signup" ? signupVars : null,
       chainLoginJourneys:
-        journey === "signup" ? chainLoginJourneys : undefined,
+        journey === "signup"
+          ? chainLoginJourneys.length > 0
+            ? chainLoginJourneys
+            : ["my_account", "deposit"]
+          : undefined,
       loginVars,
       accountExists,
       device,

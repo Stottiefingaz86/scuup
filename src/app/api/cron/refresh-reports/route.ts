@@ -199,11 +199,13 @@ async function findStaleJobs(): Promise<RefreshJob[]> {
 async function runJourneyRefresh(job: RefreshJob): Promise<void> {
   const contextId = await getBrandContextId(job.brandId).catch(() => null);
   let loginVars: Record<string, string> | null = null;
+  let signupVars: Record<string, string> | null = null;
   let accountExists = false;
   try {
     const creds = await getCredentialsForLogin(job.brandId);
     if (creds.persona && creds.password) {
       loginVars = personaVariables(creds.persona, creds.password);
+      if (job.area === "signup") signupVars = loginVars;
     }
     accountExists = creds.loggedInAt != null;
   } catch {
@@ -213,12 +215,18 @@ async function runJourneyRefresh(job: RefreshJob): Promise<void> {
   const proxyCountry = MARKET_PROXY_COUNTRY[job.market] ?? null;
   const url = auditUrlForMarket(job.brandUrl, job.market);
   const result = await analyzeJourney(url, job.area, contextId, proxyCountry, {
+    signupVars: job.area === "signup" ? signupVars : null,
+    chainLoginJourneys:
+      job.area === "signup" ? ["my_account", "deposit"] : undefined,
     loginVars,
     accountExists,
     device: job.device,
   });
-  const { chainedAnalyses: _ignored, ...analysis } = result;
+  const { chainedAnalyses, ...analysis } = result;
   await upsertAnalysis(job.brandId, analysis);
+  for (const chained of chainedAnalyses ?? []) {
+    await upsertAnalysis(job.brandId, chained).catch(() => {});
+  }
   if (analysis.authenticated || analysis.loggedIn) {
     await markLoggedIn(job.brandId).catch(() => {});
   }

@@ -92,6 +92,10 @@ export function runAgent(
         brandName: brand.name,
         ownBrand: brand.role === "own_brand",
         device: project?.device ?? "both",
+        // After a successful signup, explore account + deposit in-session.
+        ...(area === "signup"
+          ? { chainLoginJourneys: ["my_account", "deposit"] }
+          : {}),
       }),
     });
     const data = await res.json();

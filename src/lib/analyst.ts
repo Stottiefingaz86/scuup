@@ -1459,7 +1459,9 @@ async function completeEmailVerification(
     timeoutMs
   );
   if (!mail) {
-    trail.push("no verification email arrived within 90 seconds");
+    trail.push(
+      `no verification email arrived within ${Math.round(timeoutMs / 1000)} seconds`
+    );
     return false;
   }
   trail.push(`verification email received from ${mail.from}`);
@@ -1892,12 +1894,21 @@ async function ensureDobFieldsFilled(
       byPh(/^yyyy$/i) ||
       byMeta(/\\b(dob[_-]?year|birth[_-]?year|yearofbirth|dateofbirthyear)\\b|^year$/i);
     if (dayEl && monthEl && yearEl) {
-      if (dayEl.tagName === "SELECT") dayEl.value = String(Number(day));
-      else setVal(dayEl, day);
-      if (monthEl.tagName === "SELECT") monthEl.value = String(Number(month));
-      else setVal(monthEl, month);
-      if (yearEl.tagName === "SELECT") yearEl.value = year;
-      else setVal(yearEl, year);
+      const setPart = (el, v) => {
+        if (el.tagName === "SELECT") {
+          const n = String(Number(v));
+          const opts = [...el.options];
+          const hit =
+            opts.find((o) => o.value === v || o.value === n) ||
+            opts.find((o) => o.text.trim() === v || o.text.trim() === n);
+          el.value = hit ? hit.value : v;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        } else setVal(el, v);
+      };
+      setPart(dayEl, day);
+      setPart(monthEl, month);
+      setPart(yearEl, year);
       filled = 3;
       return { ok: true, mode: "split", filled };
     }
@@ -1932,6 +1943,189 @@ async function ensureDobFieldsFilled(
   return false;
 }
 
+/** Fill common identity fields Stagehand often skips (names, address,
+ * postcode, username) so multi-step registration can actually complete. */
+async function ensurePersonaFieldsFilled(
+  page: {
+    evaluate: (expr: string) => Promise<unknown>;
+    waitForTimeout: (ms: number) => Promise<void>;
+  },
+  vars: Record<string, string>,
+  trail: string[]
+): Promise<number> {
+  const pairs: { kind: string; value: string; re: string }[] = [
+    {
+      kind: "firstName",
+      value: vars.firstName ?? "",
+      re: "first\\s*name|forename|given\\s*name|firstname",
+    },
+    {
+      kind: "lastName",
+      value: vars.lastName ?? "",
+      re: "last\\s*name|surname|family\\s*name|lastname",
+    },
+    {
+      kind: "username",
+      value: vars.username ?? "",
+      re: "username|user\\s*name|display\\s*name|nickname",
+    },
+    {
+      kind: "addressLine1",
+      value: vars.addressLine1 ?? "",
+      re: "address\\s*line\\s*1|address1|street|house\\s*number|address(?!\\s*line\\s*2)",
+    },
+    {
+      kind: "addressLine2",
+      value: vars.addressLine2 ?? "",
+      re: "address\\s*line\\s*2|address2|apartment|flat|unit",
+    },
+    {
+      kind: "city",
+      value: vars.city ?? "",
+      re: "city|town",
+    },
+    {
+      kind: "postalCode",
+      value: vars.postalCode ?? "",
+      re: "post\\s*code|postal\\s*code|zip",
+    },
+    {
+      kind: "state",
+      value: vars.state ?? "",
+      re: "county|state|province|region",
+    },
+  ].filter((p) => p.value);
+
+  const script = `(() => {
+    ${FORM_FIELD_HELPERS}
+    const pairs = ${JSON.stringify(pairs)};
+    const proto = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    );
+    const setVal = (el, v) => {
+      el.focus();
+      if (el.tagName === "SELECT") {
+        const opts = [...el.options];
+        const hit =
+          opts.find((o) => o.value.toLowerCase() === v.toLowerCase()) ||
+          opts.find((o) => o.text.toLowerCase().includes(v.toLowerCase()));
+        if (hit) el.value = hit.value;
+        else return false;
+      } else if (proto && proto.set) proto.set.call(el, v);
+      else el.value = v;
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, data: v, inputType: "insertText" }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      el.dispatchEvent(new Event("blur", { bubbles: true }));
+      return true;
+    };
+    const inputs = [...document.querySelectorAll("input, select, textarea")].filter(visible);
+    let filled = 0;
+    const filledKinds = [];
+    for (const pair of pairs) {
+      const re = new RegExp(pair.re, "i");
+      for (const el of inputs) {
+        const type = (el.getAttribute("type") || "text").toLowerCase();
+        if (type === "hidden" || type === "password" || type === "email" || type === "tel" || type === "checkbox" || type === "radio") continue;
+        if (el.value && String(el.value).trim().length > 0) continue;
+        const meta = [
+          el.getAttribute("name") || "",
+          el.getAttribute("id") || "",
+          el.getAttribute("autocomplete") || "",
+          el.getAttribute("placeholder") || "",
+          el.getAttribute("aria-label") || "",
+          labelFor(el),
+        ].join(" ");
+        if (!re.test(meta)) continue;
+        if (setVal(el, pair.value)) {
+          filled += 1;
+          filledKinds.push(pair.kind);
+        }
+        break;
+      }
+    }
+    return { filled, filledKinds };
+  })()`;
+
+  try {
+    const result = (await page.evaluate(script)) as {
+      filled?: number;
+      filledKinds?: string[];
+    };
+    const n = result?.filled ?? 0;
+    if (n > 0) {
+      trail.push(
+        `filled ${n} empty persona field(s) via DOM (${(result?.filledKinds ?? []).join(", ")})`
+      );
+      await page.waitForTimeout(400);
+    }
+    return n;
+  } catch {
+    return 0;
+  }
+}
+
+/** True when the page looks like a captcha / bot wall we cannot pass. */
+async function captchaWallVisible(page: {
+  evaluate: (expr: string) => Promise<unknown>;
+}): Promise<boolean> {
+  try {
+    const text = String(
+      await page.evaluate("document.body?.innerText ?? ''")
+    ).slice(0, 12000);
+    return /captcha|recaptcha|hcaptcha|verify you are human|i'?m not a robot|cloudflare/i.test(
+      text
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** After signup/login succeeds, briefly explore the logged-in site so the
+ * signup evidence includes lobby / account chrome — not only the form. */
+async function exploreAuthenticatedSite(
+  stagehand: Stagehand,
+  page: {
+    waitForTimeout: (ms: number) => Promise<void>;
+    goto?: (
+      url: string,
+      opts?: { waitUntil?: "domcontentloaded"; timeoutMs?: number }
+    ) => Promise<unknown>;
+  },
+  siteUrl: string,
+  trail: string[],
+  shots: string[],
+  capture: () => Promise<string>,
+  timeLeft: () => number
+): Promise<void> {
+  if (timeLeft() < 35_000) return;
+  try {
+    if (page.goto) {
+      await page
+        .goto(siteUrl, { waitUntil: "domcontentloaded", timeoutMs: 20000 })
+        .catch(() => {});
+      await page.waitForTimeout(2500);
+    }
+    shots.push(await capture());
+    trail.push("explored logged-in homepage after account creation");
+    if (timeLeft() < 25_000) return;
+    try {
+      await stagehand.act(
+        "If a bingo, casino, games, or play lobby link is visible in the header or main nav, open it. Otherwise open the account, profile, or wallet menu briefly. Do not deposit money and do not start a real-money game."
+      );
+      await page.waitForTimeout(3000);
+      shots.push(await capture());
+      trail.push("opened lobby or account area while logged in");
+    } catch {
+      // Exploration is best-effort evidence.
+    }
+  } catch (e) {
+    trail.push(
+      `post-auth explore skipped (${e instanceof Error ? e.message : e})`
+    );
+  }
+}
+
 /** Fill and submit the (possibly multi-step) registration form with the
  * test persona, capturing each step as scoring evidence. Returns true when
  * the walk ended in an authenticated session. */
@@ -1959,6 +2153,7 @@ async function runRegistrationWalk(
     "click the enabled Create Account button to submit the registration",
     "click Register, Sign Up, or Create Account to complete registration",
     "click Continue or Next if this is a multi-step form and not the final screen",
+    "click the primary Continue, Next, or Submit button to advance this registration step",
   ];
 
   // UK/IE forms often reject spaced / +44 numbers — try compact national
@@ -1973,17 +2168,26 @@ async function runRegistrationWalk(
     ...vars,
     phone: acceptedPhone ?? vars.phone,
   });
+  let stalledSteps = 0;
 
-  for (let step = 1; step <= 4; step++) {
-    if (timeLeft() < 50_000) {
+  // Multi-step UK flows (contact → personal → account → limits → bonus)
+  // often need 5–6 Continues; stop early only on captcha or no progress.
+  for (let step = 1; step <= 6; step++) {
+    if (timeLeft() < 55_000) {
       trail.push(
         `stopped the registration walk at step ${step} — run time budget reached`
       );
       break;
     }
+    if (page.evaluate && (await captchaWallVisible({ evaluate: page.evaluate }))) {
+      trail.push(
+        `registration stopped at step ${step}: captcha / bot wall visible`
+      );
+      break;
+    }
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill every visible empty field that matches the persona. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each box separately with %dateOfBirthDay%, %dateOfBirthMonth%, and %dateOfBirthYear% — do not leave them blank. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. Only fill empty fields — do not submit yet.`,
+        `On this registration or sign-up step, fill EVERY visible empty field that matches the persona — leave nothing blank that the form asks for. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province or county %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each box separately with %dateOfBirthDay%, %dateOfBirthMonth%, and %dateOfBirthYear% — do not leave them blank. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. For deposit/loss/time limit steps, pick the lowest or "prefer not to set" option if offered, otherwise enter a modest weekly limit like 50. For bonus steps, skip or decline the bonus if that advances registration. Only fill empty fields — do not submit yet.`,
         { variables: activeVars() }
       );
       trail.push(`filled registration step ${step} with the test persona`);
@@ -1992,8 +2196,8 @@ async function runRegistrationWalk(
         `couldn't fill registration step ${step} (${e instanceof Error ? e.message : e})`
       );
     }
-    // Email / password via DOM — Stagehand often leaves password empty, and
-    // the shared inbox can trip a vague "incorrect" error after prior runs.
+    // DOM backfill — Stagehand often skips password, DOB parts, address,
+    // and name fields on multi-step UK forms.
     if (page.evaluate) {
       const brandHint =
         vars.email?.match(/\+([a-z0-9]+)/i)?.[1] ??
@@ -2010,6 +2214,14 @@ async function runRegistrationWalk(
         timeLeft
       );
       await ensureDobFieldsFilled(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        activeVars(),
+        trail
+      );
+      await ensurePersonaFieldsFilled(
         {
           evaluate: page.evaluate,
           waitForTimeout: (ms) => page.waitForTimeout(ms),
@@ -2065,26 +2277,41 @@ async function runRegistrationWalk(
     await page.waitForTimeout(6000);
     shots.push(await capture());
 
-    // Continue stayed disabled — if the mobile went red again, type until
-    // green and retry submit once.
-    if (
-      !submitted &&
-      page.evaluate &&
-      ((await phoneFieldValidity({ evaluate: page.evaluate })) === "invalid" ||
-        (await phoneValidationVisible({ evaluate: page.evaluate })))
-    ) {
-      trail.push("Continue blocked — re-typing mobile until valid/green");
-      const accepted = await ensureMobileFieldAccepted(
+    // Continue stayed disabled — refill + mobile retry, then submit again.
+    if (!submitted && page.evaluate) {
+      await ensureDobFieldsFilled(
         {
           evaluate: page.evaluate,
           waitForTimeout: (ms) => page.waitForTimeout(ms),
         },
-        phoneCandidates,
-        vars.country ?? "",
-        trail,
-        timeLeft
+        activeVars(),
+        trail
       );
-      if (accepted.phone) acceptedPhone = accepted.phone;
+      await ensurePersonaFieldsFilled(
+        {
+          evaluate: page.evaluate,
+          waitForTimeout: (ms) => page.waitForTimeout(ms),
+        },
+        activeVars(),
+        trail
+      );
+      if (
+        (await phoneFieldValidity({ evaluate: page.evaluate })) === "invalid" ||
+        (await phoneValidationVisible({ evaluate: page.evaluate }))
+      ) {
+        trail.push("Continue blocked — re-typing mobile until valid/green");
+        const accepted = await ensureMobileFieldAccepted(
+          {
+            evaluate: page.evaluate,
+            waitForTimeout: (ms) => page.waitForTimeout(ms),
+          },
+          phoneCandidates,
+          vars.country ?? "",
+          trail,
+          timeLeft
+        );
+        if (accepted.phone) acceptedPhone = accepted.phone;
+      }
       for (const phrasing of SUBMIT_PHRASINGS) {
         try {
           const result = await stagehand.act(phrasing);
@@ -2103,23 +2330,39 @@ async function runRegistrationWalk(
 
     if (await agentIsLoggedIn(stagehand)) {
       trail.push("registration submitted, account created and logged in");
+      await exploreAuthenticatedSite(
+        stagehand,
+        page,
+        siteUrl,
+        trail,
+        shots,
+        capture,
+        timeLeft
+      );
       return true;
     }
-    if (!submitted && step >= 2) {
+    if (submitted) {
+      stalledSteps = 0;
+    } else {
+      stalledSteps += 1;
       trail.push(
-        `registration stalled at step ${step}: submit button may be disabled or blocked by captcha`
+        `registration step ${step}: continue/submit did not advance (stall ${stalledSteps})`
       );
-      break;
+      if (stalledSteps >= 2) {
+        trail.push(
+          `registration stalled at step ${step}: submit button may be disabled or blocked by captcha`
+        );
+        break;
+      }
     }
   }
 
   // "Verify your email" walls are the most common reason a submitted
   // registration doesn't end authenticated. The agent owns the inbox —
-  // fetch the code or link and finish verification in this session. The
-  // inbox wait shrinks to whatever budget remains after saving headroom.
-  const firstVerifyBudget = Math.min(75_000, timeLeft() - 45_000);
+  // fetch the code or link and finish verification in this session.
+  const firstVerifyBudget = Math.min(120_000, Math.max(0, timeLeft() - 60_000));
   const firstVerify =
-    firstVerifyBudget > 10_000 &&
+    firstVerifyBudget > 15_000 &&
     (await completeEmailVerification(
       stagehand,
       page,
@@ -2135,6 +2378,15 @@ async function runRegistrationWalk(
     await page.waitForTimeout(4000);
     if (await agentIsLoggedIn(stagehand)) {
       trail.push("email verified, account created and logged in");
+      await exploreAuthenticatedSite(
+        stagehand,
+        page,
+        siteUrl,
+        trail,
+        shots,
+        capture,
+        timeLeft
+      );
       return true;
     }
   }
@@ -2143,7 +2395,7 @@ async function runRegistrationWalk(
   const afterFirstVerify = new Date(Date.now() - 10_000);
 
   if (
-    timeLeft() > 60_000 &&
+    timeLeft() > 70_000 &&
     (await performAgentLogin(
       stagehand,
       page,
@@ -2157,23 +2409,42 @@ async function runRegistrationWalk(
         shots,
         capture,
         dismissCookies: false,
-        deadlineAt: Date.now() + Math.max(0, timeLeft() - 45_000),
+        deadlineAt: Date.now() + Math.max(0, timeLeft() - 50_000),
       }
     ))
   ) {
+    await exploreAuthenticatedSite(
+      stagehand,
+      page,
+      siteUrl,
+      trail,
+      shots,
+      capture,
+      timeLeft
+    );
     return true;
   }
 
   await page.waitForTimeout(5000);
   if (await agentIsLoggedIn(stagehand)) {
     trail.push("authenticated after registration settled");
+    await exploreAuthenticatedSite(
+      stagehand,
+      page,
+      siteUrl,
+      trail,
+      shots,
+      capture,
+      timeLeft
+    );
     return true;
   }
 
-  // The login attempt itself can trip an OTP check — give the inbox one
-  // short chance for a login-triggered code before giving up.
+  // The login attempt itself can trip an OTP check — give the inbox another
+  // chance for a login-triggered code before giving up.
+  const secondVerifyBudget = Math.min(90_000, Math.max(0, timeLeft() - 45_000));
   if (
-    timeLeft() > 55_000 &&
+    secondVerifyBudget > 15_000 &&
     (await completeEmailVerification(
       stagehand,
       page,
@@ -2183,12 +2454,21 @@ async function runRegistrationWalk(
       trail,
       shots,
       capture,
-      40_000
+      secondVerifyBudget
     ))
   ) {
     await page.waitForTimeout(4000);
     if (await agentIsLoggedIn(stagehand)) {
       trail.push("verified via emailed code after login");
+      await exploreAuthenticatedSite(
+        stagehand,
+        page,
+        siteUrl,
+        trail,
+        shots,
+        capture,
+        timeLeft
+      );
       return true;
     }
   }
@@ -2871,16 +3151,18 @@ async function analyzeWithAgent(
       loggedIn: isLoginJourney || sessionLoggedIn || (authenticated ?? false),
     };
 
-    // Signup created a session — walk deposit/account journeys in the same
-    // browser before closing so scores show as logged-in immediately.
+    // Signup created a session — walk deposit/account (and any client-requested
+    // gated journeys) in the same browser so we explore while logged in.
     const chainedAnalyses: JourneyAnalysis[] = [];
-    if (
-      journey === "signup" &&
-      authenticated &&
-      chainLoginJourneys &&
-      chainLoginJourneys.length > 0
-    ) {
-      for (const loginJourney of chainLoginJourneys) {
+    const journeysToChain =
+      journey === "signup" && authenticated
+        ? (chainLoginJourneys && chainLoginJourneys.length > 0
+            ? chainLoginJourneys
+            : ["my_account", "deposit"]
+          ).filter((j) => LOGIN_PLAYBOOKS[j])
+        : [];
+    if (journeysToChain.length > 0) {
+      for (const loginJourney of journeysToChain) {
         const loginPlaybook = LOGIN_PLAYBOOKS[loginJourney];
         if (!loginPlaybook) continue;
         if (timeLeft() < 90_000) {

@@ -1,10 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { appHomePathForUser } from "@/lib/app-home";
+import {
+  SITE_GATE_COOKIE,
+  isSiteGateUnlocked,
+  siteGateEnabled,
+} from "@/lib/site-gate";
 
 /** Paths anyone can reach logged out. Everything else needs an account. */
 const PUBLIC_PATHS = [
   /^\/$/,
+  /^\/gate(\/|$)/,
   /^\/login(\/|$)/,
   /^\/auth(\/|$)/,
   /^\/privacy(\/|$)/,
@@ -20,8 +26,39 @@ const PUBLIC_PATHS = [
   /^\/api\/cron(\/|$)/,
 ];
 
+/** Always reachable even when the site password gate is on. */
+const GATE_BYPASS = [
+  /^\/gate(\/|$)/,
+  /^\/api\/billing\/webhook$/,
+  /^\/api\/cron(\/|$)/,
+  /^\/monitoring(\/|$)/,
+];
+
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
+
+  const { pathname } = request.nextUrl;
+
+  // Close the site to the public until the visitor enters the password.
+  if (
+    siteGateEnabled() &&
+    !isSiteGateUnlocked(request.cookies.get(SITE_GATE_COOKIE)?.value) &&
+    !GATE_BYPASS.some((p) => p.test(pathname))
+  ) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Site is password-protected." },
+        { status: 401 }
+      );
+    }
+    const url = request.nextUrl.clone();
+    url.pathname = "/gate";
+    url.search = "";
+    if (pathname !== "/") {
+      url.searchParams.set("next", pathname);
+    }
+    return NextResponse.redirect(url);
+  }
 
   const client = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,8 +81,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await client.auth.getUser();
-
-  const { pathname } = request.nextUrl;
 
   if (pathname === "/" && request.nextUrl.searchParams.has("error")) {
     const url = request.nextUrl.clone();
