@@ -100,7 +100,7 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  // Close the site to the public until the visitor enters the password.
+  // Close scuup.io until the visitor enters the PIN (1986).
   if (
     siteGateEnabled() &&
     !isSiteGateUnlocked(request.cookies.get(SITE_GATE_COOKIE)?.value) &&
@@ -108,7 +108,7 @@ export async function proxy(request: NextRequest) {
   ) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
-        { error: "Site is password-protected." },
+        { error: "Site is PIN-protected." },
         { status: 401 },
       );
     }

@@ -12,9 +12,11 @@ export async function unlockSite(
   _prev: { error?: string } | null,
   formData: FormData
 ): Promise<{ error?: string }> {
-  const password = String(formData.get("password") ?? "");
+  const password = String(
+    formData.get("pin") ?? formData.get("password") ?? "",
+  ).replace(/\s+/g, "");
   if (password !== siteAccessPassword()) {
-    return { error: "Wrong password." };
+    return { error: "Wrong PIN." };
   }
 
   const jar = await cookies();
