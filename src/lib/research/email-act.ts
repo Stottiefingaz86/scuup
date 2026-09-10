@@ -67,7 +67,7 @@ export async function syncAndActOnEmails(opts: {
       toAddress: email,
       since,
       fromDomainHint: host,
-      limit: 30,
+      limit: 80,
     });
   } catch (e) {
     trail.push(
@@ -118,10 +118,8 @@ export async function syncAndActOnEmails(opts: {
     if (
       actionTaken === "noted" &&
       (mail.category === "verify" ||
-        mail.category === "bonus" ||
         mail.category === "welcome" ||
-        mail.category === "deposit_nudge" ||
-        mail.links.length > 0)
+        mail.category === "deposit_nudge")
     ) {
       const link =
         pickActionableLink(mail, host) ??

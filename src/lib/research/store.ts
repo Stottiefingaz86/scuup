@@ -12,6 +12,7 @@ import { teardownFromRun } from "./teardown-summary";
 import { reconcilePostDeposit } from "./post-deposit";
 import { researchSignupEmail } from "./signup-email";
 import { extractUsernameFromEmails } from "./account-username";
+import { bodyLooksLikeBrand, senderLooksLikeBrand } from "./email-brand";
 import { autoMarketForBrands } from "../brand-markets";
 import type {
   EmailWatchItem,
@@ -564,12 +565,27 @@ function matchEmailToProjectBrand(
     if (hay.includes(alias)) return b.id;
   }
 
+  // ESP often strips +tags. From: winna.com / "Welcome to Winna" still counts
+  // when To is the shared inbox and not a sibling +rs alias.
+  const otherRs = /\+rs[a-z0-9]+@/i.test(to);
+  if (!otherRs || aliases.some((a) => to.includes(a))) {
+    for (const b of project.brands) {
+      if (senderLooksLikeBrand(email.from, b.url)) return b.id;
+    }
+    for (const b of project.brands) {
+      if (bodyLooksLikeBrand(hay, b)) return b.id;
+    }
+  }
+
   // Already attributed to a brand on this project (agent path) — keep only if
   // the alias still matches or To is empty (agent-captured during this run).
   if (isProjectBrandId(project, email.brandId)) {
     const brand = project.brands.find((b) => b.id === email.brandId);
     const alias = brand?.accountEmail?.trim().toLowerCase() ?? "";
     if (!to || (alias && (to.includes(alias) || hay.includes(alias)))) {
+      return email.brandId;
+    }
+    if (brand && senderLooksLikeBrand(email.from, brand.url)) {
       return email.brandId;
     }
   }
@@ -659,6 +675,9 @@ function inferEmailBrandId(
     const alias = b.accountEmail?.trim().toLowerCase() ?? "";
     // Exact alias only — never guess from brand domain alone (false "exists").
     if (alias && hay.includes(alias)) return b.id;
+  }
+  for (const b of project.brands) {
+    if (senderLooksLikeBrand(email.from, b.url)) return b.id;
   }
   return null;
 }

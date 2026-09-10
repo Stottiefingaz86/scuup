@@ -3,6 +3,7 @@ import "server-only";
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 import { inboxConfigured } from "../verification-inbox";
+import { senderLooksLikeBrand } from "./email-brand";
 import type { EmailWatchItem } from "./types";
 
 /** Full captured message for Research evidence + agent interaction. */
@@ -143,11 +144,15 @@ export function categorizeEmail(
   if (/welcome|thanks for (?:joining|signing)|get started/.test(hay)) {
     return "welcome";
   }
-  if (/bonus|free spins?|promo code|offer|cashback|rakeback/.test(hay)) {
-    return "bonus";
-  }
-  if (/vip|loyalty|tier|rewards club|host/.test(hay)) {
+  if (
+    /vip|loyalty|tier|rewards club|\bhost\b|weekly boost|monthly bonus|rakeback|level.?up|exclusive/.test(
+      hay,
+    )
+  ) {
     return "vip";
+  }
+  if (/bonus|free spins?|promo code|offer|cashback/.test(hay)) {
+    return "bonus";
   }
   if (
     /we miss you|come back|reactivat|inactive|haven'?t (?:played|logged)/.test(
@@ -169,26 +174,10 @@ function extractOtp(text: string): string | null {
   return OTP_RE.exec(text)?.[1] ?? OTP_LOOSE_RE.exec(text)?.[1] ?? null;
 }
 
-/** Bovada mail often comes from bovada.lv / bodog — not bovada.com. */
-const SENDER_FAMILY: Record<string, string[]> = {
-  bovada: ["bovada", "bodog"],
-  bodog: ["bodog", "bovada"],
-};
-
-function senderMatchesBrand(from: string, domainHint?: string): boolean {
+function senderMatchesBrand(from: string, domainHint?: string | null): boolean {
   if (!domainHint) return false;
-  const domain = domainHint.toLowerCase().replace(/^www\./, "");
-  if (
-    from.endsWith(`@${domain}`) ||
-    from.endsWith(`.${domain}`) ||
-    from.includes(`@${domain}`)
-  ) {
-    return true;
-  }
-  const root = domain.split(".")[0] ?? "";
-  if (root.length >= 4 && from.includes(root)) return true;
-  const extra = SENDER_FAMILY[root];
-  return Boolean(extra?.some((tok) => from.includes(tok)));
+  const host = domainHint.toLowerCase().replace(/^www\./, "");
+  return senderLooksLikeBrand(from, `https://${host}`);
 }
 
 function headerAddresses(parsed: {
@@ -223,7 +212,15 @@ function headerAddresses(parsed: {
   return `${fromTo} ${extras}`.toLowerCase();
 }
 
-const IMAP_BOXES = ["INBOX", "[Gmail]/Spam", "Spam"] as const;
+const IMAP_BOXES = [
+  "[Gmail]/All Mail",
+  "INBOX",
+  "[Gmail]/Spam",
+  "Spam",
+] as const;
+
+const ENVELOPE_SCAN_CAP = 400;
+const FULL_PARSE_CAP = 120;
 
 /**
  * Fetch every message since `since` addressed to our research inbox
@@ -231,10 +228,59 @@ const IMAP_BOXES = ["INBOX", "[Gmail]/Spam", "Spam"] as const;
  * "check your email" mail often never arrives, and when it does it
  * lands in Spam.
  */
+function envelopeAddressList(value: unknown): string {
+  if (!value) return "";
+  const list = Array.isArray(value) ? value : [value];
+  return list
+    .flatMap((item) => {
+      if (item && typeof item === "object") {
+        const rec = item as { address?: string; mailbox?: string; host?: string };
+        if (rec.address) return [rec.address];
+        if (rec.mailbox && rec.host) return [`${rec.mailbox}@${rec.host}`];
+      }
+      return [];
+    })
+    .join(" ")
+    .toLowerCase();
+}
+
+function keepForWatch(opts: {
+  to: string;
+  from: string;
+  aliases: string[];
+  fromHints: string[];
+}): boolean {
+  const { to, from, aliases, fromHints } = opts;
+  if (!aliases.length) return false;
+  if (aliases.some((a) => isDifferentResearchAlias(to, a))) {
+    // A different +rs tag is never this project's mail — unless To also
+    // includes one of our aliases (multi-recipient).
+    if (!aliases.some((a) => matchesRecipient(to, a))) return false;
+  }
+  if (aliases.some((a) => matchesRecipient(to, a))) return true;
+  if (fromHints.some((h) => senderMatchesBrand(from, h))) {
+    // Brand-from mail to the shared inbox (ESP stripped the +tag).
+    if (/\+rs[a-z0-9]+@/i.test(to) && !aliases.some((a) => matchesRecipient(to, a))) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Fetch every message since `since` addressed to our research inbox
+ * (base or +alias). Newest last. Also reads Gmail Spam — Bovada
+ * "check your email" mail often never arrives, and when it does it
+ * lands in Spam. All Mail catches VIP / CRM that Gmail tabs away
+ * from the primary inbox.
+ */
 export async function fetchInboxEmailsSince(opts: {
   toAddress: string;
   since: Date;
   fromDomainHint?: string | null;
+  extraToAddresses?: string[];
+  extraFromHints?: string[];
   limit?: number;
 }): Promise<CapturedInboxEmail[]> {
   if (!inboxConfigured()) return [];
@@ -250,9 +296,21 @@ export async function fetchInboxEmailsSince(opts: {
 
   await client.connect();
   try {
-    const alias = opts.toAddress.toLowerCase();
-    const domain = opts.fromDomainHint?.toLowerCase().replace(/^www\./, "");
-    const perBox = opts.limit ?? 40;
+    const aliases = [
+      ...new Set(
+        [opts.toAddress, ...(opts.extraToAddresses ?? [])]
+          .map((a) => a.toLowerCase().trim())
+          .filter(Boolean),
+      ),
+    ];
+    const fromHints = [
+      ...new Set(
+        [opts.fromDomainHint, ...(opts.extraFromHints ?? [])]
+          .map((h) => h?.toLowerCase().replace(/^www\./, "").trim() ?? "")
+          .filter(Boolean),
+      ),
+    ];
+    const parseCap = opts.limit ?? FULL_PARSE_CAP;
     const seen = new Set<string>();
     const out: CapturedInboxEmail[] = [];
 
@@ -261,10 +319,31 @@ export async function fetchInboxEmailsSince(opts: {
         const lock = await client.getMailboxLock(box);
         try {
           const uids = await client.search({ since: opts.since }, { uid: true });
-          const list = (Array.isArray(uids) ? uids : []).slice(-perBox);
+          const all = Array.isArray(uids) ? uids : [];
+          const scan = all.slice(-ENVELOPE_SCAN_CAP);
           const boxSlug = box.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+          const wanted: number[] = [];
 
-          for (const uid of list) {
+          if (scan.length) {
+            for await (const msg of client.fetch(
+              scan,
+              { envelope: true, internalDate: true, uid: true },
+              { uid: true },
+            )) {
+              const env = "envelope" in msg ? msg.envelope : null;
+              const to = envelopeAddressList(env?.to);
+              const from = envelopeAddressList(env?.from);
+              const internal =
+                "internalDate" in msg && msg.internalDate instanceof Date
+                  ? msg.internalDate
+                  : null;
+              if (internal && internal < opts.since) continue;
+              if (!keepForWatch({ to, from, aliases, fromHints })) continue;
+              wanted.push(Number(msg.uid));
+            }
+          }
+
+          for (const uid of wanted.slice(-parseCap)) {
             const msg = await client.fetchOne(
               uid,
               { source: true, internalDate: true },
@@ -281,13 +360,7 @@ export async function fetchInboxEmailsSince(opts: {
 
             const to = headerAddresses(parsed);
             const from = parsed.from?.value[0]?.address?.toLowerCase() ?? "";
-            const matchesAlias = matchesRecipient(to, alias);
-            const matchesDomain = senderMatchesBrand(from, domain);
-            if (isDifferentResearchAlias(to, alias)) continue;
-            if (!matchesAlias && !matchesDomain) continue;
-            if (!matchesAlias && matchesDomain && /\+rs[a-z0-9]+@/i.test(to)) {
-              continue;
-            }
+            if (!keepForWatch({ to, from, aliases, fromHints })) continue;
 
             const textBody = (parsed.text ?? "")
               .replace(/\r\n/g, "\n")
@@ -320,7 +393,7 @@ export async function fetchInboxEmailsSince(opts: {
               messageId: parsed.messageId ?? null,
               receivedAt,
               from,
-              to: to.trim() || alias,
+              to: to.trim() || aliases[0] || "",
               subject,
               body,
               html,
@@ -334,7 +407,7 @@ export async function fetchInboxEmailsSince(opts: {
           lock.release();
         }
       } catch {
-        // Gmail may not expose "Spam" vs "[Gmail]/Spam".
+        // Gmail may not expose "Spam" vs "[Gmail]/All Mail".
       }
     }
 

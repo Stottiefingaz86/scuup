@@ -28,18 +28,43 @@ const listStore = globalThis as unknown as {
 const listCache = (listStore.__researchInboxList ??= new Map());
 const LIST_CACHE_MS = 20_000;
 
+function csvParam(request: NextRequest, name: string): string[] {
+  return (request.nextUrl.searchParams.get(name) ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 function listInboxCoalesced(
   toAddress: string,
   since: Date,
-  hours: number
+  hours: number,
+  extraToAddresses: string[],
+  extraFromHints: string[],
 ): Promise<ListResult> {
-  const key = `${toAddress.toLowerCase()}|${hours}`;
+  const key = `${toAddress.toLowerCase()}|${hours}|${extraToAddresses.join(",")}|${extraFromHints.join(",")}`;
   const hit = listCache.get(key);
   if (hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.promise;
-  const promise = fetchInboxEmailsSince({ toAddress, since, limit: 50 });
+  const promise = fetchInboxEmailsSince({
+    toAddress,
+    since,
+    extraToAddresses,
+    extraFromHints,
+    limit: 120,
+  });
   listCache.set(key, { at: Date.now(), promise });
   promise.catch(() => listCache.delete(key));
   return promise;
+}
+
+function toWatchItems(raw: ListResult) {
+  return raw.map((message) =>
+    capturedToWatchItem(message, "inbox", new Date(0), {
+      actionTaken: "noted",
+      actionResult: "Inbox sync",
+      dayNumber: 0,
+    }),
+  );
 }
 
 /** Health / peek / full list for the shared Research verification inbox. */
@@ -59,7 +84,7 @@ export async function GET(request: NextRequest) {
   // Days 1–14 CRM tracking pulls the whole window (plus slack).
   const hours = Math.min(
     16 * 24,
-    Math.max(1, Number(request.nextUrl.searchParams.get("hours") ?? "24") || 24)
+    Math.max(1, Number(request.nextUrl.searchParams.get("hours") ?? "24") || 24),
   );
   const since = new Date(Date.now() - hours * 3600_000);
 
@@ -73,21 +98,21 @@ export async function GET(request: NextRequest) {
 
   if (list) {
     try {
-      const raw = await listInboxCoalesced(to, since, hours);
-      const messages = raw.map((m) =>
-        // dayNumber recalculated client-side against project createdAt
-        capturedToWatchItem(m, "inbox", new Date(0), {
-          actionTaken: "noted",
-          actionResult: "Inbox sync",
-          dayNumber: 0,
-        })
+      const extraToAddresses = csvParam(request, "aliases");
+      const extraFromHints = csvParam(request, "from");
+      const raw = await listInboxCoalesced(
+        to,
+        since,
+        hours,
+        extraToAddresses,
+        extraFromHints,
       );
       return NextResponse.json({
         configured: true,
         user: process.env.GMAIL_IMAP_USER ?? null,
         to,
         since: since.toISOString(),
-        messages,
+        messages: toWatchItems(raw),
       });
     } catch (e) {
       return NextResponse.json(
@@ -95,15 +120,12 @@ export async function GET(request: NextRequest) {
           configured: true,
           error: e instanceof Error ? e.message : "list failed",
         },
-        { status: 500 }
+        { status: 500 },
       );
     }
   }
 
-  const mail = await waitForVerificationEmail(
-    { toAddress: to, since },
-    12_000
-  );
+  const mail = await waitForVerificationEmail({ toAddress: to, since }, 12_000);
 
   return NextResponse.json({
     configured: true,

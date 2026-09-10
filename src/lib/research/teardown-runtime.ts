@@ -32,6 +32,7 @@ import {
   observeStageFriction,
 } from "./instrumentation";
 import { emptyStagesFor, STAGE_OWNERS } from "./journeys";
+import { isSkippedStage } from "./teardown-summary";
 import { runFeatureScan } from "./feature-scan";
 import { runReturningLoginFlow } from "./login-agent";
 import { runCasinoPlayFlow, type LobbyFeatures } from "./play-agent";
@@ -934,7 +935,7 @@ async function pollInboxEvidenceOnly(
       toAddress: email,
       since,
       fromDomainHint: host,
-      limit: 20,
+      limit: 80,
     });
     for (const m of messages) {
       if (job.seenEmailIds.includes(m.id)) continue;
@@ -3377,12 +3378,22 @@ async function loginExistingAccount(args: {
     (await readHeaderBalance(page)) != null ||
     (await checkAgentLoggedIn(stagehand));
   if (!(await isLoggedIn())) {
-    tracker.begin("registration");
-    tracker.end("registration", {
-      steps: 0,
-      evidence: "Skipped — logging into existing account",
-      severity: "low",
-    });
+    const priorReg = tracker.stage("registration");
+    const keepSignup =
+      ((priorReg?.fieldCount ?? 0) > 0 ||
+        (priorReg?.screenshotUrls?.length ?? 0) > 0 ||
+        (priorReg?.steps ?? 0) > 0) &&
+      !isSkippedStage(priorReg);
+    if (!keepSignup) {
+      tracker.begin("registration");
+      tracker.end("registration", {
+        steps: 0,
+        evidence: "Skipped — logging into existing account",
+        severity: "low",
+        fieldCount: priorReg?.fieldCount ?? null,
+        screenshotUrls: priorReg?.screenshotUrls ?? [],
+      });
+    }
     tracker.begin("verification");
     tracker.push(`Logging in as ${email}`);
     // DOM first (header Log In, /login link, hamburger → Log In), then the
@@ -3655,7 +3666,8 @@ export async function startResearchTeardown(
     ],
     stages:
       input.seedStages?.length &&
-      (input.startAt === "deposit_confirmation" ||
+      (input.startAt === "deposit" ||
+        input.startAt === "deposit_confirmation" ||
         input.startAt === "play" ||
         input.startAt === "features")
         ? input.seedStages.map((st) => ({ ...st }))

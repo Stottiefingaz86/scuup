@@ -87,6 +87,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   buildJourneyComparison,
+  isSkippedStage,
+  recoverRegistrationMetrics,
   teardownForBrand,
 } from "@/lib/research/teardown-summary";
 import {
@@ -101,12 +103,14 @@ import {
   randomUsAddress,
 } from "@/lib/research/persona-address";
 import { resolveResearchSignupEmail } from "@/lib/research/signup-email";
+import { brandHost } from "@/lib/research/email-brand";
 import type {
   AcquisitionSource,
   JourneyKind,
   JourneyRun,
   JourneyStageResult,
   ResearchPersona,
+  ResearchProject,
 } from "@/lib/research/types";
 
 /** Only apply agent stages when they contain real progress — never wipe a
@@ -259,6 +263,34 @@ function formatSec(n: number | null | undefined) {
   const m = Math.floor(n / 60);
   const s = n % 60;
   return `${m}m ${s}s`;
+}
+
+/** Welcome → day 14 CRM window, scoped to this project's +aliases and senders. */
+function researchInboxListUrl(
+  project: ResearchProject,
+  toAddress: string,
+): string {
+  const days = project.emailWatchDays || 14;
+  const elapsedH = Math.ceil(
+    (Date.now() - Date.parse(project.createdAt)) / 3_600_000,
+  );
+  const hours = Math.min(16 * 24, Math.max(1, days * 24, elapsedH || 1));
+  const aliases = project.brands
+    .map((b) => b.accountEmail?.trim())
+    .filter((a): a is string => Boolean(a))
+    .join(",");
+  const from = project.brands
+    .map((b) => brandHost(b.url))
+    .filter(Boolean)
+    .join(",");
+  const qs = new URLSearchParams({
+    list: "1",
+    to: toAddress,
+    hours: String(hours),
+  });
+  if (aliases) qs.set("aliases", aliases);
+  if (from) qs.set("from", from);
+  return `/api/research/inbox?${qs.toString()}`;
 }
 
 export default function ResearchProjectPage() {
@@ -470,12 +502,15 @@ function ResearchProjectPageInner() {
     syncBrandAccountsFromEmails(project.id);
   }, [project]);
 
-  // While the agent runs, keep merging IMAP into the project so Emails updates
-  // without a manual Sync click. Only this project's +aliases after createdAt.
+  // Keep merging IMAP for the 14-day CRM window — not only while an agent
+  // runs. Winna VIP / weekly mail arrives after the teardown ends.
   useEffect(() => {
     if (!project) return;
     const busy = batchRunning || depositBatchRunning || running;
     const email = project.persona?.email || DEFAULT_TEST_EMAIL;
+    const watchMs = (project.emailWatchDays || 14) * 86_400_000;
+    const createdMs = Date.parse(project.createdAt) || 0;
+    const watching = !createdMs || Date.now() - createdMs < watchMs;
     let cancelled = false;
     // IMAP list can take 20s+. Never let ticks overlap — stacked requests
     // saturate the browser's per-host connection limit and starve the job poll
@@ -485,18 +520,7 @@ function ResearchProjectPageInner() {
       if (inFlight) return;
       inFlight = true;
       try {
-        const hours = Math.min(
-          72,
-          Math.max(
-            1,
-            Math.ceil(
-              (Date.now() - Date.parse(project.createdAt)) / 3_600_000,
-            ) || 1,
-          ),
-        );
-        const res = await fetch(
-          `/api/research/inbox?list=1&to=${encodeURIComponent(email)}&hours=${hours}`,
-        );
+        const res = await fetch(researchInboxListUrl(project, email));
         const data = await res.json();
         if (cancelled || !data.configured) return;
         const items = (data.messages ??
@@ -511,15 +535,12 @@ function ResearchProjectPageInner() {
       }
     };
     void tick();
-    // One pull on load so a confirmation mail that arrived after the walk
-    // still lands on the Deposit Confirmation card. Keep polling only while
-    // an agent is running.
-    if (!busy) {
+    if (!busy && !watching) {
       return () => {
         cancelled = true;
       };
     }
-    const id = window.setInterval(tick, 30_000);
+    const id = window.setInterval(tick, busy ? 30_000 : 120_000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -1015,7 +1036,10 @@ function ResearchProjectPageInner() {
           resumeWatch,
           forceAhead: resumeWatch ? opts?.forceAhead === true : false,
           replayPlay: redoPlay,
-          seedStages: resumeWatch || skipToPlay || redoPlay ? seedStages : null,
+          seedStages:
+            resumeWatch || skipToPlay || redoPlay || resumeExisting
+              ? seedStages
+              : null,
           seedDepositWatch:
             resumeWatch || skipToPlay || redoPlay
               ? (run.depositWatch ?? [])
@@ -2178,12 +2202,13 @@ function StageDetailTable({ stages }: { stages: JourneyStageResult[] }) {
         </span>
       </summary>
       <div className="overflow-x-auto border-t border-[var(--rs-border)]">
-        <table className="rs-table rs-fixed min-w-[1180px]">
+        <table className="rs-table rs-fixed min-w-[1240px]">
           {/* Fixed column plan so every row lines up regardless of copy length.
-              Fixed widths sum to ~900px; the Issue column takes the rest (≥280). */}
+              Fixed widths sum to ~960px; the Issue column takes the rest (≥280). */}
           <colgroup>
             <col style={{ width: 150 }} />
             <col style={{ width: 160 }} />
+            <col style={{ width: 60 }} />
             <col style={{ width: 60 }} />
             <col style={{ width: 60 }} />
             <col style={{ width: 60 }} />
@@ -2195,7 +2220,7 @@ function StageDetailTable({ stages }: { stages: JourneyStageResult[] }) {
           <thead>
             <tr className="rs-band-row">
               <th colSpan={2}>Stage</th>
-              <th className="rs-band" colSpan={3}>
+              <th className="rs-band" colSpan={4}>
                 Effort
               </th>
               <th className="rs-band" colSpan={2}>
@@ -2211,6 +2236,7 @@ function StageDetailTable({ stages }: { stages: JourneyStageResult[] }) {
               <th className="rs-band rs-num">Clicks</th>
               <th className="rs-num">Time</th>
               <th className="rs-num">Wait</th>
+              <th className="rs-num">Fields</th>
               <th className="rs-band">Issue · impact</th>
               <th>Fix · severity</th>
               <th className="rs-band">Evidence</th>
@@ -2220,6 +2246,21 @@ function StageDetailTable({ stages }: { stages: JourneyStageResult[] }) {
           <tbody>
             {rows.map((s) => {
               const reached = Boolean(s.startedAt || s.endedAt);
+              const measured = reached && !isSkippedStage(s);
+              const recovered =
+                s.stageId === "registration"
+                  ? recoverRegistrationMetrics(s)
+                  : null;
+              const clicks = measured
+                ? s.steps
+                : recovered?.steps != null
+                  ? recovered.steps
+                  : null;
+              const time = measured
+                ? s.timeSec
+                : recovered?.timeSec != null
+                  ? recovered.timeSec
+                  : null;
               const friction = cellText(s.friction);
               const impact = cellText(s.userImpact);
               const evidence = cellText(s.evidence);
@@ -2240,18 +2281,23 @@ function StageDetailTable({ stages }: { stages: JourneyStageResult[] }) {
                     <span className="rs-sub">{s.userGoal}</span>
                   </td>
                   <td className="rs-band rs-num">
-                    {reached ? (s.steps ?? "—") : "—"}
+                    {clicks != null ? clicks : "—"}
                   </td>
                   <td className="rs-num">
-                    {reached ? formatSec(s.timeSec) : "—"}
+                    {time != null ? formatSec(time) : "—"}
                   </td>
                   <td
                     className={cn(
                       "rs-num",
-                      reached && (s.waitSec ?? 0) >= 10 && "text-amber-300",
+                      measured && (s.waitSec ?? 0) >= 10 && "text-amber-300",
                     )}
                   >
-                    {reached ? formatSec(s.waitSec) : "—"}
+                    {measured ? formatSec(s.waitSec) : "—"}
+                  </td>
+                  <td className="rs-num">
+                    {s.fieldCount != null && s.fieldCount > 0
+                      ? s.fieldCount
+                      : "—"}
                   </td>
                   <td className="rs-band">
                     {friction ? (
@@ -2695,17 +2741,7 @@ function EmailWatchPanel({
     setBusy(true);
     setStatus(null);
     try {
-      const hours = Math.min(
-        72,
-        Math.max(
-          1,
-          Math.ceil((Date.now() - Date.parse(project.createdAt)) / 3_600_000) ||
-            1,
-        ),
-      );
-      const res = await fetch(
-        `/api/research/inbox?list=1&to=${encodeURIComponent(email)}&hours=${hours}`,
-      );
+      const res = await fetch(researchInboxListUrl(project, email));
       const data = await res.json();
       if (!data.configured) {
         setStatus("IMAP not configured");
@@ -2746,7 +2782,9 @@ function EmailWatchPanel({
           Emails
         </h2>
         <p className="mt-1 text-[var(--rs-muted)]">
-          Filtered by brand. Messages to {email} (+aliases) from Days 0–{days}.
+          Every message from welcome onward for {days} days — {email}{" "}
+          (+aliases), including VIP, bonus, and login mail. Syncs while this
+          page is open.
         </p>
       </div>
 
@@ -3058,7 +3096,13 @@ function BenchmarkTab({
   // deposit/play in a later resume) so a resumed run never blanks the table.
   const merged = new Map<string, ReturnType<typeof teardownForBrand>>();
   for (const b of project.brands) {
-    merged.set(b.id, teardownForBrand(project.runs, b.id));
+    merged.set(
+      b.id,
+      teardownForBrand(project.runs, b.id, {
+        emails: project.emails,
+        stored: project.teardowns.find((t) => t.brandId === b.id) ?? null,
+      }),
+    );
   }
   const teardownOf = (brandId: string | undefined) => {
     if (!brandId) return null;

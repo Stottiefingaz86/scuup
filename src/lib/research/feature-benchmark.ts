@@ -171,11 +171,10 @@ export function featureBenchmarkCell(
   switch (`${area} · ${criteria}`) {
     // —— Registration ——
     case "Registration · Number of steps":
-      return td?.registrationSteps != null
-        ? String(td.registrationSteps)
-        : reg?.steps != null
-          ? String(reg.steps)
-          : "—";
+      if (td?.registrationSteps != null && td.registrationSteps > 0)
+        return String(td.registrationSteps);
+      if (reg?.steps != null && reg.steps > 0) return String(reg.steps);
+      return "—";
     case "Registration · Number of fields":
       return td?.totalFields != null
         ? String(td.totalFields)
@@ -207,8 +206,13 @@ export function featureBenchmarkCell(
 
     // —— Login ——
     case "Login · Steps to login": {
-      if (!verify?.endedAt || !/logged in/i.test(verify.evidence ?? ""))
-        return "—";
+      if (!verify?.endedAt) return "—";
+      const ev = verify.evidence ?? "";
+      const loggedIn =
+        /logged in/i.test(ev) ||
+        Boolean(dep?.endedAt) ||
+        /login failed|account login/i.test(ev);
+      if (!loggedIn && verify.steps == null) return "—";
       return verify.steps != null
         ? `${verify.steps} · ${sec(verify.timeSec)}`
         : "—";
@@ -217,16 +221,12 @@ export function featureBenchmarkCell(
       if (!scan) return "—";
       return scan.login.twoFactor || hasFeature(scan, /two[- ]factor|2fa/i)
         ? "Available"
-        : scan.areasVisited.includes("account")
-          ? "Not offered"
-          : "—";
+        : "Not offered";
     case "Login · Biometrics / passkey":
       if (!scan) return "—";
       return scan.login.biometrics || hasFeature(scan, /passkey|biometric/i)
         ? "Available"
-        : scan.areasVisited.includes("account")
-          ? "Not offered"
-          : "—";
+        : "Not offered";
 
     // —— Deposit ——
     case "Deposit · Number of steps":
@@ -267,7 +267,7 @@ export function featureBenchmarkCell(
 
     // —— Casino ——
     case "Casino · Casino visibility": {
-      if (scan) {
+      if (scan?.navItems.length) {
         return scan.casinoNavIndex
           ? `Nav item ${scan.casinoNavIndex} of ${scan.navItems.length}`
           : "Not in main nav";
