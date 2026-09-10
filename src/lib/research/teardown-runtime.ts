@@ -5,6 +5,7 @@ import {
   createContext,
   getLiveViewUrl,
   proxyConfig,
+  releaseAllRunningSessions,
   releaseSession,
   withSessionRetry,
 } from "../browserbase";
@@ -12,6 +13,7 @@ import {
   knownServedMarkets,
   looksGeoBlocked,
   proxyMarketForBrand,
+  teardownProxyAttempts,
 } from "../brand-markets";
 import { DEFAULT_TEST_EMAIL, MARKET_PROXY_COUNTRY } from "../constants";
 import { preparePageAfterNavigation } from "../dismiss-site-cookies";
@@ -45,7 +47,9 @@ import {
   fastSubmitLogin,
   fastOpenLogin,
   fastOpenRegistration,
+  fastExpandEmailRegistration,
   fastLogoutIfAuthed,
+  fastPickGender,
   pageLooksLoggedInChrome,
   dismissDistractingModals,
   onCasinoDistraction,
@@ -53,6 +57,8 @@ import {
   fastTickRequiredCheckboxes,
   inspectRegistrationCheckboxes,
   inspectRegistrationSubmitUi,
+  signupRequiredExtrasEmpty,
+  usernameFieldEmpty,
   loginOtpPromptVisible,
   readLoginError,
   recoverFromHelpOrLegalPage,
@@ -75,17 +81,21 @@ import {
 } from "./action-store";
 import {
   captchaChallengeVisible,
+  captchaInitFailed,
+  cloudflareInterstitialVisible,
   recaptchaSolved,
   solveCaptchaAfterSubmit,
   solveCaptchaIfPresent,
+  waitsForTurnstileBeforeSubmit,
   waitForBrowserbaseCaptcha,
+  waitOutCloudflareInterstitial,
 } from "./captcha";
 import { captureResearchShot, waitForPaintedContent } from "./capture-shot";
 import { syncAndActOnEmails, type EmailActionRecord } from "./email-act";
 import { extractUsernameFromEmails } from "./account-username";
 import { capturedToWatchItem, fetchInboxEmailsSince } from "./email-monitor";
 import { defaultAddressForMarket } from "./persona-address";
-import { resolveResearchSignupEmail } from "./signup-email";
+import { researchSignupEmail, resolveResearchSignupEmail } from "./signup-email";
 import type {
   BrandFeatureScan,
   EmailWatchItem,
@@ -335,8 +345,20 @@ export function signalPaymentSent(
 async function abortResearchBrowser(jobId: string): Promise<void> {
   const handle = sessionHandles.get(jobId);
   sessionHandles.delete(jobId);
-  if (handle?.sessionId) await releaseSession(handle.sessionId);
-  await handle?.close().catch(() => {});
+  if (handle?.sessionId) void releaseSession(handle.sessionId);
+  void handle?.close().catch(() => {});
+}
+
+/** Pause every in-memory job and drop its browser handle. Does not wait. */
+export function forceStopAllResearchJobs(): number {
+  let n = 0;
+  for (const id of [...jobs.keys()]) {
+    if (pauseResearchJob(id)) n += 1;
+  }
+  for (const id of [...sessionHandles.keys()]) {
+    void abortResearchBrowser(id);
+  }
+  return n;
 }
 
 function releaseJobWaits(jobId: string) {
@@ -967,10 +989,13 @@ function resolveVars(
   brandName: string,
   accountEmail?: string | null,
   accountPassword?: string | null,
+  brandUrl?: string,
 ): { vars: Record<string, string>; email: string; password: string } {
-  const base = buildSignupPersona({ market, brandName, ownBrand: true });
-  // Prefer saved persona; otherwise CA/US research address (not UK Baker St).
-  const addressFallback = defaultAddressForMarket(market);
+  const routing = brandUrl ? proxyMarketForBrand(brandUrl, market) : market;
+  const base = buildSignupPersona({ market: routing, brandName, ownBrand: true });
+  // Address follows the brand proxy, not the project market — MyBookie
+  // uses Florida so we don't reuse the Canada identity they already have.
+  const addressFallback = defaultAddressForMarket(routing);
   // Unique +alias per brand so sites don't reject "already registered".
   // Mail still lands in the shared IMAP inbox.
   const email = resolveResearchSignupEmail({
@@ -994,9 +1019,10 @@ function resolveVars(
       "No password — set persona password or TEST_ACCOUNT_PASSWORD",
     );
   }
-  const usMarket = /united states|us \(rest|offshore|us-tx/i.test(market);
-  // Project persona is often Canadian. Bovada country is United States —
-  // a CA postal (T2P 8Y9) fails ZIP validation. Brand geo wins.
+  const usMarket = /united states|us \(rest|offshore|us-tx|florida/i.test(
+    routing,
+  );
+  // Brand proxy wins over the project persona so ZIP/phone match the egress.
   const useBrandAddress = usMarket || addressFallback.country === "United States";
   const merged = {
     ...base,
@@ -1043,15 +1069,30 @@ async function fillRegistrationStep(
   vars: Record<string, string>,
 ): Promise<{ filled: number; kinds: string[] }> {
   const fast = await fastFillPersonaFields(page, vars);
+  if (await fastPickGender(page, vars.gender || "Male")) {
+    if (!fast.kinds.includes("gender")) fast.kinds.push("gender");
+    fast.filled += 1;
+  }
   const kinds = fast.kinds.join(" ");
   const missingDob = !/dateOfBirth/i.test(kinds);
   const missingZip = !/postalCode/i.test(kinds);
   // Only use the LLM for leftovers — never for every character of name fields.
-  if (fast.filled < 3 || missingDob || missingZip) {
+  if (
+    fast.filled < 3 ||
+    missingDob ||
+    missingZip ||
+    (await usernameFieldEmpty(page)) ||
+    (await signupRequiredExtrasEmpty(page))
+  ) {
     await stagehand.act(
-      `Fill any still-empty registration fields using: email %email%, password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, address %addressLine1%, city %city%, state %state%, postcode %postalCode%, country %country%. For date of birth, match the placeholder format exactly (e.g. if the field says MM/DD/YYYY use month/day/year — do not use DD/MM/YYYY). Paste whole values — do not type slowly. Do NOT open Terms, Privacy, Help, or Support links. Do not submit.`,
+      `Fill any still-empty registration fields using: email %email%, username %username%, password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay% (if there are three dropdowns labelled MM / DD / YYYY set month %dateOfBirthMonth%, day %dateOfBirthDay%, year %dateOfBirthYear%), 4-digit PIN %pin%, gender %gender%, how did you hear about us %hearAbout%, phone %phone%, address %addressLine1%, city %city%, state %state%, postcode %postalCode%, country %country%. Leave Referral ID empty. Username is required on Stake-style forms — put %username% in the Username field (no spaces). For date of birth, match the placeholder format exactly (e.g. if the field says MM/DD/YYYY use month/day/year — do not use DD/MM/YYYY). Paste whole values — do not type slowly. Do NOT open Terms, Privacy, Help, or Support links. Do not submit.`,
       { variables: vars },
     );
+    const again = await fastFillPersonaFields(page, vars);
+    return {
+      filled: fast.filled + again.filled,
+      kinds: [...fast.kinds, ...again.kinds],
+    };
   }
   return fast;
 }
@@ -1188,13 +1229,12 @@ async function hammerCreateAccountUntilDone(
     // Consent should already be done before hammer — do not re-run the
     // checkbox agent here (it closes Rainbet's modal when the box is checked).
 
-    // Rainbet only: Turnstile sits on the form and Create Account is a no-op
-    // until it shows Success. Other brands (Winna, BetOnline) submit first or
-    // use their own captcha path — do not block them here.
-    const rainbet = /rainbet\.com/i.test(
+    // Rainbet only: Turnstile sits on the form and Create Account is a
+    // no-op until Success. Stake submits first — waiting hangs the run.
+    const waitCf = waitsForTurnstileBeforeSubmit(
       typeof page.url === "function" ? page.url() : job?.brandUrl ?? "",
     );
-    if (rainbet && !(await recaptchaSolved(page))) {
+    if (waitCf && !(await recaptchaSolved(page))) {
       const pre = await solveCaptchaIfPresent(page, stagehand, {
         push: (m) => tracker.push(m),
         shouldAbort: abort,
@@ -1230,6 +1270,7 @@ async function hammerCreateAccountUntilDone(
     // Submitted (or just did). Do not click again — let the brand redirect.
     await waitForPostSignupRedirect(page, tracker);
     if (onShot) await onShot();
+    if (await cloudflareInterstitialVisible(page)) return formGoneIsDone();
     if (!(await registrationFormStillOpenFast(page))) return formGoneIsDone();
     if (!(await loggedOutHeaderVisible(page))) return true;
 
@@ -1415,14 +1456,77 @@ async function loggedOutHeaderVisible(page: AgentPage): Promise<boolean> {
   }
 }
 
-/** Bovada red banner — not proof they emailed. Often a silent decline. */
+function looksLikeExistingAccountCopy(text: string): boolean {
+  const t = text.toLowerCase();
+  const compact = t.replace(/\s+/g, "");
+  return (
+    /existing account with recent activity|account with recent activity has been found|password reset message has been sent|password reset (?:email|message) (?:has been )?sent/i.test(
+      t,
+    ) ||
+    /existingaccountwithrecentactivity|passwordresetmessagehasbeensent|passwordresetemailhasbeensent/i.test(
+      compact,
+    )
+  );
+}
+
+/** Bovada red banner — not proof they emailed. Often a silent decline.
+ * MyBookie: duplicate identity → “existing account… password reset sent”. */
 async function accountCreationIssueVisible(page: AgentPage): Promise<boolean> {
   try {
     return Boolean(
       await page.evaluate(`(() => {
-        const t = (document.body?.innerText || "").slice(0, 8000).toLowerCase();
-        return /issue with your account creation/.test(t) ||
-          /check your email for next login/.test(t);
+        const t = (document.body?.innerText || "").slice(0, 8000);
+        const low = t.toLowerCase();
+        const compact = low.replace(/\\s+/g, "");
+        if (/issue with your account creation|check your email for next login/.test(low)) {
+          return true;
+        }
+        return /existing account with recent activity|password reset message has been sent/.test(low) ||
+          /existingaccountwithrecentactivity|passwordresetmessagehasbeensent/.test(compact);
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Close the MyBookie “existing account” dialog. Never Live Chat. */
+async function dismissExistingAccountModal(page: AgentPage): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        const roots = [
+          ...document.querySelectorAll("[role=dialog], [aria-modal=true], [class*='modal' i]"),
+        ];
+        for (const root of roots) {
+          const t = (root.innerText || "").slice(0, 2000);
+          const compact = t.replace(/\\s+/g, "").toLowerCase();
+          if (
+            !/existing account with recent activity|password reset message has been sent/i.test(t) &&
+            !/existingaccountwithrecentactivity|passwordresetmessagehasbeensent/.test(compact)
+          ) {
+            continue;
+          }
+          const close = [...root.querySelectorAll("button, [role=button], a")].find((b) => {
+            const lab = (
+              (b.getAttribute("aria-label") || "") +
+              " " +
+              (b.getAttribute("title") || "") +
+              " " +
+              (b.textContent || "")
+            ).replace(/\\s+/g, " ").trim();
+            if (/live\\s*chat|customer service|help/i.test(lab)) return false;
+            return /^(close|dismiss|×|x|✕|✖)$/i.test(lab);
+          });
+          if (close) {
+            try { close.click(); return true; } catch (_) {}
+          }
+          const x = root.querySelector("[aria-label='Close'], [aria-label='close'], button:first-child");
+          if (x && !/live\\s*chat/i.test(x.textContent || "")) {
+            try { x.click(); return true; } catch (_) {}
+          }
+        }
+        return false;
       })()`),
     );
   } catch {
@@ -1451,6 +1555,9 @@ async function signupConfirmed(
     const onScreen = Boolean(
       await page.evaluate(`(() => {
         const t = (document.body?.innerText || "").slice(0, 12000);
+        if (/existing account with recent activity|password reset message has been sent/i.test(t)) {
+          return false;
+        }
         return /account (has been |was )?(created|registered)|registration (successful|complete)|thanks for (signing up|registering)|verify your (email|account)|we('ve| have) sent (you )?(an? )?(email|link|code)|confirmation (email|link)|enter the (code|otp|verification)/i.test(t);
       })()`),
     );
@@ -1467,8 +1574,17 @@ async function openRegistrationForm(
   page: AgentPage,
   tracker: JourneyStageTracker,
   brandUrl: string,
+  job?: ResearchTeardownJob,
 ): Promise<boolean> {
   for (let attempt = 1; attempt <= 4; attempt++) {
+    if (job && stopIfPaused(job, tracker)) return false;
+    if (await cloudflareInterstitialVisible(page)) {
+      const cf = await waitOutCloudflareInterstitial(page, {
+        push: (msg) => tracker.push(msg),
+        shouldAbort: () => Boolean(job && stopIfPaused(job, tracker)),
+      });
+      if (cf !== "cleared" && cf !== "absent") return false;
+    }
     if (await onCasinoDistraction(page)) {
       tracker.push(
         `Casino/bet UI in the way (attempt ${attempt}) — closing and returning to brand`,
@@ -1566,6 +1682,7 @@ async function reopenRegistration(
   page: AgentPage,
   tracker: JourneyStageTracker,
   brandUrl?: string,
+  job?: ResearchTeardownJob,
 ): Promise<boolean> {
   tracker.push("Form closed with no confirmation — reopening registration");
   return openRegistrationForm(
@@ -1576,6 +1693,7 @@ async function reopenRegistration(
       (typeof page.url === "function"
         ? page.url().split("?")[0] || page.url()
         : "https://rainbet.com"),
+    job,
   );
 }
 
@@ -1613,6 +1731,18 @@ async function waitForPostSignupRedirect(
   for (let i = 0; i < 24; i++) {
     await page.waitForTimeout(500);
     tracker.addWait("registration", 1);
+    if (await cloudflareInterstitialVisible(page)) {
+      const cf = await waitOutCloudflareInterstitial(page, {
+        timeoutMs: 90_000,
+        push: (msg) => tracker.push(msg),
+      });
+      if (cf === "cleared") {
+        tracker.push("Post-submit Cloudflare cleared — staying on this page");
+        return;
+      }
+      tracker.push("Post-submit Cloudflare still up — not reloading");
+      return;
+    }
     const href = String(
       await page.evaluate("location.href").catch(() => ""),
     );
@@ -1621,6 +1751,7 @@ async function waitForPostSignupRedirect(
     if (!formOpen && (href !== startHref || !loggedOut)) {
       await page.waitForTimeout(800);
       tracker.addWait("registration", 1);
+      if (await cloudflareInterstitialVisible(page)) continue;
       tracker.push("Redirect settled");
       return;
     }
@@ -1668,6 +1799,11 @@ async function registrationFormStillOpenFast(
         }
         const hasCreate =
           /create(\\s+an?)?\\s+account|sign\\s*up|register/.test(text);
+        // Stake method picker: Create an Account + Register with Email, no
+        // password field yet. Still the registration UI.
+        if (hasCreate && /register with e-?mail|welcome to stake/.test(text)) {
+          return true;
+        }
         // Security-step page (BetOnline): no fields, just a captcha + Create
         // Account. Still very much "form open" — we haven't submitted yet.
         if (
@@ -1739,6 +1875,10 @@ async function runSignupFlow(
     })
     .catch(() => {});
   await preparePageAfterNavigation(page, stagehand);
+  await waitOutCloudflareInterstitial(page, {
+    push: (msg) => tracker.push(msg),
+    shouldAbort: () => stopIfPaused(job, tracker),
+  });
   await waitForPaintedContent(page, { minChars: 80, maxMs: 12_000 });
   const landingShots = createShotStream(page, tracker, "landing", [], {
     maxShots: 4,
@@ -1771,7 +1911,9 @@ async function runSignupFlow(
     page,
     tracker,
     input.brandUrl,
+    job,
   );
+  if (stopIfPaused(job, tracker)) return;
   const alreadyIn =
     !opened && (await pageLooksLoggedInChrome(page));
   if (!opened && !alreadyIn) {
@@ -1784,6 +1926,10 @@ async function runSignupFlow(
   }
   tracker.addStep("registration", 1);
   tracker.push("Registration form opened");
+  if (await fastExpandEmailRegistration(page)) {
+    tracker.push("Opened Register with Email");
+    await tracker.wait(page, 2000, "registration");
+  }
   await tracker.wait(page, 800, "registration");
   // Every frame goes straight onto the live stage so the UI shows the whole
   // registration flow as it happens — in order, no repeats of the same screen.
@@ -1815,17 +1961,57 @@ async function runSignupFlow(
   const signupSince = new Date(Date.now() - 15_000);
   let maxFields = 0;
   let errorHits = 0;
+  let captchaInitReloads = 0;
   let submittedOk = alreadyIn;
   let formatFriction: string | null = null;
   let issueBanner = false;
+  let identityRotates = 0;
+  const remintSignupIdentity = () => {
+    const fresh = buildSignupPersona({
+      market: proxyMarketForBrand(input.brandUrl, input.market),
+      brandName: input.brandName,
+      ownBrand: true,
+    });
+    const nextEmail = researchSignupEmail(input.brandName);
+    const next = personaVariables(
+      { ...fresh, email: nextEmail, country: vars.country, postalCode: vars.postalCode, city: vars.city, state: vars.state, addressLine1: vars.addressLine1 },
+      String(vars.password ?? ""),
+    );
+    for (const [k, v] of Object.entries(next)) vars[k] = v;
+    vars.email = nextEmail;
+    email = nextEmail;
+    job.signupEmail = nextEmail;
+    job.signupUsername = next.username || job.signupUsername;
+    tracker.push(
+      `Existing account hit — retrying as ${nextEmail} (${next.firstName} ${next.lastName})`,
+    );
+  };
   const takeIssueBanner = async (): Promise<boolean> => {
     if (!(await accountCreationIssueVisible(page))) return false;
+    const existing = looksLikeExistingAccountCopy(
+      String(
+        await page.evaluate("document.body?.innerText || ''").catch(() => ""),
+      ),
+    );
+    await pushRegShot();
+    if (existing && identityRotates < 1) {
+      identityRotates += 1;
+      tracker.push(
+        "Site: existing account found, password reset sent — not opening Live Chat",
+      );
+      await dismissExistingAccountModal(page);
+      remintSignupIdentity();
+      await tracker.wait(page, 400, "registration");
+      return false;
+    }
     issueBanner = true;
     submittedOk = true;
     tracker.push(
-      "Site: “issue with account creation — check email for next login”. Bovada often sends no mail. Stopping submit; will try login + inbox/spam.",
+      existing
+        ? "Site: existing account / password reset sent. Trying login + inbox. Not opening Live Chat."
+        : "Site: “issue with account creation — check email for next login”. Bovada often sends no mail. Stopping submit; will try login + inbox/spam.",
     );
-    await pushRegShot();
+    await dismissExistingAccountModal(page);
     return true;
   };
 
@@ -1850,10 +2036,71 @@ async function runSignupFlow(
       );
       if (!(await registrationFormStillOpenFast(page))) {
         await preparePageAfterNavigation(page, stagehand);
-        await openRegistrationForm(stagehand, page, tracker, input.brandUrl);
+        await openRegistrationForm(
+          stagehand,
+          page,
+          tracker,
+          input.brandUrl,
+          job,
+        );
         tracker.addStep("registration", 1);
         await tracker.wait(page, 2000, "registration");
       }
+    }
+
+    if (await captchaInitFailed(page)) {
+      if (await cloudflareInterstitialVisible(page)) {
+        const cf = await waitOutCloudflareInterstitial(page, {
+          push: (msg) => tracker.push(msg),
+          shouldAbort: () => stopIfPaused(job, tracker),
+        });
+        if (cf !== "cleared") {
+          tracker.push("Cloudflare interstitial blocked captcha — stopping reload loop");
+          break;
+        }
+      } else if (captchaInitReloads >= 1) {
+        tracker.push("Captcha still couldn't initialize after one reload — stopping");
+        break;
+      } else {
+        captchaInitReloads += 1;
+        tracker.push(
+          "Captcha couldn't initialize — reloading as the site asked",
+        );
+        await page
+          .goto(input.brandUrl, {
+            waitUntil: "domcontentloaded",
+            timeoutMs: 30_000,
+          })
+          .catch(() => {});
+        await preparePageAfterNavigation(page, stagehand);
+        await waitOutCloudflareInterstitial(page, {
+          push: (msg) => tracker.push(msg),
+          shouldAbort: () => stopIfPaused(job, tracker),
+        });
+        await tracker.wait(page, 2500, "registration");
+      }
+      await openRegistrationForm(
+        stagehand,
+        page,
+        tracker,
+        input.brandUrl,
+        job,
+      );
+      if (await fastExpandEmailRegistration(page)) {
+        tracker.push("Opened Register with Email after reload");
+        await tracker.wait(page, 2500, "registration");
+      }
+      await pushRegShot();
+      continue;
+    }
+
+    if (await takeIssueBanner()) {
+      break;
+    }
+
+    if (await fastExpandEmailRegistration(page)) {
+      tracker.push("Opened Register with Email");
+      await tracker.wait(page, 2000, "registration");
     }
 
     const fields = await countVisibleFormFields(page);
@@ -1869,7 +2116,7 @@ async function runSignupFlow(
 
     if (!(await registrationFormStillOpenFast(page))) {
       tracker.push("Form closed after fill — reopening (not treating as success)");
-      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl))) {
+      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl, job))) {
         tracker.push("Could not reopen registration form");
       }
       continue;
@@ -1883,16 +2130,16 @@ async function runSignupFlow(
       tracker.push(
         "Form closed during consent tick — likely hit Terms link; reopening",
       );
-      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl))) {
+      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl, job))) {
         tracker.push("Could not reopen registration form");
       }
       continue;
     }
 
     // Rainbet only — Turnstile is on the form before Create Account.
-    // Winna / BetOnline / others must not wait here.
+    // Stake / Winna / BetOnline must not wait here (Stake hangs).
     if (
-      /rainbet\.com/i.test(input.brandUrl) &&
+      waitsForTurnstileBeforeSubmit(input.brandUrl) &&
       !(await recaptchaSolved(page))
     ) {
       const pre = await solveCaptchaIfPresent(page, stagehand, {
@@ -1983,6 +2230,13 @@ async function runSignupFlow(
     }
 
     const emptyNow = await countEmptyVisibleInputs(page);
+    if (await usernameFieldEmpty(page)) {
+      tracker.push("Username still empty — not submitting yet");
+      const userFill = await fillRegistrationStep(stagehand, page, vars);
+      if (userFill.filled > 0) tracker.addStep("registration", userFill.filled);
+      await pushRegShot();
+      continue;
+    }
     // Form filled + Create Account visible → click it. Cloudflare after submit
     // is handled inside hammerCreateAccountUntilDone.
     if (submitUi.hasCreateAccount && emptyNow <= 1) {
@@ -2032,7 +2286,7 @@ async function runSignupFlow(
       tracker.push("Submit opened help/terms — recovered without full reload");
       if (!(await registrationFormStillOpenFast(page))) {
         await preparePageAfterNavigation(page, stagehand);
-        await reopenRegistration(stagehand, page, tracker, input.brandUrl);
+        await reopenRegistration(stagehand, page, tracker, input.brandUrl, job);
       }
       continue;
     }
@@ -2120,11 +2374,32 @@ async function runSignupFlow(
           break;
         }
         // Modal gone, nothing confirms a signup — not a success.
-        if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl))) {
+        if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl, job))) {
           tracker.push("Could not reopen registration form");
         }
       }
     } else if (await takeIssueBanner()) {
+      break;
+    } else if (await cloudflareInterstitialVisible(page)) {
+      const cf = await waitOutCloudflareInterstitial(page, {
+        timeoutMs: 90_000,
+        push: (msg) => tracker.push(msg),
+        shouldAbort: () => stopIfPaused(job, tracker),
+      });
+      if (cf === "cleared" && (await signupConfirmed(stagehand, page, job))) {
+        submittedOk = true;
+        tracker.push("Registration submitted — confirmation after Cloudflare");
+        await captureLanding();
+        break;
+      }
+      if (cf === "cleared" && (await checkAgentLoggedIn(stagehand))) {
+        submittedOk = true;
+        await captureLanding();
+        break;
+      }
+      tracker.push(
+        "Post-submit Cloudflare — not reopening register (reload restarts the check)",
+      );
       break;
     } else if (await signupConfirmed(stagehand, page, job)) {
       submittedOk = true;
@@ -2133,7 +2408,7 @@ async function runSignupFlow(
       break;
     } else {
       // Form closed without proof (clicked outside the modal, nav click…).
-      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl))) {
+      if (!(await reopenRegistration(stagehand, page, tracker, input.brandUrl, job))) {
         tracker.push("Could not reopen registration form");
       }
     }
@@ -3616,6 +3891,74 @@ async function applyMobileEmulation(page: AgentPage): Promise<void> {
   }
 }
 
+const SESSION_CREATE_TIMEOUT_MS = 40_000;
+
+function withDeadline<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+async function initTeardownStagehand(opts: {
+  contextId: string;
+  isMobile: boolean;
+  proxyCountry: string | null;
+}): Promise<Stagehand> {
+  return withSessionRetry(async () => {
+    const sh = new Stagehand({
+      env: "BROWSERBASE",
+      apiKey: process.env.BROWSERBASE_API_KEY,
+      projectId: process.env.BROWSERBASE_PROJECT_ID,
+      model: {
+        modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
+        apiKey: process.env.OPENAI_API_KEY,
+      },
+      browserbaseSessionCreateParams: {
+        projectId: process.env.BROWSERBASE_PROJECT_ID!,
+        region: (process.env.BROWSERBASE_REGION ??
+          "eu-central-1") as "eu-central-1",
+        timeout: Number(process.env.BROWSERBASE_SESSION_TIMEOUT_SEC ?? 3600),
+        browserSettings: {
+          viewport: opts.isMobile
+            ? { width: 390, height: 844 }
+            : { width: 1440, height: 900 },
+          ...(opts.isMobile
+            ? {
+                fingerprint: {
+                  devices: ["mobile" as const],
+                  operatingSystems: ["android" as const],
+                  browsers: ["chrome" as const],
+                  screen: { maxWidth: 430, maxHeight: 932 },
+                },
+              }
+            : {}),
+          context: { id: opts.contextId, persist: true },
+          solveCaptchas: true,
+        },
+        ...proxyConfig(opts.proxyCountry),
+      },
+      verbose: 0,
+      disablePino: true,
+    });
+    await withDeadline(
+      sh.init(),
+      SESSION_CREATE_TIMEOUT_MS,
+      `Browser session create timed out after ${SESSION_CREATE_TIMEOUT_MS / 1000}s`,
+    );
+    return sh;
+  });
+}
+
 export async function startResearchTeardown(
   input: StartResearchTeardownInput,
 ): Promise<{
@@ -3635,8 +3978,13 @@ export async function startResearchTeardown(
     input.persona,
     proxyMarket,
     input.brandName,
-    input.accountEmail,
-    input.accountPassword,
+    input.startAt === "registration" && /mybookie/i.test(`${input.brandName} ${input.brandUrl}`)
+      ? null
+      : input.accountEmail,
+    input.startAt === "registration" && /mybookie/i.test(`${input.brandName} ${input.brandUrl}`)
+      ? null
+      : input.accountPassword,
+    input.brandUrl,
   );
 
   if (stageRank(through) >= stageRank("verification") && !inboxConfigured()) {
@@ -3683,7 +4031,7 @@ export async function startResearchTeardown(
     topFriction: [],
     signupEmail: email,
     signupPassword: resolvedPassword,
-    signupUsername: null,
+    signupUsername: vars.username?.trim() || null,
     lobby: null,
     features: null,
     emails: [],
@@ -3704,62 +4052,85 @@ export async function startResearchTeardown(
   };
   jobs.set(jobId, job);
   const tracker = new JourneyStageTracker(job);
-
-  const contextId = await createContext();
   const isMobile = input.device === "mobile";
+  tracker.push(
+    `Creating remote browser (${proxyMarket}${
+      proxyCountry ? ` / ${proxyCountry}` : ""
+    })…`,
+  );
 
-  const stagehand = await withSessionRetry(async () => {
-    const sh = new Stagehand({
-      env: "BROWSERBASE",
-      apiKey: process.env.BROWSERBASE_API_KEY,
-      projectId: process.env.BROWSERBASE_PROJECT_ID,
-      model: {
-        modelName: `openai/${process.env.OPENAI_MODEL ?? "gpt-5.4-mini"}`,
-        apiKey: process.env.OPENAI_API_KEY,
-      },
-      browserbaseSessionCreateParams: {
-        projectId: process.env.BROWSERBASE_PROJECT_ID!,
-        region: (process.env.BROWSERBASE_REGION ??
-          "eu-central-1") as "eu-central-1",
-        timeout: Number(process.env.BROWSERBASE_SESSION_TIMEOUT_SEC ?? 3600),
-        browserSettings: {
-          viewport: isMobile
-            ? { width: 390, height: 844 }
-            : { width: 1440, height: 900 },
-          ...(isMobile
-            ? {
-                fingerprint: {
-                  devices: ["mobile" as const],
-                  operatingSystems: ["android" as const],
-                  browsers: ["chrome" as const],
-                  screen: { maxWidth: 430, maxHeight: 932 },
-                },
-              }
-            : {}),
-          context: { id: contextId, persist: true },
-          solveCaptchas: true,
-        },
-        ...proxyConfig(proxyCountry),
-      },
-      verbose: 0,
-      disablePino: true,
-    });
-    await sh.init();
-    return sh;
-  });
+  // Leftover sessions from Force-stop / failed inits sit at the Browserbase
+  // concurrency cap — the next create then hangs forever.
+  await Promise.race([
+    releaseAllRunningSessions().catch(() => 0),
+    new Promise((r) => setTimeout(r, 2500)),
+  ]);
 
-  const sessionId = stagehand.browserbaseSessionID;
+  let stagehand: Stagehand | undefined;
+  let sessionId: string | undefined;
+  try {
+    const contextId = await createContext();
+    const proxyTries = teardownProxyAttempts(input.brandUrl, proxyMarket);
+    let lastInitError: unknown;
+    for (const market of proxyTries) {
+      if (job.pauseRequested) {
+        throw new Error("Stopped by you");
+      }
+      const country = MARKET_PROXY_COUNTRY[market] ?? null;
+      if (market !== proxyMarket) {
+        job.proxyMarket = market;
+        tracker.push(
+          `Proxy retry: ${market}${country ? ` (${country})` : ""} — previous geo stalled session create`,
+        );
+      }
+      try {
+        stagehand = await initTeardownStagehand({
+          contextId,
+          isMobile,
+          proxyCountry: country,
+        });
+        break;
+      } catch (e) {
+        lastInitError = e;
+        tracker.push(
+          `Browser create failed (${market}): ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
+    if (!stagehand) {
+      throw lastInitError instanceof Error
+        ? lastInitError
+        : new Error("Browser session create failed");
+    }
+  } catch (e) {
+    job.error = e instanceof Error ? e.message : String(e);
+    job.status = "failed";
+    tracker.push(`Failed: ${job.error}`);
+    return {
+      jobId,
+      liveViewUrl: null,
+      signupEmail: email,
+      signupPassword: resolvedPassword,
+      signupUsername: job.signupUsername,
+    };
+  }
+
+  sessionId = stagehand.browserbaseSessionID;
   if (sessionId) {
     job.liveViewUrl = await getLiveViewUrl(sessionId).catch(() => null);
   }
   sessionHandles.set(jobId, {
     sessionId: sessionId || undefined,
-    close: () => stagehand.close().catch(() => {}),
+    close: () => stagehand!.close().catch(() => {}),
   });
   job.status = "running";
+  tracker.push("Remote browser ready — opening site");
 
   void (async () => {
     try {
+      if (stopIfPaused(job, tracker)) return;
       const page =
         stagehand.context.activePage() ?? (await stagehand.context.newPage());
       if (isMobile) await applyMobileEmulation(page);
@@ -3980,7 +4351,7 @@ export async function startResearchTeardown(
         );
       } else {
         if (sessionId) await releaseSession(sessionId);
-        await stagehand.close().catch(() => {});
+        await stagehand?.close().catch(() => {});
       }
     }
   })();

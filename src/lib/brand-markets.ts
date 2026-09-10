@@ -64,6 +64,12 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
       "Philippines",
       "South Africa",
     ],
+    // Finland hung on Create Account. Canada tripped a Cloudflare
+    // interstitial. NZ is allowed but Browserbase's NZ pool is thin
+    // and session create never returned. Japan is on Stake's served
+    // list, not a licensed-local domain (unlike MX / BR), and has a
+    // large residential pool so the browser actually launches.
+    preferredProxyMarket: "Japan",
     // stake.com geo-blocks these countries and points players at the
     // locally licensed domains instead.
     marketUrls: {
@@ -115,7 +121,8 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
   {
     // Bovada is US-offshore only (Bodog is the Canada / LatAm sister).
     // Canada hard-blocks Register. Licensed US states are also blocked.
-    // Texas ("US rest / offshore") is not on Bovada's restricted list.
+    // Texas was the default; Florida is a second allowed egress so a
+    // fresh signup does not reuse the same TX identity / proxy.
     hosts: ["bovada.lv", "bovada.com"],
     blocked: [
       ...EU_REGULATED_BLOCKED,
@@ -127,22 +134,42 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
       "Mexico",
       "Australia",
     ],
-    available: ["US (rest / offshore)"],
-    preferredProxyMarket: "US (rest / offshore)",
+    available: ["US (Florida / offshore)", "US (rest / offshore)"],
+    preferredProxyMarket: "US (Florida / offshore)",
   },
   {
     // US offshore books — the inverse: they serve unlicensed US states, not EU.
     // Brazil is listed as available but Browserbase BR tunnels often fail on
-    // api.betonline.ag (ERR_TUNNEL_CONNECTION_FAILED) — pin CA instead.
-    hosts: ["betonline.ag", "mybookie.ag", "betwhale.ag", "sportsbetting.ag"],
+    // api.betonline.ag (ERR_TUNNEL_CONNECTION_FAILED). City-level CA-BC
+    // (Vancouver) stalls session create — use country-wide Canada.
+    hosts: [
+      "betonline.ag",
+      "betwhale.ag",
+      "sportsbetting.ag",
+    ],
     blocked: [...EU_REGULATED_BLOCKED, "Ontario, Canada"],
     available: [
+      "Canada",
       "US (rest / offshore)",
       "Canada (rest / crypto)",
       "Brazil",
       "Mexico",
     ],
-    preferredProxyMarket: "Canada (rest / crypto)",
+    preferredProxyMarket: "Canada",
+  },
+  {
+    // Florida residential went straight to Cloudflare on engine.mybookie.ag.
+    // Canada is the geo that actually reaches the register form. Fresh
+    // name / phone / +alias avoids the "existing account" match.
+    hosts: ["mybookie.ag", "mybookie.com"],
+    blocked: [...EU_REGULATED_BLOCKED, "Ontario, Canada"],
+    available: [
+      "Canada",
+      "Mexico",
+      "US (rest / offshore)",
+      "US (Florida / offshore)",
+    ],
+    preferredProxyMarket: "Canada",
   },
   {
     hosts: ["bet365.com", "bet365.eu"],
@@ -230,6 +257,40 @@ export function proxyMarketForBrand(
     return rule.available[0]!;
   }
   return projectMarket;
+}
+
+/** Geos to try when Browserbase session create stalls on a thin pool.
+ * Skips licensed-local domains (stake.mx / stake.bet.br) so we stay on
+ * the main brand URL. */
+const PROXY_CREATE_FALLBACK_ORDER = [
+  "Canada",
+  "Japan",
+  "Norway",
+  "Philippines",
+  "South Africa",
+  "Argentina",
+  "Chile",
+  "Finland",
+];
+
+export function teardownProxyAttempts(
+  url: string,
+  preferred: string,
+): string[] {
+  const rule = CURATED_BRAND_MARKETS.find((r) =>
+    r.hosts.some((h) => hostMatches(url, h)),
+  );
+  const available = rule ? new Set(rule.available) : null;
+  const licensedLocal = new Set(Object.keys(rule?.marketUrls ?? {}));
+  const out: string[] = [];
+  for (const market of [preferred, ...PROXY_CREATE_FALLBACK_ORDER]) {
+    if (out.includes(market)) continue;
+    if (available && market !== preferred && !available.has(market)) continue;
+    if (licensedLocal.has(market)) continue;
+    out.push(market);
+    if (out.length >= 3) break;
+  }
+  return out.length ? out : [preferred];
 }
 
 /** Tie-break order when several markets work for the whole brand set. */

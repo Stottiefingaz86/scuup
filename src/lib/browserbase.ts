@@ -44,8 +44,10 @@ export function proxyGeolocation(code: string): {
   const [country, region] = code.split("-");
   if (!region) return { country };
   if (country === "US") return { country, state: region };
-  if (code === "CA-ON") return { country: "CA", city: "TORONTO" };
-  if (code === "CA-BC") return { country: "CA", city: "VANCOUVER" };
+  // City-level CA (Toronto / Vancouver) is a thin Browserbase pool and
+  // session create can hang before the site ever opens. Country-wide CA
+  // is the same market for these offshore books and actually launches.
+  if (country === "CA") return { country: "CA" };
   return { country };
 }
 

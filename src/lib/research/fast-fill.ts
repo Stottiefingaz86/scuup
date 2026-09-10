@@ -59,6 +59,103 @@ function isRequiredConsentMeta(meta) {
     meta
   );
 }
+function ownText(el) {
+  return [...el.childNodes]
+    .filter((n) => n.nodeType === 3)
+    .map((n) => n.textContent || "")
+    .join("")
+    .replace(/\\s+/g, " ")
+    .trim();
+}
+function chipText(el) {
+  const own = ownText(el);
+  if (own) return own;
+  const t = (el.innerText || el.textContent || el.getAttribute("aria-label") || "")
+    .replace(/\\s+/g, " ")
+    .trim();
+  return t.length <= 18 ? t : "";
+}
+function realClick(el) {
+  const r = el.getBoundingClientRect();
+  const x = r.left + r.width / 2;
+  const y = r.top + r.height / 2;
+  const opts = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, buttons: 1 };
+  try { el.focus({ preventScroll: true }); } catch (_) {}
+  for (const type of ["pointerover", "pointerdown", "mousedown", "pointerup", "mouseup", "click"]) {
+    try { el.dispatchEvent(new MouseEvent(type, opts)); } catch (_) {}
+  }
+  try { el.click(); } catch (_) {}
+}
+function pickGenderChip(want) {
+  const wantRe = new RegExp("^" + String(want || "Male").trim() + "$", "i");
+  const nodes = [...document.querySelectorAll(
+    "button, [role=button], [role=radio], [role=tab], label, span, div, li, a, p"
+  )];
+  const hits = [];
+  for (const el of nodes) {
+    if (!visible(el)) continue;
+    const t = chipText(el);
+    if (!wantRe.test(t)) continue;
+    const group =
+      el.closest("[class*='gender' i], [id*='gender' i], [name*='gender' i], [aria-label*='gender' i], [role=radiogroup], fieldset") ||
+      el.parentElement;
+    const groupText = ((group && group.innerText) || "").replace(/\\s+/g, " ");
+    if (!/gender|female|\\bother\\b/i.test(groupText + " " + ((group && group.getAttribute("aria-label")) || ""))) {
+      continue;
+    }
+    if (groupText.length > 400) continue;
+    const box = el.getBoundingClientRect();
+    hits.push({ el, area: box.width * box.height });
+  }
+  hits.sort((a, b) => a.area - b.area);
+  const chip = hits[0] && hits[0].el;
+  if (chip) {
+    realClick(chip);
+    chip.setAttribute("aria-pressed", "true");
+    chip.setAttribute("aria-checked", "true");
+    const radio = chip.querySelector("input[type=radio]") ||
+      (chip instanceof HTMLInputElement && chip.type === "radio" ? chip : null) ||
+      (chip.htmlFor && document.getElementById(chip.htmlFor));
+    if (radio instanceof HTMLInputElement) {
+      radio.checked = true;
+      radio.dispatchEvent(new Event("input", { bubbles: true }));
+      radio.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    return true;
+  }
+  for (const r of document.querySelectorAll("input[type=radio]")) {
+    const meta = (
+      (r.getAttribute("name") || "") +
+      " " +
+      (r.getAttribute("id") || "") +
+      " " +
+      (r.value || "") +
+      " " +
+      labelFor(r)
+    ).toLowerCase();
+    if (!/gender|sex/.test(meta)) continue;
+    if (!wantRe.test((r.value || "").trim()) && !wantRe.test(chipText(r.labels && r.labels[0] || r))) continue;
+    if (/female/.test(r.value) && /^male$/i.test(want)) continue;
+    r.checked = true;
+    try { r.click(); } catch (_) {}
+    r.dispatchEvent(new Event("input", { bubbles: true }));
+    r.dispatchEvent(new Event("change", { bubbles: true }));
+    const lab = r.labels && r.labels[0];
+    if (lab) realClick(lab);
+    return true;
+  }
+  return false;
+}
+function genderStillEmpty() {
+  const text = (document.body && document.body.innerText) || "";
+  if (/gender/i.test(text) && /value is required/i.test(text)) return true;
+  const group = [...document.querySelectorAll("[class*='gender' i], [id*='gender' i], [aria-label*='gender' i], [role=radiogroup], fieldset")].find((el) =>
+    /gender/i.test(el.getAttribute("aria-label") || el.innerText || "")
+  );
+  if (!group) return /gender\\s*\\*/i.test(text);
+  if (group.querySelector("[aria-pressed=true], [aria-checked=true], input[type=radio]:checked")) return false;
+  return true;
+}
 function tickCheckboxEl(el) {
   if (el instanceof HTMLInputElement) {
     if (el.checked) return false;
@@ -121,6 +218,11 @@ export async function fastFillPersonaFields(
       types: ["password"],
     },
     {
+      kind: "username",
+      value: vars.username ?? "",
+      re: "username|user\\s*name|display\\s*name|nickname|handle|user[_-]?id|^name$",
+    },
+    {
       kind: "firstName",
       value: vars.firstName ?? "",
       re: "first\\s*name|forename|given\\s*name|firstname",
@@ -134,11 +236,6 @@ export async function fastFillPersonaFields(
       kind: "fullName",
       value: vars.fullName ?? "",
       re: "full\\s*name|your\\s*name|^name$",
-    },
-    {
-      kind: "username",
-      value: vars.username ?? "",
-      re: "username|user\\s*name|display\\s*name|nickname",
     },
     {
       kind: "phone",
@@ -158,17 +255,28 @@ export async function fastFillPersonaFields(
     {
       kind: "dateOfBirthDay",
       value: vars.dateOfBirthDay ?? "",
-      re: "^day$|birth.*day|dob.*day",
+      re: "^day$|^dd$|birth.*day|dob.*day",
     },
     {
       kind: "dateOfBirthMonth",
       value: vars.dateOfBirthMonth ?? "",
-      re: "^month$|birth.*month|dob.*month",
+      re: "^month$|^mm$|birth.*month|dob.*month",
     },
     {
       kind: "dateOfBirthYear",
       value: vars.dateOfBirthYear ?? "",
-      re: "^year$|birth.*year|dob.*year",
+      re: "^year$|^yyyy$|birth.*year|dob.*year",
+    },
+    {
+      kind: "pin",
+      value: vars.pin ?? "",
+      re: "(4.?digit\\s*)?\\bpin\\b|account.?pin|security.?pin",
+      types: ["text", "tel", "number", "password"],
+    },
+    {
+      kind: "hearAbout",
+      value: vars.hearAbout ?? "Google",
+      re: "hear about|how did you|referred by|referral source|acquisition",
     },
     {
       kind: "addressLine1",
@@ -232,9 +340,14 @@ export async function fastFillPersonaFields(
       el.select?.();
       if (el.tagName === "SELECT") {
         const opts = [...el.options];
+        const raw = String(v || "").trim();
+        const stripped = raw.replace(/^0+/, "") || raw;
         const hit =
-          opts.find((o) => o.value.toLowerCase() === v.toLowerCase()) ||
-          opts.find((o) => o.text.toLowerCase().includes(v.toLowerCase()));
+          opts.find((o) => o.value.toLowerCase() === raw.toLowerCase()) ||
+          opts.find((o) => o.value.toLowerCase() === stripped.toLowerCase()) ||
+          opts.find((o) => o.text.trim().toLowerCase() === raw.toLowerCase()) ||
+          opts.find((o) => o.text.trim().toLowerCase() === stripped.toLowerCase()) ||
+          opts.find((o) => o.text.toLowerCase().includes(raw.toLowerCase()));
         if (hit) el.value = hit.value;
         else return false;
       } else if (proto && proto.set) proto.set.call(el, v);
@@ -264,11 +377,29 @@ export async function fastFillPersonaFields(
           placeholder,
           el.getAttribute("aria-label") || "",
           labelFor(el),
-        ].join(" ");
+        ].join(" ").replace(/\\s+/g, " ").trim();
+        if (
+          /username|firstName|lastName|fullName/.test(pair.kind) &&
+          (type === "email" || /e-?mail/.test(meta))
+        ) {
+          continue;
+        }
+        if (
+          /firstName|lastName|fullName/.test(pair.kind) &&
+          /user\\s*name|username|nickname|handle|user[_-]?id/.test(meta)
+        ) {
+          continue;
+        }
         if (pair.kind === "email" && type === "email") {
           /* match */
         } else if (pair.kind === "password" && type === "password") {
           /* match */
+        } else if (
+          pair.kind === "dateOfBirth" &&
+          el.tagName === "SELECT"
+        ) {
+          /* Triple MM/DD/YYYY dropdowns are filled after the pair loop. */
+          continue;
         } else if (
           pair.kind === "dateOfBirth" &&
           /mm\\s*[/.-]\\s*dd\\s*[/.-]\\s*yyyy|dd\\s*[/.-]\\s*mm\\s*[/.-]\\s*yyyy/i.test(
@@ -277,6 +408,13 @@ export async function fastFillPersonaFields(
         ) {
           /* Bovada: placeholder mm/dd/yyyy, label may not be on the input */
         } else if (!re.test(meta)) continue;
+        if (
+          pair.kind === "pin" &&
+          (/password|e-?mail|promo|referral|phone|spin/i.test(meta) &&
+            !/\\bpin\\b/i.test(meta))
+        ) {
+          continue;
+        }
 
         let value = pair.value;
         if (pair.kind === "dateOfBirth") {
@@ -310,6 +448,159 @@ export async function fastFillPersonaFields(
         break;
       }
     }
+    // Stake: Username sits between email and password and often has name="name"
+    // with no accessible label in the input meta. Fill the empty text box.
+    const userVal = ${JSON.stringify(vars.username ?? "")};
+    if (userVal && !filledKinds.includes("username")) {
+      const emailEl = inputs.find((el) => (el.getAttribute("type") || "").toLowerCase() === "email");
+      const pwEl = inputs.find((el) => (el.getAttribute("type") || "").toLowerCase() === "password");
+      const candidate = inputs.find((el) => {
+        const type = (el.getAttribute("type") || "text").toLowerCase();
+        if (type === "password" || type === "email" || type === "hidden" || type === "checkbox") return false;
+        if (el === emailEl || el === pwEl) return false;
+        if (String(el.value || "").trim()) return false;
+        const meta = (
+          (el.getAttribute("name") || "") +
+          " " +
+          (el.getAttribute("id") || "") +
+          " " +
+          (el.getAttribute("autocomplete") || "") +
+          " " +
+          (el.getAttribute("placeholder") || "") +
+          " " +
+          (el.getAttribute("aria-label") || "") +
+          " " +
+          labelFor(el)
+        ).toLowerCase();
+        if (/e-?mail|referral|promo|bonus|phone|mobile/.test(meta)) return false;
+        if (/username|user\\s*name|nickname|handle|user[_-]?id|autocomplete=\"username\"/.test(meta)) return true;
+        if (/^name$/.test((el.getAttribute("name") || "").trim().toLowerCase())) return true;
+        if (emailEl && pwEl && emailEl.compareDocumentPosition(el) & 4 && el.compareDocumentPosition(pwEl) & 4) {
+          return true;
+        }
+        return false;
+      });
+      if (candidate && setVal(candidate, userVal)) {
+        filled += 1;
+        filledKinds.push("username");
+      }
+    }
+
+    // MyBookie / BetOnline / Bovada-class extras the pair loop misses:
+    // 4-digit PIN, Male/Female toggle, MM/DD/YYYY selects, "hear about us".
+    const pinVal = ${JSON.stringify(vars.pin ?? "")};
+    const genderVal = ${JSON.stringify(vars.gender ?? "Male")};
+    const hearVal = ${JSON.stringify(vars.hearAbout ?? "Google")};
+    const dobDay = ${JSON.stringify(vars.dateOfBirthDay ?? "15")};
+    const dobMonth = ${JSON.stringify(vars.dateOfBirthMonth ?? "03")};
+    const dobYear = ${JSON.stringify(vars.dateOfBirthYear ?? "1986")};
+
+    const fieldMeta = (el) => (
+      (el.getAttribute("name") || "") +
+      " " +
+      (el.getAttribute("id") || "") +
+      " " +
+      (el.getAttribute("placeholder") || "") +
+      " " +
+      (el.getAttribute("aria-label") || "") +
+      " " +
+      labelFor(el)
+    ).replace(/\\s+/g, " ").trim();
+
+    if (pinVal && !filledKinds.includes("pin")) {
+      const pinEl = inputs.find((el) => {
+        const type = (el.getAttribute("type") || "text").toLowerCase();
+        if (["hidden", "checkbox", "radio", "submit", "email"].includes(type)) return false;
+        const meta = fieldMeta(el);
+        if (!/\\bpin\\b|4.?digit/i.test(meta)) return false;
+        if (/password|e-?mail|promo|referral|phone/i.test(meta) && !/\\bpin\\b/i.test(meta)) return false;
+        return !String(el.value || "").trim();
+      });
+      if (pinEl && setVal(pinEl, pinVal)) {
+        filled += 1;
+        filledKinds.push("pin");
+      }
+    }
+
+    if (pickGenderChip(genderVal)) {
+      filled += 1;
+      filledKinds.push("gender");
+    }
+
+    const pickSelect = (el, preferred) => {
+      const opts = [...el.options];
+      const prefs = (Array.isArray(preferred) ? preferred : [preferred]).map((p) => String(p || "").trim()).filter(Boolean);
+      for (const p of prefs) {
+        const stripped = p.replace(/^0+/, "") || p;
+        const hit =
+          opts.find((o) => o.value === p || o.value === stripped) ||
+          opts.find((o) => o.text.trim() === p || o.text.trim() === stripped) ||
+          opts.find((o) => o.text.toLowerCase().includes(p.toLowerCase()));
+        if (hit) return setVal(el, hit.value || hit.text);
+      }
+      const real = opts.find((o) => {
+        const t = o.text.replace(/\\s+/g, " ").trim();
+        return o.value && !/^(select|option|choose|mm|dd|yyyy|month|day|year)/i.test(t);
+      });
+      return real ? setVal(el, real.value) : false;
+    };
+
+    const selects = [...document.querySelectorAll("select")].filter(visible);
+    const mm = selects.filter((el) => {
+      const ph = (el.getAttribute("placeholder") || el.options[0]?.text || "") + " " + fieldMeta(el);
+      return /\\bmm\\b|\\bmonth\\b/i.test(ph) && !/yyyy|year/i.test((el.options[0]?.text || "").trim());
+    });
+    const dd = selects.filter((el) => {
+      const first = (el.options[0]?.text || "").trim();
+      const ph = first + " " + fieldMeta(el);
+      return /\\bdd\\b|\\bday\\b/i.test(ph) && !/yyyy|year/i.test(first);
+    });
+    const yy = selects.filter((el) => {
+      const first = (el.options[0]?.text || "").trim();
+      const ph = first + " " + fieldMeta(el);
+      return /\\byyyy\\b|\\byear\\b/i.test(ph);
+    });
+    // Adjacent triple under Date of Birth when labels are only MM / DD / YYYY.
+    if (!mm.length && !dd.length && selects.length >= 3) {
+      const dobSelects = selects.filter((el) => /date of birth|\\bdob\\b|birth/i.test(fieldMeta(el)));
+      const triple = dobSelects.length >= 3 ? dobSelects.slice(0, 3) : selects.slice(0, 3);
+      if (triple.length >= 3) {
+        if (pickSelect(triple[0], [dobMonth, String(Number(dobMonth))])) {
+          filled += 1;
+          filledKinds.push("dateOfBirthMonth");
+        }
+        if (pickSelect(triple[1], [dobDay, String(Number(dobDay))])) {
+          filled += 1;
+          filledKinds.push("dateOfBirthDay");
+        }
+        if (pickSelect(triple[2], [dobYear])) {
+          filled += 1;
+          filledKinds.push("dateOfBirthYear");
+        }
+      }
+    } else {
+      if (mm[0] && pickSelect(mm[0], [dobMonth, String(Number(dobMonth))])) {
+        filled += 1;
+        filledKinds.push("dateOfBirthMonth");
+      }
+      if (dd[0] && pickSelect(dd[0], [dobDay, String(Number(dobDay))])) {
+        filled += 1;
+        filledKinds.push("dateOfBirthDay");
+      }
+      if (yy[0] && pickSelect(yy[0], [dobYear])) {
+        filled += 1;
+        filledKinds.push("dateOfBirthYear");
+      }
+    }
+
+    if (!filledKinds.includes("hearAbout")) {
+      const hear = selects.find((el) => /hear about|how did you|referred|source/i.test(fieldMeta(el)));
+      if (hear && pickSelect(hear, [hearVal, "Google", "Internet", "Friend", "Social", "Other"])) {
+        filled += 1;
+        filledKinds.push("hearAbout");
+      }
+    }
+
     return { filled, kinds: filledKinds, dobFormatUsed };
   })()`;
 
@@ -676,6 +967,112 @@ export async function recoverFromHelpOrLegalPage(
   return true;
 }
 
+/** True when a required username / handle field is on screen and empty. */
+export async function usernameFieldEmpty(page: PageLike): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        ${HELPERS}
+        const text = (document.body?.innerText || "").slice(0, 8000);
+        if (/please enter a username|username is required|choose a username/i.test(text)) {
+          const inputs = [...document.querySelectorAll("input, textarea")].filter(visible);
+          return inputs.some((el) => {
+            const type = (el.getAttribute("type") || "text").toLowerCase();
+            if (type === "password" || type === "email" || type === "hidden") return false;
+            return !String(el.value || "").trim();
+          });
+        }
+        return [...document.querySelectorAll("input, textarea")].some((el) => {
+          if (!visible(el)) return false;
+          const type = (el.getAttribute("type") || "text").toLowerCase();
+          if (type === "password" || type === "email" || type === "hidden") return false;
+          const meta = (
+            (el.getAttribute("name") || "") +
+            " " +
+            (el.getAttribute("id") || "") +
+            " " +
+            (el.getAttribute("autocomplete") || "") +
+            " " +
+            (el.getAttribute("placeholder") || "") +
+            " " +
+            (el.getAttribute("aria-label") || "") +
+            " " +
+            labelFor(el)
+          ).toLowerCase();
+          if (!/username|user\\s*name|nickname|handle|user[_-]?id/.test(meta) &&
+              (el.getAttribute("name") || "").trim().toLowerCase() !== "name") {
+            return false;
+          }
+          if (/e-?mail|referral|promo/.test(meta)) return false;
+          return !String(el.value || "").trim();
+        });
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** MyBookie / Bovada-class: PIN, DOB triple, or hear-about still blank. */
+export async function signupRequiredExtrasEmpty(
+  page: PageLike,
+): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        ${HELPERS}
+        const metaOf = (el) => (
+          (el.getAttribute("name") || "") +
+          " " +
+          (el.getAttribute("id") || "") +
+          " " +
+          (el.getAttribute("placeholder") || "") +
+          " " +
+          (el.getAttribute("aria-label") || "") +
+          " " +
+          labelFor(el)
+        ).toLowerCase();
+        const inputs = [...document.querySelectorAll("input, select, textarea")].filter(visible);
+        for (const el of inputs) {
+          const meta = metaOf(el);
+          if (/\\bpin\\b|4.?digit/.test(meta) && !/password|e-?mail|promo|referral/.test(meta)) {
+            if (!String(el.value || "").trim()) return true;
+          }
+          if (el.tagName === "SELECT") {
+            const cur = (el.options[el.selectedIndex]?.text || el.value || "").trim();
+            if (/date of birth|\\bdob\\b|birth|\\bmm\\b|\\bdd\\b|\\byyyy\\b/.test(meta + " " + cur)) {
+              if (!cur || /^(mm|dd|yyyy|month|day|year|select)/i.test(cur)) return true;
+            }
+            if (/hear about|how did you/.test(meta) && /^(select|option|choose|$)/i.test(cur)) {
+              return true;
+            }
+          }
+        }
+        if (genderStillEmpty()) return true;
+        return false;
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+export async function fastPickGender(
+  page: PageLike,
+  gender = "Male",
+): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        ${HELPERS}
+        return pickGenderChip(${JSON.stringify(gender)});
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function countEmptyVisibleInputs(page: PageLike): Promise<number> {
   try {
     const n = await page.evaluate(`(() => {
@@ -725,7 +1122,8 @@ export async function inspectRegistrationSubmitUi(page: PageLike): Promise<{
         if (!t || t.length > 48) continue;
         if (
           /create(\\s+an?)?\\s+account|sign\\s*up|register|join\\s+now|submit/.test(t) &&
-          !/log\\s*in|sign\\s*in|already/.test(t)
+          !/log\\s*in|sign\\s*in|already/.test(t) &&
+          !/register with |continue with |sign up with |see more options/.test(t)
         ) {
           // Header Sign Up while a dialog is open is a toggle, not submit.
           if (dialog && !dialog.contains(el) && !/create(\\s+an?)?\\s+account/.test(t)) {
@@ -782,6 +1180,36 @@ export async function turnstileLooksSolved(page: PageLike): Promise<boolean> {
           return true;
         }
         return /\\bsuccess!\\b/i.test(text) && /create(\\s+an?)?\\s+account/i.test(text);
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Open Stake-style "Register with Email" when the password form is hidden. */
+export async function fastExpandEmailRegistration(
+  page: PageLike,
+): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        ${HELPERS}
+        const hasPassword = [...document.querySelectorAll("input[type='password']")].some(
+          (el) => el instanceof HTMLElement && visible(el)
+        );
+        if (hasPassword) return false;
+        const nodes = [
+          ...document.querySelectorAll("button, a, [role='button']"),
+        ].filter((el) => el instanceof HTMLElement && visible(el));
+        const btn = nodes.find((el) =>
+          /register with e-?mail|sign up with e-?mail|continue with e-?mail/i.test(
+            ((el.textContent || "") + " " + (el.getAttribute("aria-label") || "")).replace(/\\s+/g, " "),
+          ),
+        );
+        if (!btn) return false;
+        try { btn.click(); } catch (_) {}
+        return true;
       })()`),
     );
   } catch {
@@ -879,8 +1307,24 @@ export async function fastClickCreateAccount(
       const scored = [];
       for (const el of nodes) {
         const t = labelOf(el);
-        if (!t || t.length > 64) continue;
+        const disabled =
+          ("disabled" in el && el.disabled) ||
+          el.getAttribute("aria-disabled") === "true" ||
+          el.classList.contains("disabled");
+        if (!t || t.length > 64) {
+          // Stake: the fat submit under the age checkbox is often unlabeled
+          // (or only a spinner). Skip it and we hang in the LLM fallback.
+          if (formOpen && el.tagName === "BUTTON") {
+            const r = el.getBoundingClientRect();
+            if (r.width >= 180 && r.height >= 36 && (force || !disabled)) {
+              scored.push({ el, score: 85, disabled });
+            }
+          }
+          continue;
+        }
         if (/log\\s*in|sign\\s*in|already have|terms|privacy|help|contact|close|dismiss|cancel|×|✕/.test(t)) continue;
+        // Stake / similar method pickers — not the final Create Account submit.
+        if (/register with |continue with |sign up with |see more options/.test(t)) continue;
         // Form submit: Create Account, or Bovada's red REGISTER in the form.
         // Header Sign Up / Register is a toggle — only count it when the
         // form is closed.
@@ -905,10 +1349,6 @@ export async function fastClickCreateAccount(
           score = 55;
         }
         if (score === 0) continue;
-        const disabled =
-          ("disabled" in el && el.disabled) ||
-          el.getAttribute("aria-disabled") === "true" ||
-          el.classList.contains("disabled");
         // Create Account: allow force. Never force-click Sign Up.
         if (disabled && !(force && score >= 100)) continue;
         scored.push({ el, score, disabled });

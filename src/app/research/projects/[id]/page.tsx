@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DEFAULT_TEST_EMAIL } from "@/lib/constants";
@@ -10,6 +10,7 @@ import {
   createDraftRun,
   getResearchProject,
   markBrandAccountReady,
+  markInboxSwept,
   mergeResearchEmails,
   pruneProjectEmails,
   patchResearchRun,
@@ -232,6 +233,14 @@ function applyTeardownPoll(
     patch.status = "running";
   }
   if (data.error) patch.error = data.error;
+  // Force stop wins — a late poll must not flip the run back to live.
+  if (
+    target.status === "paused" &&
+    /force stopped/i.test(target.error ?? "") &&
+    patch.status === "running"
+  ) {
+    delete patch.status;
+  }
   if (Object.keys(patch).length > 0) {
     patchResearchRun(projectId, target.id, patch);
   }
@@ -266,16 +275,34 @@ function formatSec(n: number | null | undefined) {
   return `${m}m ${s}s`;
 }
 
+const INBOX_SWEEP_MS = 24 * 60 * 60 * 1000;
+
+function inboxDueForDailySweep(project: ResearchProject): boolean {
+  const last = project.lastInboxSweepAt
+    ? Date.parse(project.lastInboxSweepAt)
+    : 0;
+  return !last || Date.now() - last >= INBOX_SWEEP_MS;
+}
+
 /** Welcome → day 14 CRM window, scoped to this project's +aliases and senders. */
 function researchInboxListUrl(
   project: ResearchProject,
   toAddress: string,
+  hoursOverride?: number,
 ): string {
   const days = project.emailWatchDays || 14;
   const elapsedH = Math.ceil(
     (Date.now() - Date.parse(project.createdAt)) / 3_600_000,
   );
-  const hours = Math.min(16 * 24, Math.max(1, days * 24, elapsedH || 1));
+  const last = project.lastInboxSweepAt
+    ? Date.parse(project.lastInboxSweepAt)
+    : 0;
+  const sinceLastH = last
+    ? Math.ceil((Date.now() - last) / 3_600_000)
+    : 36;
+  const hours =
+    hoursOverride ??
+    Math.min(16 * 24, Math.max(1, days * 24, elapsedH || 1, sinceLastH));
   const aliases = project.brands
     .map((b) => b.accountEmail?.trim())
     .filter((a): a is string => Boolean(a))
@@ -366,6 +393,7 @@ function ResearchProjectPageInner() {
   const [depositBatchProgress, setDepositBatchProgress] = useState<
     string | null
   >(null);
+  const stopRequestedRef = useRef(false);
 
   useEffect(() => {
     const t = searchParams.get("tab");
@@ -433,6 +461,7 @@ function ResearchProjectPageInner() {
   // Re-attach to the live agent job after refresh / brand switch so the report stays in sync.
   useEffect(() => {
     if (!project) return;
+    if (stopRequestedRef.current) return;
     const runningForBrand = [...project.runs]
       .reverse()
       .find(
@@ -503,56 +532,45 @@ function ResearchProjectPageInner() {
     syncBrandAccountsFromEmails(project.id);
   }, [project]);
 
-  // Keep merging IMAP for the 14-day CRM window — not only while an agent
-  // runs. Winna VIP / weekly mail arrives after the teardown ends.
+  // Once a day: open IMAP, pick up new mail, log out. No interval — a
+  // stuck list was starving the teardown start.
   useEffect(() => {
     if (!project) return;
-    const busy = batchRunning || depositBatchRunning || running;
+    if (batchRunning || depositBatchRunning || running) return;
+    if (!inboxDueForDailySweep(project)) return;
     const email = project.persona?.email || DEFAULT_TEST_EMAIL;
-    const watchMs = (project.emailWatchDays || 14) * 86_400_000;
-    const createdMs = Date.parse(project.createdAt) || 0;
-    const watching = !createdMs || Date.now() - createdMs < watchMs;
+    const last = project.lastInboxSweepAt
+      ? Date.parse(project.lastInboxSweepAt)
+      : 0;
+    const hours = last
+      ? Math.min(16 * 24, Math.max(24, Math.ceil((Date.now() - last) / 3_600_000)))
+      : 36;
     let cancelled = false;
-    // IMAP list can take 20s+. Never let ticks overlap — stacked requests
-    // saturate the browser's per-host connection limit and starve the job poll
-    // (trail / screenshots / emails then freeze while the agent keeps going).
-    let inFlight = false;
-    const tick = async () => {
-      if (inFlight) return;
-      inFlight = true;
+    void (async () => {
       try {
-        const res = await fetch(researchInboxListUrl(project, email));
+        const res = await fetch(researchInboxListUrl(project, email, hours), {
+          signal: AbortSignal.timeout(12_000),
+        });
         const data = await res.json();
         if (cancelled || !data.configured) return;
         const items = (data.messages ??
           []) as import("@/lib/research/types").EmailWatchItem[];
-        if (!items.length) return;
-        mergeResearchEmails(project.id, items);
-        syncBrandAccountsFromEmails(project.id);
+        if (items.length) {
+          mergeResearchEmails(project.id, items);
+          syncBrandAccountsFromEmails(project.id);
+        }
+        markInboxSwept(project.id);
       } catch {
-        /* ignore */
-      } finally {
-        inFlight = false;
+        /* retry on the next page load */
       }
-    };
-    void tick();
-    if (!busy && !watching) {
-      return () => {
-        cancelled = true;
-      };
-    }
-    const id = window.setInterval(tick, busy ? 30_000 : 120_000);
+    })();
     return () => {
       cancelled = true;
-      window.clearInterval(id);
     };
-    // Depend on ids, not the project object — it changes on every poll patch
-    // and was restarting this effect (and firing a fresh 20s IMAP call) each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     project?.id,
-    project?.persona?.email,
-    project?.createdAt,
+    project?.lastInboxSweepAt,
     batchRunning,
     depositBatchRunning,
     running,
@@ -728,7 +746,7 @@ function ResearchProjectPageInner() {
     const brand = project.brands.find((b) => b.id === activeBrandId);
     if (!brand) return;
     setRunError(null);
-    setTrail([]);
+    setTrail(["Creating remote browser…"]);
     setRunning(true);
 
     let run = latestRun;
@@ -842,19 +860,38 @@ function ResearchProjectPageInner() {
   }
 
   async function pauseAgent() {
-    if (!jobId) return;
+    stopRequestedRef.current = true;
     setPausing(true);
+    setRunning(false);
+    setBatchRunning(false);
+    setDepositBatchRunning(false);
+    setFeatureScanProgress(null);
+    setBatchProgress("Force stopped");
+    setDepositBatchProgress(null);
+    if (project) {
+      for (const r of project.runs) {
+        if (r.status === "running" && r.agentJobId) {
+          patchResearchRun(project.id, r.id, {
+            status: "paused",
+            error: "Force stopped",
+          });
+        }
+      }
+    }
+    const id = jobId;
+    setJobId(null);
+    setJobStatus("paused");
+    setLiveViewUrl(null);
     try {
-      const res = await fetch("/api/research/teardown/pause", {
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 4000);
+      await fetch("/api/research/teardown/pause", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.ok) {
-        setRunError(data.reason ?? data.error ?? "Could not pause");
-      }
-      // The poll flips the run to "paused" once the agent has snapshotted and closed.
+        body: JSON.stringify({ jobId: id, force: true }),
+        signal: ctrl.signal,
+      }).catch(() => {});
+      window.clearTimeout(timer);
     } finally {
       setPausing(false);
     }
@@ -891,6 +928,7 @@ function ResearchProjectPageInner() {
       await pauseAgent();
       await new Promise((r) => setTimeout(r, 1500));
     }
+    stopRequestedRef.current = false;
     setRunning(false);
     setJobId(null);
     setJobStatus(null);
@@ -923,13 +961,14 @@ function ResearchProjectPageInner() {
     },
   ) {
     if (!project) return;
+    stopRequestedRef.current = false;
     const targetBrandId = opts?.brandId || activeBrandId;
     if (!targetBrandId) return;
     const liveProject = getResearchProject(project.id) ?? project;
     const brand = liveProject.brands.find((b) => b.id === targetBrandId);
     if (!brand) return;
     setRunError(null);
-    setTrail([]);
+    setTrail(["Creating remote browser…"]);
     setRunning(true);
     setRunBrandId(brand.id);
     setBrandId(brand.id);
@@ -1146,7 +1185,9 @@ function ResearchProjectPageInner() {
     setTrail([]);
     setLiveViewUrl(null);
     setJobId(null);
+    stopRequestedRef.current = false;
     for (let i = 0; i < ready.length; i++) {
+      if (stopRequestedRef.current) break;
       const brand = ready[i]!;
       const live = getResearchProject(project.id) ?? project;
       const run =
@@ -1186,6 +1227,7 @@ function ResearchProjectPageInner() {
         if (data.liveViewUrl) setLiveViewUrl(data.liveViewUrl);
         const deadline = Date.now() + 8 * 60_000;
         for (;;) {
+          if (stopRequestedRef.current) break;
           await new Promise((r) => setTimeout(r, 3000));
           const poll = await fetch(
             `/api/research/teardown?jobId=${encodeURIComponent(scanJobId)}`,
@@ -1237,9 +1279,11 @@ function ResearchProjectPageInner() {
     setDepositBatchRunning(true);
     setDepositBatchProgress(null);
     setRunError(null);
+    stopRequestedRef.current = false;
     let queued = 0;
 
     for (let i = 0; i < ready.length; i++) {
+      if (stopRequestedRef.current) break;
       const brand = ready[i]!;
       setDepositBatchProgress(
         `${i + 1}/${ready.length}: ${brand.name} — opening cashier…`,
@@ -1281,6 +1325,7 @@ function ResearchProjectPageInner() {
 
         const deadline = Date.now() + 15 * 60_000;
         for (;;) {
+          if (stopRequestedRef.current) break;
           await new Promise((r) => setTimeout(r, 3000));
           const poll = await fetch(
             `/api/research/teardown?jobId=${encodeURIComponent(jobId)}`,
@@ -1339,6 +1384,7 @@ function ResearchProjectPageInner() {
     const skipBrandIds = opts?.skipBrandIds ?? [];
     selectTab("journeys");
     setBatchHalt(null);
+    stopRequestedRef.current = false;
     setBatchRunning(true);
     const alreadyReady = live.brands.filter((b) =>
       brandHasTestAccount(live, b.id),
@@ -1358,6 +1404,10 @@ function ResearchProjectPageInner() {
     let halted = false;
 
     for (let i = 0; i < brands.length && !halted; i++) {
+      if (stopRequestedRef.current) {
+        halted = true;
+        break;
+      }
       const brand = brands[i]!;
       const latest = getResearchProject(live.id) ?? live;
       if (skipBrandIds.includes(brand.id)) {
@@ -1381,7 +1431,7 @@ function ResearchProjectPageInner() {
       saveBrandAccountEmail(latest.id, freshBrand.id, accountEmail);
       lockBrandCredentials(latest, freshBrand.id);
       setRunBrandId(freshBrand.id);
-      setTrail([]);
+      setTrail(["Creating remote browser…"]);
       setBatchProgress(
         `${i + 1}/${brands.length}: ${brand.name} — full journey (landing → first bet)…`,
       );
@@ -1429,6 +1479,10 @@ function ResearchProjectPageInner() {
         if (data.liveViewUrl) setLiveViewUrl(data.liveViewUrl);
 
         for (;;) {
+          if (stopRequestedRef.current) {
+            halted = true;
+            break;
+          }
           await new Promise((r) => setTimeout(r, 2500));
           const poll = await fetch(
             `/api/research/teardown?jobId=${encodeURIComponent(jobId)}`,
@@ -1613,13 +1667,6 @@ function ResearchProjectPageInner() {
           <p className="mt-1 text-sm text-[var(--rs-muted)]">
             {project.device} teardown
           </p>
-          <div className="mt-3">
-            <ResearchBrandRoster
-              project={project}
-              activeBrandId={activeBrandId}
-              onSelect={setBrandId}
-            />
-          </div>
         </div>
       </div>
 
@@ -1656,16 +1703,14 @@ function ResearchProjectPageInner() {
                   Open brand
                 </button>
               ) : null}
-              {jobId ? (
-                <button
-                  type="button"
-                  onClick={() => void pauseAgent()}
-                  title="Stop now and release the remote browser so it stops billing."
-                  className="cursor-pointer rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10"
-                >
-                  {pausing ? "Stopping…" : "Stop"}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void pauseAgent()}
+                title="Force stop now and release the remote browser so it stops billing."
+                className="cursor-pointer rounded-lg border border-red-500/50 px-3 py-1.5 text-xs text-red-200 hover:bg-red-500/10"
+              >
+                {pausing ? "Stopping…" : "Force stop"}
+              </button>
               {jobId &&
               (jobStatus === "confirming_payment" ||
                 jobStatus === "awaiting_payment" ||
@@ -2729,6 +2774,7 @@ function EmailWatchPanel({
         mergeResearchEmails(project.id, items);
         syncBrandAccountsFromEmails(project.id);
       }
+      markInboxSwept(project.id);
       const after =
         getResearchProject(project.id)?.emails.length ?? project.emails.length;
       const added = Math.max(0, after - before);
@@ -2758,8 +2804,9 @@ function EmailWatchPanel({
         </h2>
         <p className="mt-1 text-[var(--rs-muted)]">
           Every message from welcome onward for {days} days — {email}{" "}
-          (+aliases), including VIP, bonus, and login mail. Syncs while this
-          page is open.
+          (+aliases), including VIP, bonus, and login mail. Checked once a
+          day, then the inbox connection is closed. Use Sync inbox to pull
+          now.
         </p>
       </div>
 

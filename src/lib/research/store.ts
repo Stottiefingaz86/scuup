@@ -325,6 +325,12 @@ export function updateResearchProject(
   return writeResearchProject({ ...existing, ...patch, id });
 }
 
+export function markInboxSwept(projectId: string): void {
+  updateResearchProject(projectId, {
+    lastInboxSweepAt: new Date().toISOString(),
+  });
+}
+
 export function saveResearchPersona(
   projectId: string,
   persona: ResearchPersona,

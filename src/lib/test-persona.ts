@@ -43,6 +43,24 @@ function randomDigits(n: number): string {
   return Array.from({ length: n }, () => Math.floor(Math.random() * 10)).join("");
 }
 
+/** Stake rejects handles of 14+ characters. Keep a digit tail so retries don't collide. */
+const USERNAME_MAX = 13;
+
+export function fitSignupUsername(raw: string): string {
+  const base = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (base.length > 0 && base.length <= USERNAME_MAX) return base;
+  const digits = randomDigits(3);
+  const name = base.replace(/\d+$/, "") || "player";
+  return (name.slice(0, USERNAME_MAX - digits.length) + digits).slice(
+    0,
+    USERNAME_MAX,
+  );
+}
+
+function mintUsername(firstName: string, lastName: string): string {
+  return fitSignupUsername(`${firstName}${lastName}${randomDigits(3)}`);
+}
+
 /** Fixed ~40 years old (as of 2026) — UK forms often use separate
  * DD / MM / YYYY boxes that agents miss when only given a single string. */
 function fortyYearOldDob(region: string): {
@@ -427,7 +445,7 @@ export function buildSignupPersona(opts: {
     ...base,
     firstName,
     lastName,
-    username: `${firstName}${lastName}${randomDigits(4)}`.toLowerCase(),
+    username: mintUsername(firstName, lastName),
     phone: phoneForRegion(region, base.phone),
     email: signupEmail(),
     dateOfBirth: dob.iso,
@@ -447,9 +465,10 @@ export function personaVariables(
     email: persona.email,
     loginId: persona.email,
     password,
-    username:
+    username: fitSignupUsername(
       persona.username ??
-      `${persona.firstName}${persona.lastName}${Math.floor(1000 + Math.random() * 9000)}`.toLowerCase(),
+        `${persona.firstName}${persona.lastName}${Math.floor(100 + Math.random() * 900)}`,
+    ),
     firstName: persona.firstName,
     lastName: persona.lastName,
     fullName: `${persona.firstName} ${persona.lastName}`,
@@ -459,6 +478,10 @@ export function personaVariables(
     dateOfBirthDay: day,
     dateOfBirthMonth: month,
     dateOfBirthYear: year,
+    // MyBookie / BetOnline / Bovada-class: 4-digit account PIN + gender.
+    pin: year.slice(-4) || "1986",
+    gender: "Male",
+    hearAbout: "Google",
     phone: persona.phone,
     // First alternate for a quick retry without regenerating the persona.
     phoneAlt: alts[0] ?? persona.phone,

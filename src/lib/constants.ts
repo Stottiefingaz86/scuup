@@ -210,6 +210,7 @@ export const MARKET_OPTIONS: MarketOption[] = [
   { label: "Pennsylvania, US", flag: "🇺🇸", geo: "US-PA", group: "North America" },
   { label: "Michigan, US", flag: "🇺🇸", geo: "US-MI", group: "North America" },
   { label: "US (rest / offshore)", flag: "🇺🇸", geo: "US-TX", group: "North America", popular: true, cryptoFriendly: true },
+  { label: "US (Florida / offshore)", flag: "🇺🇸", geo: "US-FL", group: "North America", cryptoFriendly: true },
   { label: "Ontario, Canada", flag: "🇨🇦", geo: "CA-ON", group: "North America", popular: true },
   { label: "Canada", flag: "🇨🇦", geo: "CA", group: "North America", popular: true },
   { label: "Canada (rest / crypto)", flag: "🇨🇦", geo: "CA-BC", group: "North America", popular: true, cryptoFriendly: true },

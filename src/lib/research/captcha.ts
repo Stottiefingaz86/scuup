@@ -15,6 +15,91 @@ type PageWithCdp = AgentPage & {
 
 type WidgetRect = { x: number; y: number; w: number; h: number; kind: string };
 
+/** Rainbet / Stake: do not synthetically click Turnstile. */
+export function usesManagedTurnstile(url: string): boolean {
+  return /rainbet\.com|stake\.(com|bet|mx)|stake\.bet\.br/i.test(url);
+}
+
+/** Rainbet only — widget is on the form and Create Account is a no-op until
+ * Success. Stake's captcha often never paints; waiting here hangs the run. */
+export function waitsForTurnstileBeforeSubmit(url: string): boolean {
+  return /rainbet\.com/i.test(url);
+}
+
+/** Full-page Cloudflare "Verifying you are human" interstitial — not a form widget. */
+export async function cloudflareInterstitialVisible(
+  page: AgentPage,
+): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        const href = String(location.href || "");
+        if (/[?&]__cf_chl|cf-browser-verification|challenges\\.cloudflare\\.com\\/cdn-cgi/i.test(href)) {
+          return true;
+        }
+        if (/[?&]token=/.test(href) && /[?&]key=/.test(href) && /engine\\.|cdn-cgi|mybookie|betonline|bovada/i.test(href)) {
+          return true;
+        }
+        const text = (document.body?.innerText || "").slice(0, 4000);
+        const compact = text.replace(/\\s+/g, "");
+        return (
+          /verifying you are human|performing security verification|this website uses a security service to protect against|malicious bots|ray id/i.test(
+            text,
+          ) ||
+          /verifyingyouarehuman|performingsecurityverification|thiswebsiteusesasecurityservice|maliciousbots/i.test(
+            compact,
+          )
+        );
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Sit on the interstitial until Browserbase clears it. Reloading restarts the check. */
+export async function waitOutCloudflareInterstitial(
+  page: AgentPage,
+  opts?: {
+    timeoutMs?: number;
+    push?: (msg: string) => void;
+    shouldAbort?: () => boolean;
+  },
+): Promise<"absent" | "cleared" | "timeout" | "aborted"> {
+  if (!(await cloudflareInterstitialVisible(page))) return "absent";
+  const push = opts?.push ?? (() => {});
+  const shouldAbort = opts?.shouldAbort ?? (() => false);
+  const timeoutMs = opts?.timeoutMs ?? 90_000;
+  push("Cloudflare interstitial — waiting (do not reload)");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (shouldAbort()) return "aborted";
+    await new Promise((r) => setTimeout(r, 1000));
+    if (!(await cloudflareInterstitialVisible(page))) {
+      push("Cloudflare interstitial cleared");
+      return "cleared";
+    }
+  }
+  push("Cloudflare interstitial still up after wait");
+  return "timeout";
+}
+
+/** Stake (and similar) toast when the captcha SDK never loaded. */
+export async function captchaInitFailed(page: AgentPage): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        const text = (document.body?.innerText || "").slice(0, 12000);
+        return /captcha couldn'?t initialize|captcha could not initialize|captcha failed to (?:load|initialize)/i.test(
+          text,
+        );
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Walk light DOM + open/closed shadow roots (Stagehand V3 piercer). */
 const FIND_WIDGET_SCRIPT = `(() => {
   function roots() {
@@ -215,6 +300,9 @@ export async function captchaChallengeVisible(
       await page.evaluate(`(() => {
         const text = (document.body?.innerText || "").slice(0, 12000);
         if (/\\bsuccess!\\b/i.test(text) && /turnstile|cloudflare|verify you are human/i.test(text)) {
+          return false;
+        }
+        if (/verifying you are human|this website uses a security service to protect against/i.test(text)) {
           return false;
         }
         return /i'?m not a robot|verify you are human|additional security step|confirm that you'?re not a robot/i.test(text);
@@ -433,7 +521,7 @@ export async function waitForBrowserbaseCaptcha(
   }
 
   // Winna / BetOnline need a real click — skipping Turnstile globally
-  // stalled those signups. Only Rainbet burns on synthetic clicks.
+  // stalled those signups. Rainbet / Stake burn on synthetic clicks.
   let href = "";
   try {
     href =
@@ -443,10 +531,10 @@ export async function waitForBrowserbaseCaptcha(
   } catch {
     href = "";
   }
-  const skipClick = /rainbet\.com/i.test(href);
+  const skipClick = usesManagedTurnstile(href);
   if (skipClick) {
     push(
-      "Captcha: Rainbet Turnstile — waiting for Browserbase (no synthetic click)",
+      "Captcha: managed Turnstile — waiting for Browserbase (no synthetic click)",
     );
   } else {
     push("Captcha: ticking Verify / I'm not a robot");
@@ -575,6 +663,17 @@ export async function solveCaptchaAfterSubmit(
   const shouldAbort = opts?.shouldAbort ?? (() => false);
 
   if (await recaptchaSolved(page)) return "solved";
+
+  if (await cloudflareInterstitialVisible(page)) {
+    const cf = await waitOutCloudflareInterstitial(page, {
+      timeoutMs: 90_000,
+      push,
+      shouldAbort,
+    });
+    if (cf === "cleared") return "solved";
+    if (cf === "aborted") return "timeout";
+    return cf === "timeout" ? "timeout" : "errored";
+  }
 
   push("Waiting for Cloudflare / captcha after Create Account…");
   const appeared = await waitForCaptchaWidget(page, {

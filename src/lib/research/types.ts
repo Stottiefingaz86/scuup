@@ -483,6 +483,8 @@ export interface ResearchProject {
   emails: EmailWatchItem[];
   /** Inbox watch window after signup (days). */
   emailWatchDays: number;
+  /** Last time we opened IMAP, pulled new mail, and logged out. */
+  lastInboxSweepAt?: string;
 }
 
 /** Human-in-the-loop item — e.g. send crypto or paste an SMS OTP. */

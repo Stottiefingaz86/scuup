@@ -100,13 +100,18 @@ export async function GET(request: NextRequest) {
     try {
       const extraToAddresses = csvParam(request, "aliases");
       const extraFromHints = csvParam(request, "from");
-      const raw = await listInboxCoalesced(
-        to,
-        since,
-        hours,
-        extraToAddresses,
-        extraFromHints,
-      );
+      const raw = await Promise.race([
+        listInboxCoalesced(
+          to,
+          since,
+          hours,
+          extraToAddresses,
+          extraFromHints,
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Inbox list timed out")), 8_000),
+        ),
+      ]);
       return NextResponse.json({
         configured: true,
         user: process.env.GMAIL_IMAP_USER ?? null,

@@ -93,10 +93,33 @@ export function randomUsAddress(): Pick<
   };
 }
 
+const FL_CITIES: { city: string; zip: string; area: string }[] = [
+  { city: "Miami", zip: "33131", area: "305" },
+  { city: "Tampa", zip: "33602", area: "813" },
+  { city: "Orlando", zip: "32801", area: "407" },
+];
+
+/** Bovada-safe US rest state — not TX (already used) and not licensed NJ/PA/MI. */
+export function randomFloridaAddress(): ReturnType<typeof randomUsAddress> {
+  const place = pick(FL_CITIES);
+  const num = 100 + Math.floor(Math.random() * 1900);
+  return {
+    addressLine1: `${num} ${pick(US_STREETS)}`,
+    city: place.city,
+    state: "FL",
+    postalCode: place.zip.replace(/\d{2}$/, randomDigits(2)),
+    country: "United States",
+    phone: `${place.area}555${randomDigits(4)}`,
+  };
+}
+
 /** Prefer Canada; US when market is clearly American. */
 export function defaultAddressForMarket(market: string): ReturnType<
   typeof randomCanadianAddress
 > {
+  if (/florida/i.test(market)) {
+    return randomFloridaAddress();
+  }
   if (
     /united states|new jersey|us\b|global|crypto/i.test(market) &&
     !/canada/i.test(market)
