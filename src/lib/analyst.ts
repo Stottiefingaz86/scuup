@@ -20,14 +20,13 @@ import {
 } from "./dismiss-site-cookies";
 import { getNavHint, isRelatedDestination, resolveNavUrl, saveNavHint } from "./nav-hints";
 import { waitForPageReady } from "./page-ready";
-import {
-  inboxConfigured,
-  waitForVerificationEmail,
-} from "./verification-inbox";
 import { PLAIN_PROSE_RULE, sanitizeAnalysisProse } from "./prose";
 import { expertiseFor } from "./igaming-expertise";
+import { featureCatalogPrompt } from "./feature-catalog";
 import { knowledgeFor } from "./igaming-knowledge";
 import {
+  formatBrMobile,
+  formatMxMobile,
   formatUkMobile,
   generateIeMobile,
   phoneAlternates,
@@ -446,17 +445,18 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
   loyalty_rewards: [
     {
       instruction:
-        "find and open the loyalty, VIP, rewards, bonus center, or rakeback area — brands label it VIP, VIP Club, Rewards, Loyalty, Rakeback, Bonuses, or Club, sometimes only a crown / gift / trophy / gem icon in the nav; it may be a nav item, a footer link, an icon-only menu entry, or open as a modal. If the brand has NO such area, open its promotions or offers page instead — that IS the brand's retention surface",
+        "open the rewards hub — CRITICAL for crypto brands: click the gift / present / box icon in the TOP HEADER (next to search, login, or chat). That icon often opens a rewards modal with rakeback, daily/weekly/monthly bonuses, and 'All Rewards'. Also try VIP, Rewards, Loyalty, Rakeback, Bonus Center, Club, crown, trophy, or gem. If none exists, open promotions/offers — that IS the retention surface",
       required: true,
       alternatives: [
-        "click the crown, gift, trophy, star, or gem icon in the header or navigation — icon-only entries usually lead to the VIP or rewards hub",
-        "open the site menu (hamburger or account menu) and choose the VIP, Rewards, Loyalty, or Bonuses entry from it",
+        "click the gift, present, or reward-box icon in the top-right header — this is the primary rewards entry on Rainbet/Stake-class sites",
+        "click the crown, trophy, star, or gem icon in the header or navigation",
+        "open the left sidebar or hamburger and choose VIP, Rewards, Loyalty, Races, or Promotions → VIP",
         "scroll to the footer and click the VIP, Loyalty, Rewards, or Rakeback link",
-        "open the Promotions, Offers, or Bonuses page — when a brand has no VIP or loyalty programme, its promotions page is what a player sees as ongoing value",
+        "open the Promotions, Offers, or Bonuses page when no dedicated loyalty area exists",
       ],
       fallbackPaths: [
-        "/vip",
         "/rewards",
+        "/vip",
         "/loyalty",
         "/vip-rewards",
         "/rakeback",
@@ -468,14 +468,39 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "/bonuses",
       ],
       verify:
-        "a loyalty, VIP, rewards, rakeback, or members' club page (tier levels, points, perks, cashback rates, or reward mechanics — a branded club or player-rewards programme page counts), OR a promotions/offers/bonuses page showing the brand's current offers when no dedicated loyalty area exists. NOT a casino lobby, sportsbook, or error page",
+        "a loyalty, VIP, rewards, rakeback, or members' club page OR a rewards modal/dropdown (gift-icon hub with claim tiles, rakeback, daily/weekly bonuses) OR a promotions page when no loyalty programme exists. NOT a bare casino lobby or sportsbook with no rewards UI",
     },
     {
       instruction:
-        "click the tab or link that shows the tier levels and their benefits (such as 'Levels', 'Tiers', 'All Levels', or 'Benefits') so every level's perks are visible",
+        "if a rewards modal or gift-icon panel is open, click 'All Rewards', 'View all', 'Open', or the full Rewards page link so the complete hub is visible — do not stop at the compact dropdown",
       required: false,
       alternatives: [
-        "expand or scroll the tier/level table so the perks at each VIP level are readable",
+        "click through to /rewards or the full rewards / VIP page from the modal",
+      ],
+    },
+    {
+      instruction:
+        "on the rewards hub, scroll the full page and open every visible reward category — rakeback, daily, weekly, monthly, pre-monthly, freespins, races, raffles — so claim tiles and cadence are captured",
+      required: false,
+      alternatives: [
+        "click Open or expand on each reward card (Rakeback, Daily, Weekly, Monthly) so perk detail is visible",
+      ],
+    },
+    {
+      instruction:
+        "open the rank / level / tier ladder — click 'View All Ranks', 'All Levels', 'Levels', 'Tiers', 'Benefits', or the rank progress section, then scroll so Bronze→higher tiers and perks at each level are readable",
+      required: false,
+      alternatives: [
+        "if a left menu lists Bronze, Silver, Gold (or similar ranks), click each unlocked tier so perks and wager thresholds are visible",
+        "expand or scroll the tier table so every level's perks are readable",
+      ],
+    },
+    {
+      instruction:
+        "check the left sidebar or promotions menu for VIP, Daily Race, Weekly Race, Monthly Race, Challenges, or Calendar Rewards — open VIP or the richest race/rewards entry so gamification depth is captured",
+      required: false,
+      alternatives: [
+        "open the VIP exclusive page or Exclusive VIP Experience section if linked from the sidebar",
       ],
     },
     {
@@ -483,12 +508,6 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "open the promotions or bonuses page to see the current welcome offer for a first-time depositor",
       required: false,
       fallbackPaths: ["/promotions", "/promos", "/offers", "/bonuses"],
-    },
-    {
-      instruction:
-        "open the help centre or FAQ article that explains the loyalty or VIP program — search for 'VIP', 'loyalty', or 'rakeback' in the help centre if there is a search box",
-      required: false,
-      fallbackPaths: ["/help", "/faq", "/support"],
     },
   ],
   support: [
@@ -516,6 +535,7 @@ const DEEP_SCROLL_JOURNEYS = new Set([
   "casino",
   "bingo",
   "sports_betslip",
+  "loyalty_rewards",
 ]);
 
 /** Product areas where "the agent couldn't find it" is a scorable CX
@@ -535,7 +555,11 @@ function discoveryFailurePrompt(journey: string): string {
   return `\n\nCRITICAL CONTEXT — DISCOVERABILITY FAILURE: an autonomous agent tried to reach the ${journey} area from the homepage using the navigation, menus, and well-known URL paths, and could NOT find it. The screenshots show the site as a lost player would see it. Score exactly that reality: it is not clear this product exists or how to reach it, which is one of the most damaging CX failures an operator can have. Give the discovery/navigation-related heuristics very low scores, and in the summary state plainly that a player cannot find this product from the landing page and next steps are unclear. In observations, name what IS visible instead and where the product may be hidden (obscure menu entries, unlabelled icons). Do NOT set blocked — the capture worked; the product's discoverability is what failed.`;
 }
 
-const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan ALL screenshots — including scrolled sections at the bottom of the page — for product features. Casino lobbies often hide live win feeds, jackpot rows, leaderboards, provider carousels and recently-played rows below the fold; loyalty hubs show tier grids and reward calendars. Return a "features" array for every feature with visible evidence. Use standard names when possible: "Live wins feed", "Leaderboards", "Jackpot games", "VIP levels", "Rakeback", "Weekly bonus", "Status transfer", "Originals", "Provider filters", "Casino search", "Live casino", "Bet builder", "Cashout", "Live chat", "Crypto payments", "Provably fair", "Free spins", "Missions / streaks", etc. Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account. Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (VISIBLE in a screenshot but buried in obscure navigation — never use hidden for something you cannot see). Include note (one-line evidence) and shot (screenshot index — REQUIRED for every feature; if you cannot point at a screenshot showing it, do not list it). Only list features you can SEE — omit absent ones; a feature you cannot see is simply not listed, never marked hidden or no.`;
+const FEATURE_PROMPT = `\n\nFEATURE DETECTION: Scan screenshots for product capabilities with visible evidence (including below the fold on lobbies). Return a "features" array — max 6 entries, no duplicates.
+
+${featureCatalogPrompt()}
+
+Status: strong (best-in-class), yes (clearly present), medium, partial (weak execution), weak, hidden (VISIBLE but buried — never for things you cannot see). Include note (one-line evidence) and shot (screenshot index — REQUIRED; if no screenshot shows it, do not list it). Only list features you can SEE — omit absent ones.`;
 
 async function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -765,7 +789,7 @@ const JOURNEY_GUIDANCE: Record<string, string> = {
   sports_betslip:
     "This is the sportsbook/betslip experience, captured while the agent walked a real betting flow: sportsbook → match view → adding a selection → the betslip with a stake entered. Judge usability across that flow: market depth visibility (how many markets per match and how discoverable), odds presentation, how clearly the slip shows the selection, stake input and potential returns, single/multi/bet-builder access, and cash-out cues. If the agent's trail shows a selection was added, score the betslip UX from the screenshots that show it; if no selection could be added, judge what that friction says about the product and note it.",
   loyalty_rewards:
-    "This is the loyalty/VIP/rewards area, walked across the rewards hub, tier pages, promotions page, and help centre articles. The review must answer two concrete player questions above all: (1) What does a FIRST-TIME DEPOSITOR actually get — welcome bonus, free spins, cashback, and on what terms? (2) What does each loyalty level actually offer — daily spins, rakeback %, weekly/monthly bonuses, VIP host, withdrawal perks? Extract the real numbers and perk names you can read in the screenshots (including help centre text). Then judge the craft: is this value easy to find and understand, does the next reward feel near, are earning rules documented? Compare mentally against Stake's VIP club — the category benchmark. IMPORTANT: if the brand has NO dedicated VIP/loyalty programme and the screenshots show its promotions or offers page instead, that is NOT a capture failure — do not set blocked. Score what the brand actually offers: classify it as promo-led, answer question (1) from the visible offers, and score the retention-loop heuristics low to reflect the missing ongoing-value layer.",
+    "This is the loyalty/VIP/rewards area. CRITICAL: crypto brands (Rainbet, Stake, Winna) hide the real loop behind a gift/present icon in the header — if screenshots include that modal, All Rewards, rakeback tiles, daily/weekly/monthly claims, and a Bronze→higher rank ladder, score them as Crypto loop-led DEPTH, not a thin promo page. The review must answer: (1) What does a FIRST-TIME DEPOSITOR get? (2) What does each loyalty level unlock? (3) What is the recurring cadence (daily/weekly/monthly/races)? Extract real numbers from screenshots. Compare against Stake's VIP club. If the brand has NO dedicated VIP and only promotions, score that honestly as promo-led — do not set blocked.",
   support:
     "This is the support experience. Judge access: live chat availability, response time promises, help content quality for money issues, contact channel breadth.",
   my_account:
@@ -925,21 +949,23 @@ const RETENTION_SCHEMA = {
 };
 
 const RETENTION_PROMPT = `\n\nAdditionally score the eight retention loop mechanics. CRITICAL EVIDENCE RULES — use null, never guess:
-- If screenshots show Sign Up / Login CTAs and no player avatar, balance, or account menu, the visit is LOGGED OUT. When logged out you MUST return null for: progress_mechanics, personalisation, account_integration, frequency_loop. Do not score these from marketing copy or generic tier pages.
-- progress_mechanics: ONLY score when logged in — personal progress bars, current tier/level, points to next tier, milestone unlocks. Many brands (e.g. BetOnline) show tier marketing logged out but hide the real progress meter until login. Never recommend "add a progress meter" from a logged-out visit — return null instead.
-- personalisation: ONLY score when logged in — tailored offers, VIP host, "for you" reloads. Null when logged out.
-- frequency_loop: ONLY score when you can see actual reward cadence behaviour OR the user session spans multiple claim moments. A one-shot agent visit cannot prove weekly/monthly/daily loops — return null unless a live session recording shows claims over time.
-- account_integration: requires login to see whether rewards connect to account/cashier/play.
+- If screenshots show Sign Up / Login CTAs and no player avatar, balance, or account menu, the visit is LOGGED OUT. When logged out you MUST return null for: progress_mechanics, personalisation, account_integration. Do not invent personal progress from marketing copy.
+- progress_mechanics: ONLY score when logged in — personal progress bars, current tier/level, points to next tier. Tier marketing pages logged out ≠ progress mechanics. Return null when logged out.
+- personalisation / account_integration: null unless logged in.
+- frequency_loop: SCORE from documented cadence on the rewards hub — Daily / Weekly / Monthly claim tiles, reloads, races, raffles, calendar rewards. You do NOT need multi-day play to score the design. Null only when no recurring rhythm is visible at all.
+- Gift-icon / Bonus Center / All Rewards modals ARE the hub — if screenshots show rakeback + daily/weekly/monthly tiles + rank ladder, treat as Crypto loop-led depth, not "thin cadence".
 
 Mechanics (0-100 or null):
-- reward_visibility: rewards surfaced in nav/header/product vs buried (logged out OK)
-- reward_clarity: player understands WHAT they can earn from this visit (logged out OK)
-- progress_mechanics: null unless logged in — current tier, progress meter, personal milestones
-- frequency_loop: proven reward cadence — null on single logged-out agent visit
-- value_back: rakeback/rebate/lossback described (logged out OK)
+- reward_visibility: gift/VIP icon in header, Rewards hub one click away vs buried (logged out OK). Header gift icon openable without login = strong.
+- reward_clarity: player understands WHAT they can earn — numbered tiles, rakeback %, tier perks (logged out OK)
+- progress_mechanics: null unless logged in — current tier meter, personal milestones
+- frequency_loop: documented daily/weekly/monthly cadence, races, raffles (logged out OK when tiles/copy visible)
+- value_back: rakeback/rebate/lossback described (logged out OK). A dedicated Rakeback card = strong.
 - personalisation: null unless logged in
-- emotional_pull: aspiration, locked tiers, celebration — can be logged out if visible in marketing/tier pages
+- emotional_pull: locked higher tiers with previewed perks, rank-up rewards, races, VIP trophy pages (logged out OK)
 - account_integration: null unless logged in
+
+CALIBRATION ANCHOR: Rainbet/Stake/Winna-class hubs (gift icon → All Rewards → rakeback + daily/weekly/monthly + Bronze→Diamond ranks + races) should score HIGH on visibility, clarity, frequency_loop, value_back, emotional_pull (typically 75–90). BetOnline-class VIP/promo hybrids with weaker cadence belong lower (often 50–70). Never rank a thin promo ladder above a full crypto rewards hub when both are visible in screenshots.
 
 Set retentionContext.loggedIn true only if screenshots clearly show an authenticated session. Set retentionContext.fromSession true only when scoring a recorded user session (the caller sets this — default false for agent).
 
@@ -949,14 +975,14 @@ For every mechanic with a non-null score, add a retentionNotes entry with:
 - shot: screenshot index showing that evidence
 - improve: one actionable sentence for the product team — what would lift this score toward Stake/Winna class. ONLY write improve for mechanics you actually scored — never recommend adding features that may already exist behind login.
 
-For null mechanics, omit from retentionNotes unless explaining missing evidence (login / tracked play). Do not give product improvement advice for mechanics scored null due to missing login.
+For null mechanics, omit from retentionNotes unless explaining missing evidence (login). Do not give product improvement advice for mechanics scored null due to missing login.
 
-Set retentionType to ONE of: "Crypto loop-led" | "Loyalty-led (weaker loop)" | "Hybrid — promo + loyalty" | "Promo page only (no loop)" — plus a 3-5 word tag (e.g. "Loyalty-led — VIP points, thin cadence"). BetOnline-class regulated books usually belong in Loyalty-led or Hybrid, NOT Promo page only. This answers "how deep is the retention loop vs Stake-class?" not "does loyalty exist at all?"
+Set retentionType to ONE of: "Crypto loop-led" | "Loyalty-led (weaker loop)" | "Hybrid — promo + loyalty" | "Promo page only (no loop)" — plus a 3-5 word tag. Use "Crypto loop-led" when screenshots show rakeback + recurring claim tiles + rank ladder (Rainbet/Stake class). BetOnline-class regulated books usually belong in Loyalty-led or Hybrid. This answers "how deep is the retention loop?" not "does loyalty exist at all?"
 
-Also fill loyaltySnapshot — the plain-language answer a player wants, READ from the screenshots (promo pages, tier tables, help centre articles), never invented:
+Also fill loyaltySnapshot — the plain-language answer a player wants, READ from the screenshots (rewards hub, All Rewards, tier tables, promo pages), never invented:
 - ftdOffer: exactly what a first-time depositor gets, with the real numbers you can read ("100% up to $1,000 + 50 free spins, 10x rollover"). null if no welcome offer is visible.
-- tiers: one entry per documented loyalty level, name + its concrete perks ("Gold — 10% rakeback, weekly bonus, birthday bonus"). Empty array if no tier structure is documented.
-- cadence: the recurring reward rhythm documented on the site ("daily spins for VIPs, weekly cashback Mondays, monthly reload"). null if nothing recurring is documented.`;
+- tiers: one entry per documented loyalty level, name + its concrete perks ("Bronze I–IV — path to Silver, rakeback, daily/weekly/monthly"). Empty array if no tier structure is documented.
+- cadence: the recurring reward rhythm documented on the site ("daily / weekly / monthly bonuses, weekly raffle, daily/weekly/monthly races"). null if nothing recurring is documented.`;
 
 export async function scoreScreenshots(
   journey: string,
@@ -1124,19 +1150,12 @@ const FEATURE_ONLY_SCHEMA = {
   required: ["features"],
 } as const;
 
-const FEATURE_EXTRACT_PROMPT = `You are PlayerScope's feature detector for iGaming sites. You ONLY list product features you can SEE in the screenshots — never infer from marketing copy alone.
+const FEATURE_EXTRACT_PROMPT = `You are PlayerScope's feature detector for iGaming sites. You ONLY list product features you can SEE in the screenshots — never infer from marketing copy or footer compliance text.
 
-DISAMBIGUATION — critical:
-- "Live wins feed" = a casino lobby ticker/table showing recent player wins (username + game + amount). NOT live sports betting, NOT "live bet" markets, NOT live casino dealers.
-- "Leaderboards" = an explicit ranking/leaderboard UI (player ranks, points, positions). NOT horse racing, NOT promo "races" or "tournaments" mentioned in banners unless a leaderboard panel is visible.
-- "Jackpot games" = a dedicated jackpot section or progressive jackpot UI — not a single banner word.
-- "Casino search" = a visible search bar or search UI for games — not generic site navigation.
+${featureCatalogPrompt()}
 
-Use standard names: Live wins feed, Leaderboards, Jackpot games, VIP levels, Rakeback, Weekly bonus, Monthly bonus, Status transfer, Originals, Provider filters, Casino search, Live casino, Bet builder, Cashout, Live chat, Crypto payments, Provably fair, Free spins, Missions / streaks, Help centre, Sportsbook, Welcome offer, Reloads, Lossback, Free bet.
-
-Category: Acquisition | Casino | Sports | Loyalty / Rewards | Payments | Support | My Account.
-Status: strong | yes | medium | partial | weak | hidden (hidden = VISIBLE in a screenshot but buried in obscure navigation — never use it for something you cannot see).
-Include note (what you see) and shot (screenshot index — REQUIRED; if no screenshot shows the feature, do not list it). Return empty array if nothing is clearly visible.`;
+Status: strong | yes | medium | partial | weak | hidden (hidden = VISIBLE but buried — never for something you cannot see).
+Include note (what you see) and shot (screenshot index — REQUIRED; if no screenshot shows the feature, do not list it). Return empty array if nothing from the allowed list is clearly visible.`;
 
 /** Feature-only pass over existing evidence screenshots — used to backfill
  * analyses that were scored before structured feature extraction existed. */
@@ -1446,58 +1465,22 @@ async function completeEmailVerification(
   capture: () => Promise<string>,
   timeoutMs = 75_000
 ): Promise<boolean> {
-  if (!inboxConfigured() || !email) return false;
-  let host: string | null = null;
-  try {
-    host = new URL(siteUrl).hostname;
-  } catch {
-    // Fall back to alias-only matching.
-  }
-  trail.push("checking the test inbox for a verification email");
-  const mail = await waitForVerificationEmail(
-    { toAddress: email, since, fromDomainHint: host },
-    timeoutMs
+  const { completeAgentEmailVerification } = await import(
+    "./agent-email-verify"
   );
-  if (!mail) {
-    trail.push(
-      `no verification email arrived within ${Math.round(timeoutMs / 1000)} seconds`
-    );
-    return false;
-  }
-  trail.push(`verification email received from ${mail.from}`);
-
-  if (mail.otp) {
-    try {
-      const res = await stagehand.act(
-        "type the verification code %otp% into the code or OTP input on this page and submit or confirm it",
-        { variables: { otp: mail.otp } }
-      );
-      if (res.success) {
-        trail.push("entered the emailed verification code");
-        await page.waitForTimeout(5000);
-        shots.push(await capture());
-        if (await agentIsLoggedIn(stagehand)) return true;
-      }
-    } catch {
-      // Fall through to the link route.
-    }
-  }
-  for (const link of mail.links.slice(0, 2)) {
-    if (!page.goto) break;
-    try {
-      await page.goto(link, {
-        waitUntil: "domcontentloaded",
-        timeoutMs: 20000,
-      });
-      await page.waitForTimeout(4000);
-      trail.push("opened the emailed verification link");
+  const result = await completeAgentEmailVerification({
+    stagehand,
+    page,
+    email,
+    siteUrl,
+    since,
+    trail,
+    timeoutMs,
+    afterAct: async () => {
       shots.push(await capture());
-      return true;
-    } catch {
-      // Try the next candidate link.
-    }
-  }
-  return mail.otp != null;
+    },
+  });
+  return result.acted;
 }
 
 /** Shared DOM helpers for registration fields — Tombola paints borders
@@ -1520,7 +1503,7 @@ function labelFor(el) {
 }
 function findFormInput(kind) {
   const RE = {
-    mobile: /mobile|phone|tel|cell|handset/i,
+    mobile: /mobile|phone|tel|cell|handset|whatsapp/i,
     email: /e-?mail|emailaddress/i,
     password: /password|passcode|create password/i,
   }[kind];
@@ -1536,13 +1519,22 @@ function findFormInput(kind) {
       el.getAttribute("name") || "",
       el.getAttribute("id") || "",
       el.getAttribute("autocomplete") || "",
+      el.getAttribute("inputmode") || "",
       el.getAttribute("placeholder") || "",
       el.getAttribute("aria-label") || "",
       labelFor(el),
     ].join(" ");
     if (kind === "email" && (type === "email" || RE.test(meta))) return el;
     if (kind === "password" && (type === "password" || RE.test(meta))) return el;
-    if (kind === "mobile" && (type === "tel" || RE.test(meta))) return el;
+    if (
+      kind === "mobile" &&
+      (type === "tel" ||
+        el.getAttribute("inputmode") === "tel" ||
+        /^(tel|tel-national|tel-local)$/i.test(el.getAttribute("autocomplete") || "") ||
+        RE.test(meta))
+    ) {
+      return el;
+    }
   }
   return null;
 }
@@ -1728,6 +1720,20 @@ async function ensureMobileFieldAccepted(
     }
     if (/ireland/i.test(country)) {
       const fresh = generateIeMobile();
+      if (!tried.has(fresh)) {
+        tried.add(fresh);
+        return fresh;
+      }
+    }
+    if (/brazil/i.test(country)) {
+      const fresh = formatBrMobile();
+      if (!tried.has(fresh)) {
+        tried.add(fresh);
+        return fresh;
+      }
+    }
+    if (/mexico/i.test(country)) {
+      const fresh = formatMxMobile();
       if (!tried.has(fresh)) {
         tried.add(fresh);
         return fresh;
@@ -2187,7 +2193,7 @@ async function runRegistrationWalk(
     }
     try {
       await stagehand.act(
-        `On this registration or sign-up step, fill EVERY visible empty field that matches the persona — leave nothing blank that the form asks for. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province or county %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each box separately with %dateOfBirthDay%, %dateOfBirthMonth%, and %dateOfBirthYear% — do not leave them blank. For UK or Irish mobile fields type %phone% exactly as given (usually digits only starting 07 or 08) — do not add spaces, do not add a +44 or +353 prefix, and do not change the digit order. Choose a currency if a currency picker is required. For deposit/loss/time limit steps, pick the lowest or "prefer not to set" option if offered, otherwise enter a modest weekly limit like 50. For bonus steps, skip or decline the bonus if that advances registration. Only fill empty fields — do not submit yet.`,
+        `On this registration or sign-up step, fill EVERY visible empty field that matches the persona — leave nothing blank that the form asks for. Use: email %email%, username %username%, password %password%, confirm password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, date of birth day %dateOfBirthDay%, date of birth month %dateOfBirthMonth%, date of birth year %dateOfBirthYear%, phone %phone%, mobile %phone%, address %addressLine1%, address line 2 %addressLine2%, city %city%, state or province or county %state%, postcode or zip %postalCode%, country %country%. When date of birth is three boxes (DD, MM, YYYY), fill each box separately with %dateOfBirthDay%, %dateOfBirthMonth%, and %dateOfBirthYear% — do not leave them blank. For phone fields that already show a country code chip (e.g. Brazil +55, Mexico +52, UK +44), type only the national digits from %phone% into the number box — do not retype the country code and do not change the selected country flag. For UK or Irish mobile fields without a country chip, type %phone% exactly as given (usually digits only starting 07 or 08). Choose a currency if a currency picker is required. For deposit/loss/time limit steps, pick the lowest or "prefer not to set" option if offered, otherwise enter a modest weekly limit like 50. For bonus steps, skip or decline the bonus if that advances registration. Do NOT open Terms, Privacy, Help, or Support links. Only fill empty fields — do not submit yet.`,
         { variables: activeVars() }
       );
       trail.push(`filled registration step ${step} with the test persona`);

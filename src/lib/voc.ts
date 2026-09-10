@@ -19,7 +19,7 @@ import type {
  * the outside (payouts, support response times, account closures).
  */
 
-interface ScrapedReview {
+export interface ScrapedReview {
   rating: number;
   title: string;
   text: string;
@@ -27,7 +27,7 @@ interface ScrapedReview {
   replied: boolean;
 }
 
-interface TrustpilotScrape {
+export interface TrustpilotScrape {
   sourceUrl: string;
   trustScore: number | null;
   totalReviews: number | null;
@@ -36,9 +36,18 @@ interface TrustpilotScrape {
 
 const REVIEW_PAGES = 5; // 20 reviews per page → up to 100 sampled
 
+export interface TrustpilotScrapeOptions {
+  /** Max review pages to walk (20 reviews each). Default 5. */
+  maxPages?: number;
+  /** Stop once reviews are older than this many months (recency sort). */
+  sinceMonths?: number;
+  /** Progress line per page, for a UI trail. */
+  onProgress?: (line: string) => void;
+}
+
 export function trustpilotHost(brandUrl: string): string {
   const host = new URL(
-    brandUrl.startsWith("http") ? brandUrl : `https://${brandUrl}`
+    brandUrl.startsWith("http") ? brandUrl : `https://${brandUrl}`,
   ).hostname;
   return host.replace(/^www\./, "");
 }
@@ -46,8 +55,14 @@ export function trustpilotHost(brandUrl: string): string {
 /** Pull recent reviews from trustpilot.com/review/{domain}. Throws when the
  * brand has no Trustpilot profile. */
 export async function scrapeTrustpilot(
-  brandUrl: string
+  brandUrl: string,
+  opts: TrustpilotScrapeOptions = {},
 ): Promise<TrustpilotScrape> {
+  const maxPages = opts.maxPages ?? REVIEW_PAGES;
+  const cutoff =
+    opts.sinceMonths != null
+      ? new Date(Date.now() - opts.sinceMonths * 30.44 * 86_400_000)
+      : null;
   const domain = trustpilotHost(brandUrl);
   const sourceUrl = `https://www.trustpilot.com/review/${domain}`;
   // Always a US residential proxy: datacenter egress gets a stripped page
@@ -62,7 +77,8 @@ export async function scrapeTrustpilot(
     let totalReviews: number | null = null;
     const reviews: ScrapedReview[] = [];
 
-    for (let p = 1; p <= REVIEW_PAGES; p++) {
+    for (let p = 1; p <= maxPages; p++) {
+      opts.onProgress?.(`Reading Trustpilot page ${p} for ${domain}`);
       const url = `${sourceUrl}?sort=recency${p > 1 ? `&page=${p}` : ""}`;
       await page
         .goto(url, { waitUntil: "domcontentloaded", timeout: 45000 })
@@ -75,8 +91,7 @@ export async function scrapeTrustpilot(
       for (let i = 0; i < 20 && !raw; i++) {
         raw = await page
           .evaluate(
-            () =>
-              document.getElementById("__NEXT_DATA__")?.textContent ?? null
+            () => document.getElementById("__NEXT_DATA__")?.textContent ?? null,
           )
           .catch(() => null);
         if (!raw) await page.waitForTimeout(1500);
@@ -84,7 +99,7 @@ export async function scrapeTrustpilot(
       if (!raw) {
         if (p === 1) {
           throw new Error(
-            `Couldn't reach the Trustpilot page for ${domain}. The review site did not load.`
+            `Couldn't reach the Trustpilot page for ${domain}. The review site did not load.`,
           );
         }
         break;
@@ -111,29 +126,38 @@ export async function scrapeTrustpilot(
       if (p === 1) {
         if (!pp?.businessUnit) {
           throw new Error(
-            `${domain} has no Trustpilot profile. No public reviews to analyse.`
+            `${domain} has no Trustpilot profile. No public reviews to analyse.`,
           );
         }
         trustScore = pp.businessUnit.trustScore ?? null;
         totalReviews = pp.businessUnit.numberOfReviews ?? null;
       }
       const pageReviews = pp?.reviews ?? [];
+      let pastWindow = false;
       for (const r of pageReviews) {
         if (!r.rating) continue;
+        const date = r.dates?.publishedDate ?? "";
+        if (cutoff && date && new Date(date) < cutoff) {
+          pastWindow = true;
+          continue;
+        }
         reviews.push({
           rating: r.rating,
           title: r.title ?? "",
           text: (r.text ?? "").slice(0, 600),
-          date: r.dates?.publishedDate ?? "",
+          date,
           replied: r.reply != null,
         });
       }
+      if (pastWindow) break; // recency sort: everything after is older
       if (pageReviews.length < 20) break; // last page reached
     }
 
     if (reviews.length === 0) {
       throw new Error(
-        `${domain} has a Trustpilot profile but no readable reviews.`
+        cutoff
+          ? `${domain} has a Trustpilot profile but no reviews in the last ${opts.sinceMonths} months.`
+          : `${domain} has a Trustpilot profile but no readable reviews.`,
       );
     }
     return { sourceUrl, trustScore, totalReviews, reviews };
@@ -204,7 +228,9 @@ function reportContext(project: Project, brand: Brand): string {
   for (const [area, a] of Object.entries(brand.analyses)) {
     const label = ANALYSIS_AREA_LABELS[area] ?? area;
     if (a.blocked) {
-      lines.push(`- ${label}: NOT SCORED (agent blocked: ${a.blockReason ?? "unknown"})`);
+      lines.push(
+        `- ${label}: NOT SCORED (agent blocked: ${a.blockReason ?? "unknown"})`,
+      );
       continue;
     }
     lines.push(`- ${label}: scored ${a.score}/100 — ${a.summary}`);
@@ -212,19 +238,19 @@ function reportContext(project: Project, brand: Brand): string {
   const features = [
     ...new Set(
       Object.values(brand.analyses).flatMap((a) =>
-        (a.features ?? []).map((f) => f.name)
-      )
+        (a.features ?? []).map((f) => f.name),
+      ),
     ),
   ];
   if (features.length) {
     lines.push(`- Features detected on the site: ${features.join(", ")}`);
   }
   const loyalty = Object.values(brand.analyses).find(
-    (a) => a.loyaltySnapshot
+    (a) => a.loyaltySnapshot,
   )?.loyaltySnapshot;
   if (loyalty) {
     lines.push(
-      `- Loyalty observed: FTD offer: ${loyalty.ftdOffer ?? "none visible"}; tiers: ${loyalty.tiers.map((t) => t.name).join(", ") || "none"}; cadence: ${loyalty.cadence ?? "none visible"}`
+      `- Loyalty observed: FTD offer: ${loyalty.ftdOffer ?? "none visible"}; tiers: ${loyalty.tiers.map((t) => t.name).join(", ") || "none"}; cadence: ${loyalty.cadence ?? "none visible"}`,
     );
   }
   lines.push(`- Market audited: ${project.market}`);
@@ -235,7 +261,7 @@ function reportContext(project: Project, brand: Brand): string {
 export async function buildVocAnalysis(
   project: Project,
   brand: Brand,
-  scrape: TrustpilotScrape
+  scrape: TrustpilotScrape,
 ): Promise<VocAnalysis> {
   const split = { positive: 0, neutral: 0, negative: 0 };
   for (const r of scrape.reviews) {
@@ -247,7 +273,7 @@ export async function buildVocAnalysis(
   const reviewBlock = scrape.reviews
     .map(
       (r, i) =>
-        `[${i}] ${r.rating}★ ${r.date.slice(0, 10)}${r.replied ? " (brand replied)" : ""} — ${r.title ? r.title + ": " : ""}${r.text.replace(/\s+/g, " ")}`
+        `[${i}] ${r.rating}★ ${r.date.slice(0, 10)}${r.replied ? " (brand replied)" : ""} — ${r.title ? r.title + ": " : ""}${r.text.replace(/\s+/g, " ")}`,
     )
     .join("\n");
 
@@ -281,7 +307,9 @@ ${PLAIN_PROSE_RULE}`;
     body: JSON.stringify({
       model: process.env.OPENAI_MODEL ?? "gpt-5.4-mini",
       reasoning: { effort: "low" },
-      input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+      input: [
+        { role: "user", content: [{ type: "input_text", text: prompt }] },
+      ],
       text: {
         format: {
           type: "json_schema",
@@ -297,10 +325,10 @@ ${PLAIN_PROSE_RULE}`;
   }
   const data = await res.json();
   const message = data.output?.find(
-    (o: { type: string }) => o.type === "message"
+    (o: { type: string }) => o.type === "message",
   );
   const text = message?.content?.find(
-    (c: { type: string }) => c.type === "output_text"
+    (c: { type: string }) => c.type === "output_text",
   )?.text;
   if (!text) throw new Error("OpenAI returned no output text");
   const parsed = JSON.parse(text) as {

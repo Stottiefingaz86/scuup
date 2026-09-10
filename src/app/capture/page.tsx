@@ -4,7 +4,6 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Check,
-  Clock,
   Coins,
   Gift,
   Globe,
@@ -30,23 +29,6 @@ interface FeedItem {
   tone?: "reward" | "money";
 }
 
-/** Fallback recorder feed when no live remote browser is available (e.g. no
- * Browserbase key configured). */
-const FEED_SCRIPT: FeedItem[] = [
-  { at: 3, icon: MonitorPlay, label: "Remote browser attached, capturing" },
-  { at: 8, icon: Route, label: "Screen captured, Home" },
-  { at: 15, icon: Route, label: "Navigated to Cashier" },
-  { at: 22, icon: Coins, label: "Deposit £50 detected", tone: "money" },
-  { at: 29, icon: Clock, label: "Deposit credited in 6s" },
-  { at: 38, icon: Coins, label: "Bet placed, £2.50 stake", tone: "money" },
-  { at: 47, icon: Coins, label: "Bet placed, £5.00 stake", tone: "money" },
-  { at: 56, icon: Gift, label: "Rakeback credit detected +£0.21", tone: "reward" },
-  { at: 68, icon: Route, label: "Screen captured, Rewards hub" },
-  { at: 79, icon: Gift, label: "Level progress +40 XP", tone: "reward" },
-  { at: 92, icon: Coins, label: "Bet placed, £2.50 stake", tone: "money" },
-  { at: 104, icon: Gift, label: "Rakeback credit detected +£0.18", tone: "reward" },
-];
-
 type Mode = "connecting" | "live" | "sim";
 
 const KIND_STYLE = {
@@ -70,9 +52,8 @@ function eventText(e: WireEvent): string {
   return `${e.label} ${e.detail ?? ""} ${e.context ?? ""}`.toLowerCase();
 }
 
-/** What the platform needs from this session. Each goal only ticks when the
- * recorder detects genuinely matching activity, never on a timer or a
- * generic event count. An untucked goal is honest: we didn't observe it. */
+/** What the platform needs from this session. A goal only ticks on real
+ * matching recorder events — never on a timer or mock feed. */
 const SESSION_GOALS: {
   label: string;
   done: (events: WireEvent[]) => boolean;
@@ -80,18 +61,22 @@ const SESSION_GOALS: {
   {
     label: "Browse the lobby and game pages",
     done: (ev) =>
-      ev.some(
-        (e) =>
-          e.kind === "screen" &&
-          /casino|game|slot|sport|lobby|play/.test(eventText(e))
-      ),
+      ev.some((e) => {
+        if (e.kind !== "screen") return false;
+        const t = eventText(e);
+        // Require a product surface, not the bare homepage or marketing root.
+        return /\/(casino|bingo|sports|sport|slots?|games|arcade|lobby)(\/|$|\?)|bingo\.|casino\./i.test(
+          t
+        );
+      }),
   },
   {
     label: "Make a small deposit",
     done: (ev) =>
       ev.some(
         (e) =>
-          e.kind === "money" && /deposit|cashier|top.?up/.test(eventText(e))
+          e.kind === "money" &&
+          /deposit|cashier|top.?up/.test(eventText(e))
       ),
   },
   {
@@ -100,14 +85,16 @@ const SESSION_GOALS: {
       ev.filter(
         (e) =>
           e.kind === "money" &&
-          /bet|stake|casino|game|slot|sport/.test(eventText(e))
+          /bet|stake|wager|placed/.test(eventText(e))
       ).length >= 2,
   },
   {
     label: "Visit the rewards / VIP hub",
     done: (ev) =>
       ev.some((e) =>
-        /reward|vip|loyal|rakeback|rebate|bonus/.test(eventText(e))
+        /reward|vip|loyal|rakeback|rebate|bonus.?center|members.?club/.test(
+          eventText(e)
+        )
       ),
   },
   {
@@ -403,6 +390,7 @@ function CaptureContent() {
   }, []);
 
   const live = mode === "live";
+  // Live sessions only — never invent a fake timeline when Browserbase is down.
   const feed: FeedItem[] = live
     ? liveEvents
         .map((e) => ({
@@ -413,12 +401,12 @@ function CaptureContent() {
           detail: e.detail,
         }))
         .reverse()
-    : FEED_SCRIPT.filter((e) => e.at <= elapsed).reverse();
+    : [];
 
-  // Each goal ticks only on genuinely matching detected activity (live) or
-  // on the demo timeline (sim).
-  const goalStates = SESSION_GOALS.map(({ done }, i) =>
-    live ? done(liveEvents) : i < Math.floor(elapsed / 18)
+  // Goals tick only on real detected activity. Simulation mode never
+  // pretends the user deposited or browsed.
+  const goalStates = SESSION_GOALS.map(({ done }) =>
+    live ? done(liveEvents) : false
   );
   const goalsDone = goalStates.filter(Boolean).length;
 
@@ -538,9 +526,14 @@ function CaptureContent() {
 
         {/* Live feed */}
         <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 py-3.5">
-          {feed.length === 0 ? (
+          {mode === "sim" ? (
+            <span className="py-1 text-xs leading-relaxed text-muted-foreground">
+              Live browser unavailable — nothing is being recorded. Check
+              Browserbase quota / API keys, then reopen Launch.
+            </span>
+          ) : feed.length === 0 ? (
             <span className="py-1 text-xs text-muted-foreground">
-              Waiting for activity, play as a normal customer…
+              Waiting for activity — play as a normal customer…
             </span>
           ) : (
             feed.map((event, i) => {

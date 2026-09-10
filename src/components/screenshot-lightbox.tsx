@@ -12,6 +12,7 @@ export function ScreenshotLightbox({
   caption,
   className,
   imgClassName,
+  style,
 }: {
   src: string;
   alt: string;
@@ -19,6 +20,7 @@ export function ScreenshotLightbox({
   caption?: string;
   className?: string;
   imgClassName?: string;
+  style?: React.CSSProperties;
 }) {
   const [open, setOpen] = useState(false);
   const [broken, setBroken] = useState(false);
@@ -40,6 +42,7 @@ export function ScreenshotLightbox({
           className
         )}
         title={broken ? undefined : "Click to enlarge"}
+        style={style}
       >
         {broken ? (
           "Screenshot unavailable"

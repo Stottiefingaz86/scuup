@@ -94,7 +94,7 @@ const JOURNEY_ICONS: Record<JourneyType, typeof UserPlus> = {
 
 const JOURNEY_HINTS: Record<JourneyType, string> = {
   signup: "Offer clarity, form effort, trust",
-  deposit: "Methods, fees, timing, focus",
+  deposit: "First time deposit — methods, fees, timing",
   withdraw: "KYC, tracking, timeframes",
   casino: "Lobby, search, game launch",
   bingo: "Rooms, schedule, ticket clarity",
@@ -771,11 +771,21 @@ export default function NewProjectPage() {
   }, []);
 
   function toggleJourney(journey: JourneyType) {
-    setJourneys((prev) =>
-      prev.includes(journey)
-        ? prev.filter((j) => j !== journey)
-        : [...prev, journey]
-    );
+    setJourneys((prev) => {
+      if (prev.includes(journey)) {
+        return prev.filter((j) => j !== journey);
+      }
+      const next = [...prev, journey];
+      // Sign up always includes first-time deposit in the funnel.
+      if (
+        journey === "signup" &&
+        availableJourneys.includes("deposit") &&
+        !next.includes("deposit")
+      ) {
+        next.push("deposit");
+      }
+      return next;
+    });
   }
 
   function toggleProduct(product: string) {

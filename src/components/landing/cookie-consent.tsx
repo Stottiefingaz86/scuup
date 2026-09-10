@@ -1,13 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { update } from "@intercom/messenger-js-sdk";
 import { useLegalDialog } from "@/components/landing/landing-legal-dialog";
 import { Button } from "@/components/ui/button";
 
 const STORAGE_KEY = "scuup-cookie-consent";
-/** Keep the Intercom launcher clear of this bar while it's visible. */
-const INTERCOM_CLEARANCE_PX = 96;
 
 export function CookieConsent() {
   const [show, setShow] = useState(false);
@@ -22,23 +19,6 @@ export function CookieConsent() {
       setShow(true);
     }
   }, []);
-
-  // Lift Intercom above the cookie bar so Accept stays clickable.
-  useEffect(() => {
-    if (!show) return;
-    try {
-      update({ vertical_padding: INTERCOM_CLEARANCE_PX });
-    } catch {
-      /* Intercom may not be booted yet */
-    }
-    return () => {
-      try {
-        update({ vertical_padding: 20 });
-      } catch {
-        /* ignore */
-      }
-    };
-  }, [show]);
 
   if (!show) return null;
 

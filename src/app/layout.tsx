@@ -3,7 +3,6 @@ import { Geist, Geist_Mono, Space_Grotesk } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { AlphaNotice } from "@/components/alpha-notice";
 import { AuthHashRecovery } from "@/components/auth-hash-recovery";
-import { IntercomProvider } from "@/components/intercom-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -45,7 +44,6 @@ export default function RootLayout({
     >
       <body className="flex min-h-full flex-col">
         <AuthHashRecovery />
-        <IntercomProvider />
         <TooltipProvider>{children}</TooltipProvider>
         <AlphaNotice />
         <Toaster />

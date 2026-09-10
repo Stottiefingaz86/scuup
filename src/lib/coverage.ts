@@ -2,9 +2,10 @@ import {
   agentCanReach,
   agentCanReachLoggedIn,
   ANALYSIS_AREA_LABELS,
+  journeyRequiresLogin,
   LANDING,
 } from "./constants";
-import type { Brand, Project } from "./types";
+import type { Brand, Project, JourneyType } from "./types";
 
 export type GapReason = "blocked" | "not_analysed";
 
@@ -26,9 +27,27 @@ export interface Coverage {
   gaps: DataGap[];
 }
 
-/** Areas in scope for a project: first impression + selected journeys. */
+/** Signup always implies first-time deposit in the player funnel. */
+export function funnelJourneys(project: Project): JourneyType[] {
+  const journeys = [...project.journeys];
+  if (journeys.includes("signup") && !journeys.includes("deposit")) {
+    journeys.splice(journeys.indexOf("signup") + 1, 0, "deposit");
+  }
+  return journeys;
+}
+
+/** Areas in scope for a project: first impression + funnel-ordered journeys. */
 export function projectAreas(project: Project): string[] {
-  return [LANDING, ...project.journeys];
+  return [LANDING, ...funnelJourneys(project)];
+}
+
+/** Run order: signup → first deposit → play → withdraw. */
+export function journeyRunOrder(area: string): number {
+  if (area === "signup") return 0;
+  if (area === "deposit") return 1;
+  if (area === "my_account") return 2;
+  if (journeyRequiresLogin(area)) return 4;
+  return 3;
 }
 
 /** Derives coverage from real analyses only, so every N/A shown anywhere in

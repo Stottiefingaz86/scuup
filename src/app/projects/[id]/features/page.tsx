@@ -42,7 +42,7 @@ import {
 } from "@/lib/backfill-features";
 import { ANALYSIS_AREA_LABELS } from "@/lib/constants";
 import { getCoverage } from "@/lib/coverage";
-import { buildFeatureMatrix, analysesNeedingFeatureExtract } from "@/lib/features";
+import { buildFeatureMatrix, competitiveGapRows, analysesNeedingFeatureExtract } from "@/lib/features";
 import { cn } from "@/lib/utils";
 import type {
   Brand,
@@ -190,12 +190,14 @@ function EvidenceStrip({
 function FeaturesContent({ project }: { project: Project }) {
   const coverage = getCoverage(project);
   const matrix = useMemo(() => buildFeatureMatrix(project), [project]);
+  const gapRows = useMemo(() => competitiveGapRows(project, matrix), [project, matrix]);
   const pendingJobs = useMemo(() => jobsNeedingFeatures(project), [project]);
   const categories = useMemo(
     () => [...new Set(matrix.map((f) => f.category))],
     [matrix]
   );
   const [category, setCategory] = useState<string>("all");
+  const [view, setView] = useState<"gaps" | "all">("gaps");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [backfilling, setBackfilling] = useState(false);
   const [backfillLabel, setBackfillLabel] = useState("");
@@ -221,15 +223,16 @@ function FeaturesContent({ project }: { project: Project }) {
   }, [project, pendingJobs]);
 
   const rows = useMemo(() => {
+    const base = view === "gaps" ? gapRows : matrix;
     const filtered =
       category === "all"
-        ? matrix
-        : matrix.filter((f) => f.category === category);
+        ? base
+        : base.filter((f) => f.category === category);
     return [...filtered].sort(
       (a, b) =>
         PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority)
     );
-  }, [matrix, category]);
+  }, [matrix, gapRows, category, view]);
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.feature === expanded) ?? null,
@@ -248,39 +251,54 @@ function FeaturesContent({ project }: { project: Project }) {
             Feature matrix
           </CardTitle>
           <CardDescription>
-            A deep dive, not a score pillar, this matrix shows what each
-            brand ships so you can see the gaps, but it never moves the
-            Player CX Score. Screenshot-detected features only, click a row
-            to see the proof.
-            Most cells come from public (logged-out) visits; a &quot;N/A&quot;
-            means not seen in captured screenshots, so it may still exist
-            behind login.{" "}
+            Side-by-side product capabilities — deduplicated to one row per
+            feature, focused on where you trail competitors. Click a row for
+            screenshot proof. &quot;N/A&quot; means not seen in captured
+            screens (often logged-out); connect a test account on logged-in
+            journeys to extend coverage.{" "}
             {backfilling
               ? `Extracting from saved screenshots… ${backfillLabel}`
               : matrix.length > 0
-                ? `${matrix.length} feature${matrix.length === 1 ? "" : "s"} detected.`
+                ? view === "gaps"
+                  ? `${gapRows.length} competitive gap${gapRows.length === 1 ? "" : "s"} of ${matrix.length} features.`
+                  : `${matrix.length} feature${matrix.length === 1 ? "" : "s"} detected.`
                 : pendingJobs.length > 0
                   ? `Scanning ${pendingJobs.length} captured journey${pendingJobs.length === 1 ? "" : "s"}…`
                   : "No screenshot evidence available yet."}
           </CardDescription>
           {matrix.length > 0 ? (
-            <ToggleGroup
-              value={[category]}
-              onValueChange={(value) => {
-                const next = (value as string[])[0];
-                if (next) setCategory(next);
-              }}
-              variant="outline"
-              size="sm"
-              className="mt-2 flex-wrap"
-            >
-              <ToggleGroupItem value="all">All</ToggleGroupItem>
-              {categories.map((c) => (
-                <ToggleGroupItem key={c} value={c}>
-                  {c}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            <div className="mt-2 flex flex-col gap-2">
+              <ToggleGroup
+                value={[view]}
+                onValueChange={(value) => {
+                  const next = (value as ("gaps" | "all")[])[0];
+                  if (next) setView(next);
+                }}
+                variant="outline"
+                size="sm"
+                className="w-fit"
+              >
+                <ToggleGroupItem value="gaps">Your gaps</ToggleGroupItem>
+                <ToggleGroupItem value="all">All features</ToggleGroupItem>
+              </ToggleGroup>
+              <ToggleGroup
+                value={[category]}
+                onValueChange={(value) => {
+                  const next = (value as string[])[0];
+                  if (next) setCategory(next);
+                }}
+                variant="outline"
+                size="sm"
+                className="flex-wrap"
+              >
+                <ToggleGroupItem value="all">All categories</ToggleGroupItem>
+                {categories.map((c) => (
+                  <ToggleGroupItem key={c} value={c}>
+                    {c}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+            </div>
           ) : null}
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
@@ -317,7 +335,20 @@ function FeaturesContent({ project }: { project: Project }) {
               </div>
             </div>
           ) : null}
-          {!backfilling && matrix.length > 0 ? (
+          {!backfilling && matrix.length > 0 && rows.length === 0 ? (
+            <div className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">
+              No competitive gaps in this category — switch to{" "}
+              <button
+                type="button"
+                className="cursor-pointer font-medium text-foreground underline-offset-2 hover:underline"
+                onClick={() => setView("all")}
+              >
+                All features
+              </button>{" "}
+              to browse everything detected.
+            </div>
+          ) : null}
+          {!backfilling && rows.length > 0 ? (
             <>
             <Table>
               <TableHeader>

@@ -2,30 +2,18 @@
 
 import Link from "next/link";
 import { Lock, ShieldCheck } from "lucide-react";
-import { useAboutUs } from "@/components/landing/landing-about";
 import { LegalNavButton } from "@/components/landing/landing-legal-dialog";
 import type { LegalDocument } from "@/components/landing/legal-content";
-import {
-  openIntercomHelpCentre,
-  openIntercomLiveChat,
-} from "@/lib/intercom";
-import { cn } from "@/lib/utils";
 
 const RESOURCE_LINKS = [
   { label: "What we score", href: "#pillars" },
   { label: "How it works", href: "#how" },
-  { label: "Pricing", href: "#pricing" },
 ];
 
 const SUPPORT_LINKS = [
   { label: "Contact", href: "#contact" },
   { label: "FAQ", href: "#faq" },
 ];
-
-const SUPPORT_INTERCOM = [
-  { label: "Help Centre", action: openIntercomHelpCentre },
-  { label: "Live chat", action: openIntercomLiveChat },
-] as const;
 
 const LEGAL_LINKS: { label: string; doc: LegalDocument }[] = [
   { label: "Privacy Policy", doc: "privacy" },
@@ -34,7 +22,6 @@ const LEGAL_LINKS: { label: string; doc: LegalDocument }[] = [
 ];
 
 export function LandingFooter() {
-  const { openAbout } = useAboutUs();
   const year = new Date().getFullYear();
 
   return (
@@ -78,13 +65,6 @@ export function LandingFooter() {
                       {link.label}
                     </a>
                   ))}
-                  <button
-                    type="button"
-                    onClick={openAbout}
-                    className="text-muted-foreground transition-colors hover:text-foreground"
-                  >
-                    About
-                  </button>
                 </nav>
               </div>
               <div className="min-w-[8.5rem]">
@@ -100,16 +80,6 @@ export function LandingFooter() {
                     >
                       {link.label}
                     </a>
-                  ))}
-                  {SUPPORT_INTERCOM.map(({ label, action }) => (
-                    <button
-                      key={label}
-                      type="button"
-                      onClick={action}
-                      className="text-muted-foreground transition-colors hover:text-foreground"
-                    >
-                      {label}
-                    </button>
                   ))}
                 </nav>
               </div>
@@ -144,28 +114,16 @@ export function LandingFooter() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openAbout}
-          aria-label="About Scuup"
-          className={cn(
-            "group relative z-[2] block w-full min-w-0 border-t border-border/50 text-left",
-            "px-6 pb-6 pt-5 transition-colors hover:bg-brand/[0.03] sm:px-10 sm:pb-8 sm:pt-6",
-          )}
-        >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-brand/5 to-transparent opacity-0 transition-opacity group-hover:opacity-100"
-          />
+        <div className="relative z-[2] block w-full min-w-0 border-t border-border/50 px-6 pb-6 pt-5 sm:px-10 sm:pb-8 sm:pt-6">
           {/* eslint-disable-next-line @next/next/no-img-element -- brand SVG wordmark */}
           <img
             src="/logo.svg"
-            alt=""
+            alt="Scuup"
             width={121}
             height={41}
-            className="relative h-[clamp(2.75rem,12vw,6.5rem)] w-auto max-w-full opacity-90 transition-opacity group-hover:opacity-100"
+            className="relative h-[clamp(2.75rem,12vw,6.5rem)] w-auto max-w-full opacity-90"
           />
-        </button>
+        </div>
       </div>
     </footer>
   );

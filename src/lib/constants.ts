@@ -14,7 +14,7 @@ export const ALL_JOURNEYS: JourneyType[] = [
 
 export const JOURNEY_LABELS: Record<JourneyType, string> = {
   signup: "Sign Up",
-  deposit: "Deposit",
+  deposit: "First time deposit",
   withdraw: "Withdraw",
   casino: "Casino Lobby",
   bingo: "Bingo Lobby",
@@ -211,6 +211,7 @@ export const MARKET_OPTIONS: MarketOption[] = [
   { label: "Michigan, US", flag: "🇺🇸", geo: "US-MI", group: "North America" },
   { label: "US (rest / offshore)", flag: "🇺🇸", geo: "US-TX", group: "North America", popular: true, cryptoFriendly: true },
   { label: "Ontario, Canada", flag: "🇨🇦", geo: "CA-ON", group: "North America", popular: true },
+  { label: "Canada", flag: "🇨🇦", geo: "CA", group: "North America", popular: true },
   { label: "Canada (rest / crypto)", flag: "🇨🇦", geo: "CA-BC", group: "North America", popular: true, cryptoFriendly: true },
   // Latin America
   { label: "Brazil", flag: "🇧🇷", geo: "BR", group: "Latin America", popular: true, cryptoFriendly: true },
@@ -238,7 +239,7 @@ export const MARKETS = MARKET_OPTIONS.map((m) => m.label);
 
 /** Default test-account inbox for agent signups and logins. One real
  * address — verification mail must land where IMAP can read it. */
-export const DEFAULT_TEST_EMAIL = "stottiefingaz@gmail.com";
+export const DEFAULT_TEST_EMAIL = "scuup678@gmail.com";
 
 /** @deprecated Prefer DEFAULT_TEST_EMAIL — plus-aliases look fake in
  * evidence and many operators drop or reject them. */
@@ -272,6 +273,7 @@ export const MARKET_PROXY_COUNTRY: Record<string, string> = {
   Nordics: "SE",
   // Aliases stored on older projects.
   "Canada (rest)": "CA-BC",
+  Canada: "CA",
   "Global (no routing)": "US",
   "Global / Crypto": "US",
   Global: "US",

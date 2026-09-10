@@ -14,10 +14,45 @@ export type AgentLoginCredentials = {
 };
 
 /** Evidence-based logged-in check: account UI in header, not marketing CTAs. */
-export async function checkAgentLoggedIn(stagehand: Stagehand): Promise<boolean> {
+/**
+ * Cheap DOM read before asking the LLM: a header showing both Login and
+ * Register/Sign up is a logged-out page, full stop. The LLM has called this
+ * LOGGED_IN on casino homepages because a "Deposit" promo button was visible.
+ */
+async function domLoggedOutSignal(
+  stagehand: Stagehand,
+): Promise<"out" | "unknown"> {
+  try {
+    const page = await stagehand.context.activePage();
+    if (!page) return "unknown";
+    const out = await page.evaluate(`(() => {
+      const els = [...document.querySelectorAll("a, button, [role='button']")];
+      let login = false, register = false;
+      for (const el of els) {
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0 || r.top > 260) continue;
+        const t = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+        if (!t || t.length > 24) continue;
+        if (/^(log ?in|sign ?in)$/.test(t)) login = true;
+        if (/^(register|sign ?up|join( now)?|create (an )?account)( →|→)?$/.test(t)) register = true;
+      }
+      const text = (document.body?.innerText || "").slice(0, 6000).toLowerCase();
+      const authed = /log ?out|sign ?out|my account|my profile|balance\\s*[:$€£0-9]/.test(text);
+      return login && register && !authed;
+    })()`);
+    return out ? "out" : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function checkAgentLoggedIn(
+  stagehand: Stagehand,
+): Promise<boolean> {
+  if ((await domLoggedOutSignal(stagehand)) === "out") return false;
   try {
     const result = await stagehand.extract(
-      "Answer with exactly LOGGED_IN or LOGGED_OUT. LOGGED_IN means a player avatar, account menu, deposit button, or wallet balance for an authenticated user is visible. Prominent Sign Up / Register CTAs mean LOGGED_OUT."
+      "Answer with exactly LOGGED_IN or LOGGED_OUT. LOGGED_IN means a player avatar, account menu, deposit button, or wallet balance for an authenticated user is visible. Prominent Sign Up / Register CTAs mean LOGGED_OUT.",
     );
     return result.extraction.toUpperCase().includes("LOGGED_IN");
   } catch {
@@ -34,7 +69,7 @@ async function loginErrorVisible(page: LoginPage): Promise<boolean> {
   if (!page.evaluate) return false;
   try {
     const text = String(
-      await page.evaluate("document.body?.innerText ?? ''")
+      await page.evaluate("document.body?.innerText ?? ''"),
     ).slice(0, 20000);
     return LOGIN_ERROR_RE.test(text);
   } catch {
@@ -68,11 +103,11 @@ async function attemptLogin(
   password: string,
   isRetry: boolean,
   trail?: string[],
-  deadlineAt?: number
+  deadlineAt?: number,
 ): Promise<"success" | "rejected" | "failed"> {
   if (!isRetry) {
     const open = await stagehand.act(
-      "click Log In or Sign In (not Register or Sign Up) to open the login form"
+      "click Log In or Sign In (not Register or Sign Up) to open the login form",
     );
     if (!open.success) return "failed";
     await page.waitForTimeout(2500);
@@ -80,18 +115,18 @@ async function attemptLogin(
 
   const fillId = await stagehand.act(
     "clear the email or username field of the login form and type %loginId% into it, replacing any existing text",
-    { variables: { loginId } }
+    { variables: { loginId } },
   );
   if (!fillId.success) return "failed";
 
   const fillPass = await stagehand.act(
     "clear the password field of the login form and type %password% into it",
-    { variables: { password } }
+    { variables: { password } },
   );
   if (!fillPass.success) return "failed";
 
   const submit = await stagehand.act(
-    "click the Log In or Sign In button to submit the login form"
+    "click the Log In or Sign In button to submit the login form",
   );
   if (!submit.success) return "failed";
   trail?.push(`login submitted as ${loginId}`);
@@ -127,7 +162,7 @@ export async function performAgentLogin(
     /** Hard wall-clock stop for the whole login attempt — the caller's run
      * budget matters more than authenticating at any cost. */
     deadlineAt?: number;
-  }
+  },
 ): Promise<boolean> {
   const candidates = loginIdCandidates(creds);
   if (candidates.length === 0 || !creds.password) return false;
@@ -142,7 +177,7 @@ export async function performAgentLogin(
     if (opts?.dismissCookies !== false && page.evaluate) {
       await preparePageAfterNavigation(
         page as LoginPage & { evaluate: (expr: string) => Promise<unknown> },
-        stagehand
+        stagehand,
       );
     }
 
@@ -160,7 +195,7 @@ export async function performAgentLogin(
         creds.password,
         c > 0,
         trail,
-        opts?.deadlineAt
+        opts?.deadlineAt,
       );
       if (outcome === "success") {
         trail?.push("authenticated with stored test credentials");

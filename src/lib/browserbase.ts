@@ -197,7 +197,15 @@ export async function getLiveViewUrl(id: string): Promise<string> {
     );
   }
   const data = await res.json();
-  return data.debuggerFullscreenUrl as string;
+  const url =
+    (data.debuggerFullscreenUrl as string | undefined) ||
+    (data.debuggerUrl as string | undefined) ||
+    (data.pages?.[0]?.debuggerFullscreenUrl as string | undefined) ||
+    (data.pages?.[0]?.debuggerUrl as string | undefined);
+  if (!url) {
+    throw new Error("Browserbase debug response had no live view URL");
+  }
+  return url;
 }
 
 export async function releaseSession(id: string): Promise<void> {

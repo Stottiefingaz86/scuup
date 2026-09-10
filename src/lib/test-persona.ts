@@ -195,6 +195,32 @@ const PERSONA_BY_REGION: Record<string, PersonaBase> = {
     postalCode: "1012 LG",
     country: "Netherlands",
   },
+  br: {
+    firstName: "Lucas",
+    lastName: "Silva",
+    dateOfBirth: "1990-05-15",
+    // National mobile (DDD + 9 + 8 digits). Forms with +55 already selected
+    // expect these digits only — not +55 prefixed.
+    phone: "11987654321",
+    addressLine1: "Av. Paulista 1578",
+    addressLine2: "Sala 401",
+    city: "São Paulo",
+    state: "SP",
+    postalCode: "01310-200",
+    country: "Brazil",
+  },
+  mx: {
+    firstName: "Diego",
+    lastName: "Hernandez",
+    dateOfBirth: "1990-05-15",
+    phone: "5512345678",
+    addressLine1: "Paseo de la Reforma 222",
+    addressLine2: "Piso 8",
+    city: "Ciudad de México",
+    state: "CDMX",
+    postalCode: "06600",
+    country: "Mexico",
+  },
 };
 
 /** Map project market label → persona region key. */
@@ -210,13 +236,37 @@ export function personaRegionForMarket(market: string): keyof typeof PERSONA_BY_
     return "ca";
   if (market === "Germany") return "de";
   if (market === "Netherlands") return "nl";
+  if (market === "Brazil") return "br";
+  if (market === "Mexico") return "mx";
   // Global / Crypto, New Jersey US, and unknown → US-style address.
   return "us";
+}
+
+/** Brazil mobile: DDD (2) + 9 + 8 digits = 11 national digits. */
+export function formatBrMobile(): string {
+  const fromEnv = process.env.TEST_BR_MOBILE?.replace(/\D/g, "");
+  if (fromEnv && /^[1-9]\d{10}$/.test(fromEnv)) return fromEnv;
+  const ddd = ["11", "21", "31", "41", "51", "61", "71", "81", "85"][
+    Math.floor(Math.random() * 9)
+  ];
+  return `${ddd}9${randomDigits(8)}`;
+}
+
+/** Mexico mobile: 10 national digits. */
+export function formatMxMobile(): string {
+  const fromEnv = process.env.TEST_MX_MOBILE?.replace(/\D/g, "");
+  if (fromEnv && /^\d{10}$/.test(fromEnv)) return fromEnv;
+  const area = ["55", "33", "81", "222", "664"][
+    Math.floor(Math.random() * 5)
+  ];
+  return `${area}${randomDigits(10 - area.length)}`;
 }
 
 function phoneForRegion(region: string, template?: string): string {
   if (region === "uk") return formatUkMobile();
   if (region === "ie") return generateIeMobile();
+  if (region === "br") return formatBrMobile();
+  if (region === "mx") return formatMxMobile();
   if (template) return randomizePhone(template);
   return randomizePhone("+1 201 555 0142");
 }
@@ -237,6 +287,17 @@ export function phoneNeedsRepair(phone: string, country: string): boolean {
     if (/^08[35679]\d{7}$/.test(digits)) return false;
     return true;
   }
+  if (/brazil/i.test(country)) {
+    if (phone !== digits) return true;
+    // National 11-digit mobile (DDD + 9xxxxxxxx). Reject US +1 leftovers.
+    if (/^[1-9]\d{10}$/.test(digits) && digits[2] === "9") return false;
+    return true;
+  }
+  if (/mexico/i.test(country)) {
+    if (phone !== digits) return true;
+    if (/^\d{10}$/.test(digits)) return false;
+    return true;
+  }
   return false;
 }
 
@@ -248,6 +309,12 @@ export function repairPersonaPhone(persona: SignupPersona): SignupPersona {
   }
   if (/ireland/i.test(persona.country)) {
     return { ...persona, phone: generateIeMobile() };
+  }
+  if (/brazil/i.test(persona.country)) {
+    return { ...persona, phone: formatBrMobile() };
+  }
+  if (/mexico/i.test(persona.country)) {
+    return { ...persona, phone: formatMxMobile() };
   }
   return persona;
 }
@@ -290,6 +357,30 @@ export function phoneAlternates(phone: string, country: string): string[] {
       push(`+353${national.slice(1)}`);
     }
     push(generateIeMobile());
+  } else if (/brazil/i.test(country)) {
+    let national = digits;
+    if (digits.startsWith("55") && digits.length >= 12) {
+      national = digits.slice(2);
+    }
+    if (/^[1-9]\d{10}$/.test(national)) {
+      push(national);
+      push(
+        `(${national.slice(0, 2)}) ${national.slice(2, 7)}-${national.slice(7)}`
+      );
+      push(`+55${national}`);
+    }
+    push(formatBrMobile());
+  } else if (/mexico/i.test(country)) {
+    let national = digits;
+    if (digits.startsWith("52") && digits.length >= 12) {
+      national = digits.slice(2);
+    }
+    if (/^\d{10}$/.test(national)) {
+      push(national);
+      push(`${national.slice(0, 2)} ${national.slice(2, 6)} ${national.slice(6)}`);
+      push(`+52${national}`);
+    }
+    push(formatMxMobile());
   }
 
   return alts;

@@ -5,6 +5,8 @@ export interface RetentionMechanicMeta {
   key: string;
   label: string;
   requires: RetentionEvidence;
+  /** Short plain-language description for the "i" tooltip. */
+  explanation: string;
   /** Shown when the cell is N/A — tells the user what to do. */
   gapReason: string;
 }
@@ -14,38 +16,50 @@ export const RETENTION_MECHANIC_META: RetentionMechanicMeta[] = [
     key: "reward_visibility",
     label: "Reward visibility",
     requires: "public",
+    explanation:
+      "How easy rewards are to find — gift/VIP icon in the header, Rewards hub, Bonus Center, or buried in footer/menus. Stake/Rainbet-class = one click from anywhere.",
     gapReason: "Not visible on the captured loyalty visit.",
   },
   {
     key: "reward_clarity",
     label: "Reward clarity",
     requires: "public",
+    explanation:
+      "Whether a player instantly understands what they can earn and how — rakeback %, daily/weekly/monthly tiles, tier perks with numbers. Vague 'VIP benefits' copy scores low.",
     gapReason: "Could not assess earning rules from this visit.",
   },
   {
     key: "progress_mechanics",
     label: "Progress mechanics",
     requires: "login",
+    explanation:
+      "Personal progress toward the next tier — meters, points, rank path, 'X to Silver'. Almost always behind login; scored only when the agent (or you) is signed in.",
     gapReason:
       "Progress meters, tier status, and your level are almost always behind login — we won't score or advise on this until you're signed in.",
   },
   {
     key: "frequency_loop",
     label: "Frequency loop",
-    requires: "tracked_play",
+    requires: "public",
+    explanation:
+      "Recurring reward rhythm — daily, weekly, monthly bonuses, reloads, races, raffles. Documented claim tiles and cadence on the rewards hub count; we don't wait weeks of play to score the design.",
     gapReason:
-      "Reward cadence (weekly reloads, daily claims, email loops) only reveals itself over tracked play — not one visit.",
+      "No daily/weekly/monthly cadence or recurring claim tiles were visible on the loyalty visit.",
   },
   {
     key: "value_back",
     label: "Value-back mechanics",
     requires: "public",
+    explanation:
+      "Ongoing return of value — rakeback, cashback, lossback, rebate. A clear rakeback tile beats a one-off welcome bonus dressed as loyalty.",
     gapReason: "Rakeback/rebate mechanics not described on the captured visit.",
   },
   {
     key: "personalisation",
     label: "Personalisation",
     requires: "login",
+    explanation:
+      "Offers tailored to this player — VIP host, 'for you' reloads, claimable balances. Needs a logged-in session to score honestly.",
     gapReason:
       "Personalisation (your offers, VIP host, tailored reloads) requires a logged-in session.",
   },
@@ -53,12 +67,16 @@ export const RETENTION_MECHANIC_META: RetentionMechanicMeta[] = [
     key: "emotional_pull",
     label: "Emotional pull",
     requires: "public",
+    explanation:
+      "Aspiration and celebration — locked higher tiers with previewed perks, rank-up rewards, races, raffles, trophy VIP pages. Opaque 'invite only' with no path scores low.",
     gapReason: "Aspiration / celebration mechanics not observed.",
   },
   {
     key: "account_integration",
     label: "Account integration",
     requires: "login",
+    explanation:
+      "Whether rewards connect to account, cashier and play — claim from wallet, VIP progress in account, bonuses next to balance. Needs login.",
     gapReason:
       "Whether rewards connect to account, cashier and play needs login to verify.",
   },

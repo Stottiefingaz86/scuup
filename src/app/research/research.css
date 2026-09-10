@@ -1,0 +1,307 @@
+/* Research uses Scuup design tokens — same product family, not a dark island. */
+.research-root {
+  --rs-bg: var(--background);
+  --rs-fg: var(--foreground);
+  --rs-muted: var(--muted-foreground);
+  --rs-border: var(--border);
+  --rs-card: var(--card);
+  --rs-accent: var(--primary);
+  --rs-accent-dim: color-mix(in oklab, var(--primary) 15%, transparent);
+  --rs-critical: var(--destructive);
+  --rs-high: oklch(0.7 0.15 55);
+  --rs-medium: oklch(0.75 0.12 85);
+  --rs-low: var(--muted-foreground);
+}
+
+@keyframes rs-journey-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.75;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes rs-journey-flow {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.research-root .rs-journey-pulse {
+  animation: rs-journey-pulse 1.4s ease-in-out infinite;
+}
+
+.research-root .rs-journey-flow {
+  animation: rs-journey-flow 1.1s linear infinite;
+}
+
+/* —— Start capture card: breathing green glow + periodic light sweep —— */
+@keyframes rs-start-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 18px -10px
+      color-mix(in oklab, var(--primary) 30%, transparent);
+  }
+}
+
+@keyframes rs-start-sweep {
+  0% {
+    transform: translateX(-120%) skewX(-16deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  48% {
+    transform: translateX(340%) skewX(-16deg);
+    opacity: 1;
+  }
+  49%,
+  100% {
+    transform: translateX(340%) skewX(-16deg);
+    opacity: 0;
+  }
+}
+
+.research-root .rs-start-card {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--primary) 5%, var(--card));
+  border-color: color-mix(in oklab, var(--primary) 22%, var(--border));
+  animation: rs-start-glow 4s ease-in-out infinite;
+  transition:
+    box-shadow 0.5s ease,
+    border-color 0.5s ease;
+}
+
+.research-root .rs-start-card::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%;
+  left: 0;
+  width: 26%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 6%, transparent) 50%,
+    transparent
+  );
+  animation: rs-start-sweep 7s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.research-root .rs-start-button {
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.3s ease;
+}
+
+.research-root .rs-start-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 0 16px -6px color-mix(in oklab, var(--primary) 50%, transparent);
+}
+
+/* —— Shared data table (every research table uses this) —— */
+.research-root .rs-table-wrap {
+  overflow-x: auto;
+  border-radius: 12px;
+  border: 1px solid var(--rs-border);
+  background: var(--rs-card);
+}
+
+.research-root .rs-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* Honour <colgroup> widths exactly so header and body columns can't drift. */
+.research-root .rs-table.rs-fixed {
+  table-layout: fixed;
+}
+
+.research-root .rs-table thead th {
+  height: 34px;
+  padding: 0 12px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+  background: var(--rs-bg);
+  border-bottom: 1px solid var(--rs-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+/* Column-band row above the real header (Stage / Effort / Friction / Proof). */
+.research-root .rs-table thead tr.rs-band-row th {
+  height: 26px;
+  border-bottom: 0;
+  color: color-mix(in oklab, var(--rs-muted) 70%, transparent);
+}
+
+/* A band label sits centred over the columns it spans. */
+.research-root .rs-table thead tr.rs-band-row th.rs-band {
+  text-align: center;
+}
+
+/* Tables whose numeric cells carry a small evidence slot (20px thumb +
+ * 6px gap) pad their numeric headers so "Time" sits over the digits. */
+.research-root .rs-table.rs-evidence thead th.rs-num {
+  padding-right: 38px;
+}
+
+/* Every cell starts on the same baseline: 13px primary line, 11px secondary. */
+.research-root .rs-table tbody td {
+  padding: 10px 12px;
+  vertical-align: top;
+  font-size: 13px;
+  line-height: 18px;
+  border-bottom: 1px solid
+    color-mix(in oklab, var(--rs-border) 60%, transparent);
+}
+
+.research-root .rs-table .rs-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: 11px;
+  line-height: 15px;
+  color: var(--rs-muted);
+}
+
+.research-root .rs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.research-root .rs-table tbody tr:hover td {
+  background: color-mix(in oklab, var(--rs-fg) 2.5%, transparent);
+}
+
+.research-root .rs-table .rs-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.research-root .rs-table .rs-band {
+  border-left: 1px solid color-mix(in oklab, var(--rs-border) 60%, transparent);
+}
+
+.research-root .rs-table .rs-muted {
+  color: var(--rs-muted);
+}
+
+.research-root .rs-table tr.rs-dim td {
+  color: color-mix(in oklab, var(--rs-muted) 70%, transparent);
+}
+
+/* —— First-touch funnel: traffic flowing from every channel into Landing —— */
+@keyframes rs-flow {
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+.research-root .rs-flow-line {
+  stroke-dasharray: 6 22;
+  opacity: 0.85;
+  animation: rs-flow 2.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .research-root .rs-flow-line {
+    animation: none;
+    stroke-dasharray: none;
+    opacity: 0.35;
+  }
+}
+
+/* —— Sticky live bar the Start card hands off to —— */
+@keyframes rs-bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes rs-live-run {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
+.research-root .rs-live-bar {
+  position: relative;
+  overflow: hidden;
+  animation: rs-bar-in 0.45s ease-out both;
+  border-color: color-mix(in oklab, var(--primary) 30%, var(--border));
+  box-shadow: 0 10px 30px -14px rgb(0 0 0 / 0.4);
+}
+
+.research-root .rs-live-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--primary) 10%, transparent);
+}
+
+.research-root .rs-live-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 70%, transparent),
+    transparent
+  );
+  animation: rs-live-run 2.2s linear infinite;
+}
+
+.research-root .rs-live-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--primary);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 60%, transparent);
+  animation: rs-live-ping 1.6s ease-out infinite;
+}
+
+@keyframes rs-live-ping {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 60%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}

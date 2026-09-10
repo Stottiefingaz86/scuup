@@ -6,8 +6,10 @@ import {
   CircleAlert,
   ExternalLink,
   Gift,
+  Info,
   LoaderCircle,
-  TrendingDown,
+  Radio,
+  Repeat,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -27,17 +29,22 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { BrandMark } from "@/components/brand-mark";
 import { LiveCaptureDialog } from "@/components/live-capture-dialog";
 import { ProjectShell } from "@/components/project-shell";
 import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
+import { RetentionMechanicInsights } from "@/components/retention-mechanic-insights";
 import { ScoreChip, TierLegend } from "@/components/score-chip";
+import { ScoreGauge } from "@/components/score-gauge";
 import {
   backfillRetentionNotes,
   jobsNeedingRetentionNotes,
 } from "@/lib/backfill-retention-notes";
-import { buildMechanicInsights } from "@/lib/retention-insights";
 import {
   applyRetentionGates,
   mechanicGapReason,
@@ -46,12 +53,12 @@ import {
 import { agentKey, runAgentBatch, useRunningAgents } from "@/lib/run-agent";
 import { cn } from "@/lib/utils";
 import type { Brand, JourneyAnalysis, Project } from "@/lib/types";
+import { formatElapsed } from "@/components/live-capture-dialog";
 
 const LOYALTY = "loyalty_rewards";
 
 /** Mechanics we can honestly evidence: public pages always, login-gated ones
- * when the agent's test account got in. Tracked-play mechanics are out, we
- * can't observe reward cadence over weeks, so we never show that row. */
+ * when the agent's test account got in. */
 const DISPLAY_MECHANICS = RETENTION_MECHANIC_META.filter(
   (m) => m.requires !== "tracked_play"
 );
@@ -79,6 +86,127 @@ function mechanicScore(
   );
   const v = gated?.[key];
   return v === undefined ? null : v;
+}
+
+function mechanicCoverage(analysis: JourneyAnalysis | null): {
+  observed: number;
+  total: number;
+} {
+  const total = DISPLAY_MECHANICS.length;
+  if (!analysis?.retention) return { observed: 0, total };
+  const observed = DISPLAY_MECHANICS.filter(
+    (m) => mechanicScore(analysis, m.key) !== null
+  ).length;
+  return { observed, total };
+}
+
+/** Launch the live browser, play, and accumulate observed value-back. */
+function ValueBackTile({
+  brand,
+  project,
+  onLaunch,
+}: {
+  brand: Brand;
+  project: Project;
+  onLaunch: (brand: Brand) => void;
+}) {
+  const own = brand.role === "own_brand";
+  const sessions = project.sessions.filter((s) => s.brandId === brand.id);
+  const rewardEvents = sessions.flatMap((s) =>
+    s.events.filter((e) => e.kind === "reward")
+  );
+  const moneyEvents = sessions.flatMap((s) =>
+    s.events.filter((e) => e.kind === "money")
+  );
+  const totalPlaySec = sessions.reduce((n, s) => n + s.durationSec, 0);
+  const latestRewards = rewardEvents.slice(0, 4);
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-3 rounded-xl border p-5",
+        own && "border-brand/30 bg-brand/[0.04]"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BrandMark brand={brand} className="size-5" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">
+              {brand.name}
+              {own ? " (you)" : ""}
+            </span>
+            <span className="text-xs text-muted-foreground">
+              {sessions.length > 0
+                ? `${sessions.length} tracked session${sessions.length === 1 ? "" : "s"} · ${formatElapsed(totalPlaySec)} played`
+                : "No tracked play yet"}
+            </span>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant={sessions.length > 0 ? "outline" : "default"}
+          className={sessions.length === 0 ? "glow-primary" : undefined}
+          onClick={() => onLaunch(brand)}
+        >
+          <ExternalLink data-icon="inline-start" />
+          {sessions.length > 0 ? "Launch & play again" : "Launch & play"}
+        </Button>
+      </div>
+
+      {sessions.length > 0 ? (
+        <>
+          <div className="flex items-baseline gap-2">
+            <span className="font-heading text-3xl font-semibold tabular-nums">
+              {rewardEvents.length}
+            </span>
+            <span className="text-sm text-muted-foreground">
+              reward event{rewardEvents.length === 1 ? "" : "s"} across{" "}
+              {moneyEvents.length} money event
+              {moneyEvents.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {latestRewards.length > 0 ? (
+            <ul className="flex flex-col gap-1.5 border-t pt-3">
+              {latestRewards.map((e, i) => (
+                <li
+                  key={`${e.at}-${i}`}
+                  className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground"
+                >
+                  <Gift className="mt-0.5 size-3 shrink-0 text-brand" />
+                  <span>
+                    <span className="font-medium text-foreground">{e.label}</span>
+                    {e.detail ? ` — ${e.detail}` : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
+              Play is tracked, but no reward events yet. Keep launching —
+              rakeback, rebates and level-ups often take weeks to surface.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2">
+            <span className="font-heading text-3xl font-semibold text-muted-foreground/50">
+              ?
+            </span>
+            <span className="text-sm text-muted-foreground">
+              value-back unknown — launch the site and play to measure it
+            </span>
+          </div>
+          <p className="border-t pt-3 text-xs leading-relaxed text-muted-foreground">
+            Opens a live browser session. Sign in, deposit or play as you
+            normally would — we record stakes, rewards, rakeback and level
+            progress so you can see what this brand actually gives back.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** One brand's loyalty offer, read from its promo pages, tier tables and
@@ -240,76 +368,6 @@ function BrandOfferCard({
   );
 }
 
-/** The top actionable gaps vs the best competitor, flat, no accordion. */
-function ImproveFirst({
-  ownBrand,
-  competitors,
-}: {
-  ownBrand: Brand;
-  competitors: Brand[];
-}) {
-  const insights = buildMechanicInsights(ownBrand, competitors, loyaltyOf);
-  const gaps = insights
-    .filter(
-      (i) =>
-        i.canAdvise &&
-        i.gap !== null &&
-        i.gap < 0 &&
-        i.requires !== "tracked_play"
-    )
-    .slice(0, 3);
-  if (gaps.length === 0) return null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Fix first</CardTitle>
-        <CardDescription>
-          Where {ownBrand.name} trails the best competitor on rewards, each
-          one cites what the agent saw and what to change.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        {gaps.map((g) => (
-          <div
-            key={g.key}
-            className="flex flex-col gap-3 rounded-xl border border-score-weak/30 bg-score-weak/[0.03] p-4 sm:flex-row sm:items-start"
-          >
-            {g.screenshotUrl ? (
-              <ScreenshotLightbox
-                src={g.screenshotUrl}
-                alt={`Evidence: ${g.label}`}
-                caption={`${ownBrand.name}: ${g.label}`}
-                className="aspect-[8/5] w-full shrink-0 sm:w-36"
-              />
-            ) : null}
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{g.label}</span>
-                <ScoreChip score={g.ownScore} />
-                {g.bestCompetitor ? (
-                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                    <TrendingDown className="size-3 text-score-weak" />
-                    {g.gap} vs {g.bestCompetitor.name} (
-                    {g.bestCompetitor.score})
-                  </span>
-                ) : null}
-              </div>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {g.note}
-              </p>
-              <p className="text-sm leading-relaxed">
-                <span className="font-medium text-brand">Do this: </span>
-                {g.improve}
-              </p>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 function RetentionContent({ project }: { project: Project }) {
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
   const competitors = project.brands.filter((b) => b.role !== "own_brand");
@@ -362,6 +420,82 @@ function RetentionContent({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Ranked retention loop gauges */}
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {ranked.map((brand, i) => {
+          const analysis = loyaltyOf(brand);
+          const cov = mechanicCoverage(analysis);
+          return (
+            <Card key={brand.id} className="group/score">
+              <CardHeader>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <BrandMark brand={brand} className="size-4" />
+                    {brand.name}
+                    {brand.role === "own_brand" ? " (you)" : ""}
+                  </CardTitle>
+                  {analysis ? (
+                    <Badge variant={i === 0 ? "default" : "secondary"}>
+                      #{i + 1}
+                    </Badge>
+                  ) : null}
+                </div>
+                {analysis?.retentionType ? (
+                  <CardDescription>{analysis.retentionType}</CardDescription>
+                ) : null}
+              </CardHeader>
+              <CardContent className="flex flex-col items-center gap-3">
+                {analysis ? (
+                  <>
+                    <ScoreGauge
+                      score={analysis.score}
+                      size={130}
+                      caption="Retention Loop"
+                      muted={brand.role !== "own_brand"}
+                    />
+                    {cov.observed > 0 && cov.observed < cov.total ? (
+                      <p className="flex items-center gap-1.5 text-xs text-score-mid">
+                        <CircleAlert className="size-3.5 shrink-0" />
+                        Partial — {cov.observed} of {cov.total} mechanics
+                        observed
+                      </p>
+                    ) : null}
+                    <p className="line-clamp-4 text-sm text-muted-foreground">
+                      {analysis.summary}
+                    </p>
+                  </>
+                ) : running.includes(agentKey(brand.id, LOYALTY)) ? (
+                  <p className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                    <LoaderCircle className="size-4 animate-spin text-primary" />
+                    Reading loyalty pages…
+                  </p>
+                ) : (
+                  <div className="flex flex-col items-center gap-3 py-4">
+                    <ScoreChip score={null} />
+                    <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                      {brand.analyses[LOYALTY]?.blocked
+                        ? (brand.analyses[LOYALTY]?.blockReason ??
+                          "The agent was blocked here.")
+                        : "Loyalty area not analysed yet."}
+                    </p>
+                    {brand.analyses[LOYALTY]?.blocked ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setCaptureBrand(brand)}
+                      >
+                        <ExternalLink data-icon="inline-start" />
+                        Take control
+                      </Button>
+                    ) : null}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
       {/* What players actually get, the page lead */}
       <Card>
         <CardHeader>
@@ -391,15 +525,21 @@ function RetentionContent({ project }: { project: Project }) {
         </CardContent>
       </Card>
 
-      {/* Compact mechanic comparison, evidence-backed rows only */}
+      {/* Eight-mechanic loop breakdown */}
       {scoredMechanics.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>How the rewards compare</CardTitle>
+            <div className="flex items-center gap-2">
+              <Repeat className="size-4 text-brand" />
+              <CardTitle>Retention loop breakdown</CardTitle>
+            </div>
             <CardDescription>
-              Scored from what the agent could actually see on each
-              brand&apos;s loyalty pages. N/A means the evidence isn&apos;t
-              there, not that the mechanic is missing.
+              Eight mechanics that decide whether players come back — scored
+              from what the agent could see on each brand&apos;s loyalty /
+              rewards hub (including gift-icon modals). Hover the{" "}
+              <Info className="inline size-3 align-text-bottom" /> next to each
+              mechanic for what it measures. N/A means the evidence isn&apos;t
+              there yet, not that the mechanic is missing.
             </CardDescription>
             <TierLegend className="mt-1" />
           </CardHeader>
@@ -419,7 +559,33 @@ function RetentionContent({ project }: { project: Project }) {
                 {scoredMechanics.map((mechanic) => (
                   <TableRow key={mechanic.key}>
                     <TableCell className="font-medium">
-                      {mechanic.label}
+                      <span className="flex flex-col gap-0.5">
+                        <span className="inline-flex items-center gap-1.5">
+                          {mechanic.label}
+                          <Tooltip>
+                            <TooltipTrigger
+                              className="inline-flex size-4 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                              aria-label={`What ${mechanic.label} means`}
+                            >
+                              <Info className="size-3.5" />
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="right"
+                              className="max-w-xs text-left leading-relaxed"
+                            >
+                              {mechanic.explanation}
+                              {mechanic.requires === "login"
+                                ? " Requires a logged-in visit."
+                                : ""}
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                        {mechanic.requires === "login" ? (
+                          <span className="text-[10px] font-normal text-muted-foreground">
+                            Needs login
+                          </span>
+                        ) : null}
+                      </span>
                     </TableCell>
                     {project.brands.map((b) => {
                       const analysis = loyaltyOf(b);
@@ -459,8 +625,44 @@ function RetentionContent({ project }: { project: Project }) {
         </Card>
       ) : null}
 
-      {/* Top gaps with evidence + action */}
-      <ImproveFirst ownBrand={ownBrand} competitors={competitors} />
+      <RetentionMechanicInsights
+        ownBrand={ownBrand}
+        competitors={competitors}
+        loyaltyOf={loyaltyOf}
+        mechanicScore={mechanicScore}
+        loadingLabel={
+          pendingNotes.length > 0
+            ? "Writing evidence notes for each mechanic…"
+            : undefined
+        }
+      />
+
+      {/* Launch live sessions to measure real value-back over time */}
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center gap-2">
+            <Radio className="size-4 text-brand" />
+            <CardTitle>Value-back tracker</CardTitle>
+          </div>
+          <CardDescription>
+            Rewards are issued over time — rakeback, rebates, boosts and
+            level-ups can take weeks to surface. Launch each site, play in a
+            live browser, and we accumulate what the brand actually returns.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            {project.brands.map((brand) => (
+              <ValueBackTile
+                key={brand.id}
+                brand={brand}
+                project={project}
+                onLaunch={setCaptureBrand}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <LiveCaptureDialog
         brand={captureBrand}

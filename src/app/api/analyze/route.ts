@@ -22,7 +22,7 @@ import {
   seedTestPersona,
 } from "@/lib/credentials-db";
 import { brandProjectArchived, upsertAnalysis } from "@/lib/project-db";
-import { personaVariables } from "@/lib/test-persona";
+import { buildSignupPersona, personaVariables } from "@/lib/test-persona";
 import type { DeviceMode, JourneyAnalysis } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -134,6 +134,22 @@ export async function POST(request: NextRequest) {
           ownBrand,
         });
         creds = await getCredentialsForLogin(brandId);
+      } else if (market && journey === "signup") {
+        // Re-seed when the stored persona is for the wrong market (e.g. US
+        // phone on a Brazil +55 form) so registration can actually submit.
+        const expected = buildSignupPersona({
+          market,
+          brandName: brandName || new URL(url).hostname,
+          ownBrand,
+        });
+        if (creds.persona.country !== expected.country) {
+          await seedTestPersona(brandId, {
+            market,
+            brandName: brandName || new URL(url).hostname,
+            ownBrand,
+          });
+          creds = await getCredentialsForLogin(brandId);
+        }
       }
       if (creds.persona && creds.password) {
         const vars = personaVariables(creds.persona, creds.password);
@@ -170,7 +186,7 @@ export async function POST(request: NextRequest) {
         journey === "signup"
           ? chainLoginJourneys.length > 0
             ? chainLoginJourneys
-            : ["my_account", "deposit"]
+            : ["deposit", "my_account"]
           : undefined,
       loginVars,
       accountExists,

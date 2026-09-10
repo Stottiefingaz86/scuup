@@ -1,6 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { appHomePathForUser } from "@/lib/app-home";
+import { isResearchHost, RESEARCH_BASE } from "@/lib/research/host";
+import {
+  RESEARCH_PIN_COOKIE,
+  RESEARCH_PIN_PATH,
+  isResearchPinUnlocked,
+  researchPinEnabled,
+} from "@/lib/research/pin-gate";
 import {
   SITE_GATE_COOKIE,
   isSiteGateUnlocked,
@@ -18,6 +25,8 @@ const PUBLIC_PATHS = [
   /^\/cookies(\/|$)/,
   /^\/api\/showcase(\/|$)/,
   /^\/api\/contact(\/|$)/,
+  // Research product landing — projects still require auth.
+  /^\/research\/?$/,
   // Stripe calls this from its servers; the signature check is the auth.
   /^\/api\/billing\/webhook$/,
   // Sentry event tunnel — must work for logged-out visitors too.
@@ -38,6 +47,55 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const { pathname } = request.nextUrl;
+  const host = request.headers.get("host");
+
+  // Research is behind its own 4-digit PIN (research.scuup.io, /research/*,
+  // /api/research/*). The PIN screen itself must stay reachable.
+  const researchScoped =
+    isResearchHost(host) ||
+    pathname.startsWith(RESEARCH_BASE) ||
+    pathname.startsWith("/api/research");
+  if (
+    researchScoped &&
+    researchPinEnabled() &&
+    !isResearchPinUnlocked(request.cookies.get(RESEARCH_PIN_COOKIE)?.value) &&
+    !pathname.startsWith(RESEARCH_PIN_PATH) &&
+    !(isResearchHost(host) && pathname.startsWith("/pin")) &&
+    !GATE_BYPASS.some((p) => p.test(pathname))
+  ) {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Research is PIN-protected." },
+        { status: 401 },
+      );
+    }
+    const url = request.nextUrl.clone();
+    // On research.scuup.io the screen lives at /pin (rewritten below).
+    url.pathname = isResearchHost(host) ? "/pin" : RESEARCH_PIN_PATH;
+    url.search = "";
+    if (pathname !== "/" && pathname !== RESEARCH_BASE) {
+      url.searchParams.set("next", pathname);
+    }
+    return NextResponse.redirect(url);
+  }
+
+  // research.scuup.io → rewrite into /research/* without changing the browser URL.
+  // Keeps Scuup on the apex domain completely separate.
+  if (
+    isResearchHost(host) &&
+    !pathname.startsWith(RESEARCH_BASE) &&
+    !pathname.startsWith("/api/") &&
+    !pathname.startsWith("/_next") &&
+    !pathname.startsWith("/gate") &&
+    !pathname.startsWith("/login") &&
+    !pathname.startsWith("/auth") &&
+    !pathname.startsWith("/monitoring")
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname =
+      pathname === "/" ? RESEARCH_BASE : `${RESEARCH_BASE}${pathname}`;
+    return NextResponse.rewrite(url);
+  }
 
   // Close the site to the public until the visitor enters the password.
   if (
@@ -48,7 +106,7 @@ export async function proxy(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "Site is password-protected." },
-        { status: 401 }
+        { status: 401 },
       );
     }
     const url = request.nextUrl.clone();
@@ -70,11 +128,11 @@ export async function proxy(request: NextRequest) {
           all.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           all.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options),
           );
         },
       },
-    }
+    },
   );
 
   // Refreshes expired sessions (writes new cookies via setAll above).
@@ -100,7 +158,7 @@ export async function proxy(request: NextRequest) {
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "You need to log in to do this." },
-        { status: 401 }
+        { status: 401 },
       );
     }
     const url = request.nextUrl.clone();
@@ -133,5 +191,7 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   // Skip static assets; run on pages and API routes.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

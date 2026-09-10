@@ -217,7 +217,7 @@ async function runJourneyRefresh(job: RefreshJob): Promise<void> {
   const result = await analyzeJourney(url, job.area, contextId, proxyCountry, {
     signupVars: job.area === "signup" ? signupVars : null,
     chainLoginJourneys:
-      job.area === "signup" ? ["my_account", "deposit"] : undefined,
+      job.area === "signup" ? ["deposit", "my_account"] : undefined,
     loginVars,
     accountExists,
     device: job.device,

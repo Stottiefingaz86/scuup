@@ -100,15 +100,14 @@ const JOURNEY_EXPERTISE: Record<string, string> = {
 - KYC timing: requesting docs AT WITHDRAWAL after accepting deposits is the single biggest trust destroyer in the vertical — flag it hard.
 - Fee transparency, minimums stated upfront, and visible processing-time promises separate leaders.
 - Watch for: wagering locks not explained at deposit, "pending review" black holes, support-gated withdrawals.`,
-  loyalty_rewards: `LOYALTY/REWARDS EXPERTISE — judge LOOP DEPTH vs the Stake benchmark, not "promo vs loyalty":
-- Regulated loyalty-led brands (BetOnline-class) often HAVE tiers, points, reloads, and VIP — classify them as loyalty-led with weaker execution, not promo-page-only.
-- First classify: Promo-page-only (no ongoing rewards system) vs Loyalty-led (tiers/points/reloads present — score depth) vs Crypto loop-led (benchmark). Many regulated sites copy crypto nav labels ("VIP", "Rewards") — judge whether the mechanics behind the label match the promise.
-- The hub must answer three questions instantly: what can I earn, how do I earn it, when is my next reward moment.
-- Leader stack: visible tier ladder with transparent thresholds, rakeback %s per tier, weekly/monthly cadence explained, level-up bonuses, status transfer offer.
-- Gamification depth (crypto): races, missions, chests, streaks, leaderboards — score whether these are integrated into play or absent.
-- Tabs and modals ARE the hub — explore them all before judging. A "Bonus Center" modal with claim tiles is leader-class execution.
-- Locked previews of higher tiers = aspiration engine (strength). Opaque "VIP by invitation" with no path = weakness.
-- Watch for: "Using Bonus & Promotions" style checklists — wagering-heavy welcome offers dressed as loyalty, no cadence signals, promo carousel with no progress mechanics.`,
+  loyalty_rewards: `LOYALTY/REWARDS EXPERTISE — judge LOOP DEPTH vs the Stake/Rainbet benchmark:
+- Crypto loop-led (Rainbet, Stake, Winna): gift/present icon in header → rewards modal → All Rewards → rakeback + daily/weekly/monthly claim tiles + rank ladder (Bronze→Diamond) + races/raffles. This IS the product. Score HIGH when those surfaces are in the screenshots.
+- Regulated loyalty-led (BetOnline-class): tiers, points, reloads, VIP exist but weaker cadence and thinner gamification — score mid, not as if they have no loop.
+- Promo-page-only: welcome carousel with no ongoing rewards system.
+- The hub must answer: what can I earn, how do I earn it, when is my next reward moment.
+- Tabs, gift modals, and "All Rewards" ARE the hub — explore them before judging. Stopping at a landing VIP brochure while missing the gift-icon hub under-scores crypto brands badly.
+- Locked previews of higher tiers = aspiration (strength). Opaque "VIP by invitation" with no path = weakness.
+- Watch for: mistaking a thin promo ladder for a full loop, or missing rakeback/cadence that lives one click behind a gift icon.`,
   support: `SUPPORT EXPERTISE — money questions need human-speed answers:
 - Live chat reachable in ≤2 clicks from anywhere, 24/7 claim, visible response-time expectation. Help centre with cashier/KYC/bonus articles that actually answer.
 - Leaders surface chat inside the cashier at friction moments (failed deposit, pending withdrawal).
@@ -129,7 +128,7 @@ const CALIBRATION: Record<string, string> = {
   signup: `CALIBRATION: 85+ = ≤3 fields or social/one-click, instant account, deposit reachable in seconds, offer terms visible, validation that names the real fix. 50 = standard multi-step form with clear field labels AND clear error copy. Cap Form effort around 45-55 when errors are vague ("incorrect value") or format rules appear only after failure — low field count does not rescue opaque validation. Below 40 = KYC before deposit, verification walls, opaque bonus terms.`,
   deposit: `CALIBRATION: 85+ = modal cashier, instant crypto address + QR, fee/min-max transparency, on-ramp breadth. 50 = working deposit with a redirect or unclear fees. Below 40 = late fee reveals, broken methods, no confirmation states.`,
   withdraw: `CALIBRATION: 85+ = same-modal withdrawal, minutes-fast crypto, upfront fees/minimums, clear pending states, KYC expectations set early. 50 = working but slow/ambiguous. Below 40 = KYC ambush, black-hole pending, support-gated payouts.`,
-  loyalty_rewards: `CALIBRATION: 85+ = Winna Bonus Center / Stake VIP class — tier ladder with real thresholds, rakeback per tier, claim tiles, cadence explained, status transfer. 50 = BetOnline/FanDuel-class — real VIP/points/reloads but weaker cadence, opaque conversion, thin gamification, progress often login-gated. Below 40 = promo carousel only with no meaningful ongoing rewards mechanics, or terms so opaque the loop fails in practice.`,
+  loyalty_rewards: `CALIBRATION: 85+ = Rainbet/Stake/Winna class — header gift icon, All Rewards hub, rakeback, daily/weekly/monthly claim tiles, full rank ladder with thresholds, races/raffles. 55–70 = BetOnline/FanDuel-class — real VIP/points/reloads but weaker cadence and thin gamification. Below 40 = promo carousel only with no ongoing rewards mechanics.`,
   support: `CALIBRATION: 85+ = live chat ≤2 clicks 24/7 + money-topic help articles that answer. 50 = chat exists but buried, or FAQ-first with human path. Below 40 = bot walls, no human path, support requiring login for pre-sales questions.`,
   my_account: `CALIBRATION: 85+ = balance split, bonus wagering progress, VIP progress integrated, RG tools discoverable. 50 = basics present, bonus state unclear. Below 40 = opaque balances, hidden limits, invisible KYC status.`,
 };

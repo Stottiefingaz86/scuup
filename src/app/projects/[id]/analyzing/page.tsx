@@ -28,8 +28,10 @@ import {
   agentCanReach,
   agentCanReachLoggedIn,
   ANALYSIS_AREA_LABELS,
+  journeyRequiresLogin,
   LANDING,
 } from "@/lib/constants";
+import { funnelJourneys, journeyRunOrder } from "@/lib/coverage";
 import {
   getProject,
   markProjectComplete,
@@ -205,17 +207,16 @@ export default function AnalyzingPage() {
 
       const brands = [...project.brands];
       const projectId = project.id;
-      const hasSignup = project.journeys.includes("signup");
-      // Everything after signup tries the test account first and falls
-      // back to a logged-out walk, so signup must settle before the
-      // product journeys start.
-      const laterPublicAreas = project.journeys.filter(
+      const funnel = funnelJourneys(project);
+      const hasSignup = funnel.includes("signup");
+      const onboardingLogin = funnel.filter(
+        (j) => j === "deposit" || j === "my_account"
+      );
+      const playAreas = funnel.filter(
         (j) => j !== "signup" && agentCanReach(j)
       );
-      // Gated journeys (deposit / withdraw / account) only work with the
-      // logged-in session signup created.
-      const gatedAreas = project.journeys.filter(
-        (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
+      const retainLogin = funnel.filter(
+        (j) => journeyRequiresLogin(j) && j !== "deposit" && j !== "my_account"
       );
 
       const setJob = (key: string, state: JobState) =>
@@ -293,20 +294,16 @@ export default function AnalyzingPage() {
         }
       };
 
-      // Each brand runs staged: first impression + signup (which registers
-      // the test account), THEN every product journey — those try the
-      // fresh login first and fall back to a logged-out walk — and
-      // finally VoC + Design once the journeys settle.
+      // Each brand: first impression + signup → first deposit → play → retain.
       const brandStages = (brand: Brand): { brand: Brand; area: string }[][] =>
         [
           [
             { brand, area: LANDING },
             ...(hasSignup ? [{ brand, area: "signup" }] : []),
           ],
-          [...laterPublicAreas, ...gatedAreas].map((area) => ({
-            brand,
-            area,
-          })),
+          onboardingLogin.map((area) => ({ brand, area })),
+          playAreas.map((area) => ({ brand, area })),
+          retainLogin.map((area) => ({ brand, area })),
           EXTRA_AREAS.map((area) => ({ brand, area })),
         ].filter((stage) => stage.length > 0);
 
@@ -325,8 +322,9 @@ export default function AnalyzingPage() {
         brands.length *
         (1 +
           (hasSignup ? 1 : 0) +
-          laterPublicAreas.length +
-          gatedAreas.length +
+          onboardingLogin.length +
+          playAreas.length +
+          retainLogin.length +
           EXTRA_AREAS.length);
       setRunFinished({
         scored: successCount,
@@ -349,15 +347,12 @@ export default function AnalyzingPage() {
     );
   }
 
-  // Chip order mirrors the run order: first impression + signup, then the
-  // product journeys, then login-gated areas.
+  // Chip order mirrors the run order: signup → FTD → play → withdraw.
   const journeyAreas = project
     ? [
         LANDING,
-        ...project.journeys.filter((j) => j === "signup"),
-        ...project.journeys.filter((j) => j !== "signup" && agentCanReach(j)),
-        ...project.journeys.filter(
-          (j) => !agentCanReach(j) && agentCanReachLoggedIn(j)
+        ...funnelJourneys(project).sort(
+          (a, b) => journeyRunOrder(a) - journeyRunOrder(b)
         ),
       ]
     : [];

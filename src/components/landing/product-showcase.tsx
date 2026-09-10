@@ -5,8 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  ArrowUpRight,
-  Check,
   MessagesSquare,
   Palette,
   Repeat,
@@ -16,16 +14,8 @@ import {
 } from "lucide-react";
 import { LandingShell } from "@/components/landing/landing-shell";
 import { ScuupMark } from "@/components/landing/scuup-mark";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  FREE_PLAN_FEATURES,
-  PRO_PLUS_PRICE_MONTHLY,
-  PRO_PLUS_SELLING_POINTS,
-  PRO_PRICE_MONTHLY,
-  PRO_SELLING_POINTS,
-} from "@/lib/plan";
 import {
   HowItWorks,
   WhatWeMeasure,
@@ -36,7 +26,6 @@ import { LandingProductNav } from "@/components/landing/landing-product-nav";
 import { PillarSpotlights } from "@/components/landing/pillar-spotlights";
 import { ShowcaseCarousel } from "@/components/landing/showcase-carousel";
 import { LandingContact } from "@/components/landing/landing-contact";
-import { AboutNavButton, AboutUsProvider } from "@/components/landing/landing-about";
 import { LegalDialogProvider } from "@/components/landing/landing-legal-dialog";
 import { CookieConsent } from "@/components/landing/cookie-consent";
 import { LandingFooter } from "@/components/landing/landing-footer";
@@ -219,46 +208,8 @@ const PILLARS = [
   },
 ];
 
-const PRICING = [
-  {
-    name: "Free",
-    price: "€0",
-    period: "",
-    taxNote: "",
-    description: "Your brand, scored once",
-    features: FREE_PLAN_FEATURES,
-    cta: "Start free audit",
-    href: "/projects/new",
-    variant: "outline" as const,
-  },
-  {
-    name: "Pro",
-    price: `€${PRO_PRICE_MONTHLY}`,
-    period: "/ month",
-    taxNote: "exc. tax",
-    description: "One competitive report",
-    features: PRO_SELLING_POINTS,
-    cta: "Contact sales",
-    href: "/?plan=pro#contact",
-    variant: "default" as const,
-    highlight: true,
-  },
-  {
-    name: "Pro Plus",
-    price: `€${PRO_PLUS_PRICE_MONTHLY}`,
-    period: "/ month",
-    taxNote: "exc. tax",
-    description: "Five reports in parallel",
-    features: PRO_PLUS_SELLING_POINTS,
-    cta: "Contact sales",
-    href: "/?plan=pro_plus#contact",
-    variant: "outline" as const,
-  },
-];
-
 export function LandingShowcase() {
   return (
-    <AboutUsProvider>
     <LegalDialogProvider>
     <LandingShell>
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
@@ -268,10 +219,6 @@ export function LandingShowcase() {
           </Link>
           <nav className="hidden items-center gap-8 text-sm text-muted-foreground md:flex">
             <LandingProductNav />
-            <a href="#pricing" className="transition-colors hover:text-foreground">
-              Pricing
-            </a>
-            <AboutNavButton />
             <a href="#faq" className="transition-colors hover:text-foreground">
               FAQ
             </a>
@@ -385,86 +332,6 @@ export function LandingShowcase() {
         <WhatYouGet />
         <SharedReportReview />
 
-        {/* Pricing */}
-        <section id="pricing" className="border-t border-border bg-card/40 py-20 sm:py-28">
-          <div className="mx-auto w-full max-w-7xl px-6">
-            <LandingReveal className="mx-auto max-w-xl text-center">
-              <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-brand">
-                Pricing
-              </p>
-              <h2 className="mt-3 font-heading text-3xl font-semibold tracking-tight sm:text-4xl">
-                Start free, benchmark on Pro
-              </h2>
-              <p className="mt-4 text-muted-foreground">
-                Free scores your brand once with no updates. Pro adds four
-                competitors on one live report. Pro Plus runs five.
-              </p>
-            </LandingReveal>
-
-            <div className="mx-auto mt-12 grid max-w-6xl gap-px overflow-hidden rounded-xl border border-border bg-border lg:grid-cols-3">
-              {PRICING.map((plan, i) => (
-                <LandingReveal key={plan.name} delay={i * 90}>
-                  <div
-                    className={cn(
-                      "flex h-full flex-col bg-background p-8 transition-colors duration-300",
-                      plan.highlight && "bg-primary/[0.05]",
-                    )}
-                  >
-                  <div className="flex items-baseline justify-between gap-2">
-                    <h3 className="font-heading text-lg font-semibold">
-                      {plan.name}
-                    </h3>
-                    {plan.highlight ? (
-                      <Badge variant="secondary" className="font-normal">
-                        Recommended
-                      </Badge>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {plan.description}
-                  </p>
-                  <p className="mt-6 font-heading text-4xl font-semibold tabular-nums">
-                    {plan.price}
-                    {plan.period ? (
-                      <span className="text-base font-normal text-muted-foreground">
-                        {plan.period}
-                      </span>
-                    ) : null}
-                  </p>
-                  {plan.taxNote ? (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {plan.taxNote}
-                    </p>
-                  ) : null}
-                  <ul className="mt-8 flex flex-1 flex-col gap-2.5 text-sm">
-                    {plan.features.map((f) => (
-                      <li
-                        key={f}
-                        className="flex items-start gap-2.5 text-muted-foreground"
-                      >
-                        <Check className="mt-0.5 size-4 shrink-0 text-brand" />
-                        {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <Button
-                    className={cn("mt-8 w-full sm:w-auto", plan.highlight && "glow-primary")}
-                    variant={plan.variant}
-                    nativeButton={false}
-                    render={<Link href={plan.href} />}
-                  >
-                    {plan.cta}
-                    {plan.highlight ? (
-                      <ArrowUpRight data-icon="inline-end" />
-                    ) : null}
-                  </Button>
-                  </div>
-                </LandingReveal>
-              ))}
-            </div>
-          </div>
-        </section>
-
         <LandingFaq />
 
         <Suspense fallback={null}>
@@ -512,6 +379,5 @@ export function LandingShowcase() {
       <CookieConsent />
     </LandingShell>
     </LegalDialogProvider>
-    </AboutUsProvider>
   );
 }

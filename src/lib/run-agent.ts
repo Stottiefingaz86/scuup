@@ -34,6 +34,13 @@ export function isBrowserbaseQuotaError(message: string): boolean {
 
 export function friendlyAgentError(err: Error): string {
   const m = err.message;
+  if (
+    /credit_balance_exhausted|no credits remaining|insufficient_quota|billing\/organization/i.test(
+      m
+    )
+  ) {
+    return "OpenAI credits are exhausted — scoring can't run until billing is topped up at platform.openai.com/settings/organization/billing. The browser session itself may have worked; retry after adding credits.";
+  }
   if (isBrowserbaseQuotaError(m)) {
     return "Browser session quota exhausted — the Browserbase free plan has run out of browser minutes. Upgrade at browserbase.com/plans or wait for the monthly reset, then retry.";
   }
@@ -53,11 +60,13 @@ export function friendlyAgentError(err: Error): string {
 }
 
 /** Keys of currently running agent analyses (`brandId:area`). */
+const EMPTY_RUNNING: string[] = [];
+
 export function useRunningAgents(): string[] {
   return useSyncExternalStore(
     subscribe,
     () => runningKeys,
-    () => []
+    () => EMPTY_RUNNING
   );
 }
 
@@ -94,7 +103,7 @@ export function runAgent(
         device: project?.device ?? "both",
         // After a successful signup, explore account + deposit in-session.
         ...(area === "signup"
-          ? { chainLoginJourneys: ["my_account", "deposit"] }
+          ? { chainLoginJourneys: ["deposit", "my_account"] }
           : {}),
       }),
     });

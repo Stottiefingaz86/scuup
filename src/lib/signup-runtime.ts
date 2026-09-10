@@ -17,7 +17,9 @@ import {
   personaVariables,
   type SignupPersona,
 } from "./test-persona";
+import { completeAgentEmailVerification } from "./agent-email-verify";
 import { preparePageAfterNavigation } from "./dismiss-site-cookies";
+import { signupEmail } from "./test-persona";
 
 export interface SignupJob {
   brandId: string;
@@ -164,6 +166,7 @@ export async function startSignup(
         return;
       }
 
+      const signupSince = new Date(Date.now() - 15_000);
       const openReg = await stagehand.act(
         "click Register, Sign Up, Join, or Create Account to open the registration form (not Log In)"
       );
@@ -193,7 +196,26 @@ export async function startSignup(
         }
       }
 
-      for (let i = 0; i < 30; i++) {
+      // Auto-read OTP / confirm link from the shared inbox, then activate.
+      const email = vars.email || signupEmail();
+      push(job, "Checking inbox for verification email…");
+      const verify = await completeAgentEmailVerification({
+        stagehand,
+        page,
+        email,
+        siteUrl: url,
+        since: signupSince,
+        trail: job.steps,
+        timeoutMs: 90_000,
+      });
+      if (verify.loggedIn || (await checkLoggedIn(stagehand))) {
+        push(job, "Authenticated after email verification");
+        await markLoggedIn(brandId);
+        job.status = "success";
+        return;
+      }
+
+      for (let i = 0; i < 18; i++) {
         await page.waitForTimeout(5000);
         if (await checkLoggedIn(stagehand)) {
           push(job, "Authenticated after manual verification");

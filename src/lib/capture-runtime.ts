@@ -168,8 +168,17 @@ export async function captureTick(
     const prev = new Set(prevBalances);
     const added = found.filter((v) => !prev.has(v));
     if (prevBalances.length > 0 && added.length > 0) {
-      const { kind, label } = classifyMoneyChange(url);
-      events.push({ kind, label, detail: added.join(", "), context: url });
+      const at = url.toLowerCase();
+      // Ignore jackpot / promo prize copy on marketing pages — only emit
+      // money events on cashier, play, or rewards surfaces.
+      const moneySurface =
+        /deposit|cashier|top-?up|wallet|withdraw|cash-?out|payout|reward|vip|loyal|rakeback|rebate|casino|bingo|sport|betslip|slot|arcade|play\//i.test(
+          at
+        );
+      if (moneySurface) {
+        const { kind, label } = classifyMoneyChange(url);
+        events.push({ kind, label, detail: added.join(", "), context: url });
+      }
     }
     if (found.length > 0) balances = found;
   } catch {

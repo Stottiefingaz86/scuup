@@ -28,6 +28,8 @@ import { BrandMark, BrandTabLabel } from "@/components/brand-mark";
 import { EvidenceObservations } from "@/components/evidence-observations";
 import { EvidenceShotStrip } from "@/components/evidence-shot-strip";
 import { GapCompare } from "@/components/gap-compare";
+import { JourneyMapView } from "@/components/journey-map";
+import { BrandTestAccountPanel } from "@/components/brand-test-account-panel";
 import { LiveCaptureDialog } from "@/components/live-capture-dialog";
 import { Verdict } from "@/components/verdict";
 import { ProjectShell } from "@/components/project-shell";
@@ -42,7 +44,7 @@ import {
   ANALYSIS_AREA_LABELS,
   journeyRequiresLogin,
 } from "@/lib/constants";
-import { projectAreas } from "@/lib/coverage";
+import { projectAreas, journeyRunOrder } from "@/lib/coverage";
 import { agentKey, runAgentBatch, useRunningAgents } from "@/lib/run-agent";
 import { useProjectTrends } from "@/lib/use-trends";
 import {
@@ -272,9 +274,19 @@ function AreaDeepDive({
               : agentCanReach(area)
                 ? `No analysis captured for ${detailBrand.name} here yet. The agent runs automatically, this fills in on its own.`
                 : agentCanReachLoggedIn(area)
-                  ? `No analysis captured for ${detailBrand.name} here yet. This journey needs the brand's test account, the agent logs in (or registers first) and walks it automatically.`
+                  ? `No analysis captured for ${detailBrand.name} here yet. Connect a test account below, log in, then re-run this journey.`
                   : `No analysis captured for ${detailBrand.name} here yet. This journey sits behind a login, launch the site in a recorded session to score it.`}
           </p>
+          {agentCanReachLoggedIn(area) ? (
+            <div className="w-full max-w-2xl">
+              <BrandTestAccountPanel
+                compact
+                project={project}
+                brand={detailBrand}
+                rerunArea={area}
+              />
+            </div>
+          ) : null}
           <div className="flex items-center gap-2">
             {detail?.blocked && agentCanReachLoggedIn(area) ? (
               <RunAgentButton
@@ -303,6 +315,7 @@ function JourneysContent({ project }: { project: Project }) {
   const ownBrand = project.brands.find((b) => b.role === "own_brand")!;
   const competitors = project.brands.filter((b) => b.role === "competitor");
   const areas = projectAreas(project);
+  const [view, setView] = useState<"scores" | "map">("scores");
   const [expanded, setExpanded] = useState<string | null>(areas[0] ?? null);
   const [captureBrand, setCaptureBrand] = useState<Brand | null>(null);
 
@@ -311,10 +324,8 @@ function JourneysContent({ project }: { project: Project }) {
   );
   const running = useRunningAgents();
   const runningCount = running.length;
-  // Signup first (it registers or logs into the test account and unlocks
-  // the session), login-gated journeys last so they reuse it.
-  const jobOrder = (a: string) =>
-    a === "signup" ? 0 : journeyRequiresLogin(a) ? 2 : 1;
+  // Signup → first deposit → play lobbies → other logged-in journeys.
+  const jobOrder = (a: string) => journeyRunOrder(a);
   const agentJobs = project.brands.flatMap((brand) =>
     areas
       .filter((a) => agentCanReachLoggedIn(a) && areaScore(brand, a) === null)
@@ -403,6 +414,18 @@ function JourneysContent({ project }: { project: Project }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <AnimatedTabs
+        tabs={[
+          { value: "scores", label: "Scores" },
+          { value: "map", label: "Journey map" },
+        ]}
+        value={view}
+        onValueChange={(v) => setView(v as "scores" | "map")}
+      />
+
+      {view === "map" ? (
+        <JourneyMapView project={project} />
+      ) : (
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -583,6 +606,7 @@ function JourneysContent({ project }: { project: Project }) {
           ) : null}
         </CardContent>
       </Card>
+      )}
 
       <LiveCaptureDialog
         brand={captureBrand}

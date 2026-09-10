@@ -1,4 +1,5 @@
 import { journeyRequiresLogin } from "./constants";
+import { isCompetitiveGap, normalizeFeature } from "./feature-catalog";
 import type {
   Brand,
   DetectedFeature,
@@ -36,6 +37,8 @@ interface FeatureWithEvidence extends DetectedFeature {
 function extractedFeatures(analysis: JourneyAnalysis): FeatureWithEvidence[] {
   if (!analysis.features?.length) return [];
   return analysis.features.flatMap((f) => {
+    const normalized = normalizeFeature(f.name, f.category);
+    if (!normalized) return [];
     const area = f.area ?? analysis.area;
     const screenshot =
       f.shot != null ? (analysis.screenshots?.[f.shot] ?? null) : null;
@@ -48,6 +51,8 @@ function extractedFeatures(analysis: JourneyAnalysis): FeatureWithEvidence[] {
     return [
       {
         ...f,
+        name: normalized.name,
+        category: normalized.category,
         source: "extracted" as const,
         area,
         cellEvidence: {
@@ -77,12 +82,10 @@ function derivePriority(
   own: FeatureStatus | null,
   compBest: FeatureStatus | null
 ): Priority {
-  if (!own && compBest && STATUS_RANK[compBest] >= 5) return "high";
-  if (own && compBest && STATUS_RANK[compBest] - STATUS_RANK[own] >= 2)
-    return "high";
-  if (own === "no" || own === "weak" || own === "hidden") return "high";
+  if (isCompetitiveGap(own, compBest)) return "high";
   if (own === "partial") return "medium";
-  return "low";
+  if (own && compBest && STATUS_RANK[own] >= STATUS_RANK[compBest]) return "low";
+  return "medium";
 }
 
 const PRIORITY_ORDER: Priority[] = ["critical", "high", "medium", "low"];
@@ -166,6 +169,25 @@ export function buildFeatureMatrix(project: Project): FeatureMatrixRow[] {
   });
 
   return rows;
+}
+
+/** Rows where you trail a competitor or haven't captured the feature yet. */
+export function competitiveGapRows(
+  project: Project,
+  rows = buildFeatureMatrix(project)
+): FeatureMatrixRow[] {
+  const own = project.brands.find((b) => b.role === "own_brand")!;
+  const competitors = project.brands.filter((b) => b.role !== "own_brand");
+  return rows.filter((row) => {
+    const ownStatus = row.values[own.id] ?? null;
+    const compStatuses = competitors
+      .map((c) => row.values[c.id])
+      .filter((v): v is FeatureStatus => v != null);
+    const compBest = compStatuses.length
+      ? compStatuses.reduce((a, b) => betterStatus(a, b))
+      : null;
+    return isCompetitiveGap(ownStatus, compBest);
+  });
 }
 
 /** How many journey analyses have screenshots but no extracted features yet. */
