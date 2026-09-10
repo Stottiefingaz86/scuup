@@ -27,70 +27,32 @@ export async function GET() {
   }
 }
 
-function restoreRemovedBrands(
+/** Production: no new projects, no brand add/remove. Other fields still save. */
+function freezeRoster(
   existing: unknown,
   incoming: unknown[],
 ): unknown[] {
   if (!Array.isArray(existing)) return incoming;
-  const prevById = new Map<
-    string,
-    {
-      id: string;
-      brands?: { id: string }[];
-      runs?: { id: string; brandId?: string }[];
-      emails?: { id?: string; brandId?: string }[];
-      teardowns?: { brandId?: string }[];
-    }
-  >();
+  const prevById = new Map<string, { id: string; brands?: { id: string }[] }>();
   for (const raw of existing) {
     if (!raw || typeof raw !== "object" || !("id" in raw)) continue;
-    const p = raw as {
-      id: string;
-      brands?: { id: string }[];
-      runs?: { id: string; brandId?: string }[];
-      emails?: { id?: string; brandId?: string }[];
-      teardowns?: { brandId?: string }[];
-    };
+    const p = raw as { id: string; brands?: { id: string }[] };
     if (typeof p.id === "string") prevById.set(p.id, p);
   }
-  return incoming.map((raw) => {
-    if (!raw || typeof raw !== "object" || !("id" in raw)) return raw;
-    const p = raw as {
-      id: string;
-      brands?: { id: string }[];
-      runs?: { id: string; brandId?: string }[];
-      emails?: { id?: string; brandId?: string }[];
-      teardowns?: { brandId?: string }[];
-    };
+  return incoming.flatMap((raw) => {
+    if (!raw || typeof raw !== "object" || !("id" in raw)) return [];
+    const p = raw as { id: string; brands?: { id: string }[] };
     const prev = prevById.get(p.id);
-    if (!prev?.brands?.length || !Array.isArray(p.brands)) return raw;
-    const keep = new Set(p.brands.map((b) => b.id));
-    const missing = prev.brands.filter((b) => b.id && !keep.has(b.id));
-    if (!missing.length) return raw;
-    const missingIds = new Set(missing.map((b) => b.id));
-    const runIds = new Set((p.runs ?? []).map((r) => r.id));
-    return {
-      ...p,
-      brands: [...p.brands, ...missing],
-      runs: [
-        ...(p.runs ?? []),
-        ...(prev.runs ?? []).filter(
-          (r) => r.brandId && missingIds.has(r.brandId) && !runIds.has(r.id),
-        ),
-      ],
-      emails: [
-        ...(p.emails ?? []),
-        ...(prev.emails ?? []).filter(
-          (e) => e.brandId && missingIds.has(e.brandId),
-        ),
-      ],
-      teardowns: [
-        ...(p.teardowns ?? []),
-        ...(prev.teardowns ?? []).filter(
-          (t) => t.brandId && missingIds.has(t.brandId),
-        ),
-      ],
-    };
+    if (!prev) return [];
+    const incomingById = new Map(
+      (p.brands ?? []).map((b) => [b.id, b] as const),
+    );
+    return [
+      {
+        ...p,
+        brands: (prev.brands ?? []).map((b) => incomingById.get(b.id) ?? b),
+      },
+    ];
   });
 }
 
@@ -108,7 +70,7 @@ export async function PUT(request: NextRequest) {
         .select("projects")
         .eq("id", "default")
         .maybeSingle();
-      next = restoreRemovedBrands(data?.projects, projects);
+      next = freezeRoster(data?.projects, projects);
     }
     const { error } = await supabase()
       .from("research_workspace")

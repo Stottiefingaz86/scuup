@@ -823,6 +823,9 @@ export function addResearchCompetitor(
   live: ResearchProject,
   rawUrl: string,
 ): ResearchBrand | { error: string } {
+  if (isProductionDeployPublic()) {
+    return { error: "Adding brands is paused on production." };
+  }
   const url = normalizeBrandUrl(rawUrl);
   if (!url) return { error: "Enter a site like stake.com" };
   const host = brandHostKey(url);

@@ -104,7 +104,7 @@ export function ResearchBrandRoster({
             </span>
           );
         })}
-        {adding ? (
+        {adding && !isProductionDeployPublic() ? (
           <form
             className="flex items-center gap-1.5"
             onSubmit={(e) => {
@@ -141,7 +141,7 @@ export function ResearchBrandRoster({
               Cancel
             </button>
           </form>
-        ) : (
+        ) : isProductionDeployPublic() ? null : (
           <button
             type="button"
             aria-label="Add competitor"
