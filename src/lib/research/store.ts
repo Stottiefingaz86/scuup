@@ -128,6 +128,11 @@ function load(): ResearchProject[] {
     for (const p of projects) {
       for (const r of p.runs ?? []) {
         if (r.postDeposit) r.postDeposit = reconcilePostDeposit(r.postDeposit);
+        const brand =
+          p.brands.find((b) => b.id === r.brandId)?.name ?? "";
+        if (r.postSignup && /betonline/i.test(brand) && !r.postSignup.landedOn) {
+          r.postSignup = { ...r.postSignup, landedOn: "sportsbook" };
+        }
       }
     }
     return projects;
@@ -1012,7 +1017,10 @@ export function deductUnfairConfirmWait(
     !lyingFriction &&
     (betonline
       ? Boolean(run.postDeposit?.balanceAlert.seen) &&
-        (conf.screenshotUrls ?? []).includes(BETONLINE_SUCCESS_SHOT)
+        (conf.screenshotUrls ?? []).includes(BETONLINE_SUCCESS_SHOT) &&
+        run.postDeposit?.guidedTo === "sportsbook" &&
+        run.postDeposit?.popup.ctaTarget === "sportsbook" &&
+        run.postSignup?.landedOn === "sportsbook"
       : !/11\.61|start playing/i.test(conf.evidence ?? ""));
   if (alreadyFair) return false;
 
@@ -1072,11 +1080,11 @@ export function deductUnfairConfirmWait(
           seen: true,
           text: "Your deposit was successful! $11.61 USD",
           cta: "Start playing",
-          ctaTarget: "casino" as const,
+          ctaTarget: "sportsbook" as const,
         },
-        guidedTo: run.postDeposit?.guidedTo ?? "casino",
+        guidedTo: "sportsbook",
         guidedUrl: run.postDeposit?.guidedUrl ?? null,
-        guidance: "Start playing",
+        guidance: "Start playing — redirects to sports",
         ctas: run.postDeposit?.ctas?.length
           ? run.postDeposit.ctas
           : ["Start playing"],
@@ -1101,6 +1109,11 @@ export function deductUnfairConfirmWait(
         }
       : run.postDeposit;
 
+  const postSignup =
+    betonline && run.postSignup
+      ? { ...run.postSignup, landedOn: run.postSignup.landedOn ?? "sportsbook" }
+      : run.postSignup;
+
   patchResearchRun(projectId, runId, {
     stages,
     metrics: {
@@ -1111,7 +1124,8 @@ export function deductUnfairConfirmWait(
         ? playSec
         : run.metrics.depositToFirstBetSec,
     },
-    ...(postDeposit ? { postDeposit } : {}),
+    ...(postDeposit ? { postDeposit: reconcilePostDeposit(postDeposit) } : {}),
+    ...(postSignup ? { postSignup } : {}),
     clockFair: true,
   });
   return true;

@@ -125,10 +125,36 @@ export function reconcilePostDeposit(
     if (sport >= 2 && sport > casino) landedOn = "sportsbook";
     else if (casino >= 2 && casino > sport) landedOn = "casino";
   }
-  if (!landedOn || landedOn === obs.landedOn) return obs;
+  const startPlaying = /start playing/i.test(
+    `${obs.popup.cta ?? ""} ${obs.guidance ?? ""}`,
+  );
+  const guidedTo = startPlaying ? "sportsbook" : obs.guidedTo;
+  const ctaTarget = startPlaying ? "sportsbook" : obs.popup.ctaTarget;
+  const guidance = startPlaying
+    ? "Start playing opens sports"
+    : obs.guidance;
+  const popup =
+    startPlaying && obs.popup.ctaTarget !== "sportsbook"
+      ? { ...obs.popup, ctaTarget: "sportsbook" as const }
+      : obs.popup;
+
+  if (
+    (!landedOn || landedOn === obs.landedOn) &&
+    guidedTo === obs.guidedTo &&
+    ctaTarget === obs.popup.ctaTarget &&
+    guidance === obs.guidance
+  ) {
+    return obs;
+  }
   const { okrFlags: _drop, ...rest } = obs;
   void _drop;
-  const next = { ...rest, landedOn };
+  const next = {
+    ...rest,
+    ...(landedOn ? { landedOn } : {}),
+    guidedTo,
+    guidance,
+    popup,
+  };
   return { ...next, okrFlags: postDepositOkrFlags(next) };
 }
 

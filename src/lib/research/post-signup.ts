@@ -434,6 +434,7 @@ export function emptyPostSignup(): PostSignupObservation {
       afterSec: null,
       dismissed: null,
     },
+    landedOn: null,
     screenshotUrls: [],
   };
 }

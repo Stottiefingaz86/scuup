@@ -6,6 +6,7 @@ import {
   balanceIsZero,
   chainStatusLabel,
   destinationLabel,
+  reconcilePostDeposit,
 } from "@/lib/research/post-deposit";
 import type {
   DepositWatchEntry,
@@ -26,7 +27,7 @@ function hostOf(url: string | null | undefined): string {
   }
 }
 
-function DestPill({ d }: { d: PlayerDestination | null | undefined }) {
+export function DestPill({ d }: { d: PlayerDestination | null | undefined }) {
   const tone =
     d === "casino"
       ? "bg-emerald-500/15 text-emerald-300"
@@ -191,17 +192,20 @@ export function DepositWatchTimeline({
 /** Per-brand: what happened the moment funds landed. Same card language as
  * After signup / overview — one border, definition rows, no nested tiles. */
 export function PostDepositCard({
-  obs,
+  obs: raw,
   brandName,
 }: {
   obs: PostDepositObservation;
   brandName: string;
 }) {
+  const obs = reconcilePostDeposit(raw);
   const routed = obs.guidedTo ?? obs.popup.ctaTarget ?? obs.landedOn;
   const credited =
-    obs.creditedAfterSec != null
-      ? `${fmtAfter(obs.creditedAfterSec)} via ${obs.confirmedVia ?? "site"}`
-      : "Not confirmed";
+    obs.confirmedVia === "site" && (obs.creditedAfterSec ?? 0) === 0
+      ? "On-site"
+      : obs.creditedAfterSec != null
+        ? `${fmtAfter(obs.creditedAfterSec)} via ${obs.confirmedVia ?? "site"}`
+        : "Not confirmed";
   const shot = obs.screenshotUrls[0];
 
   return (
@@ -210,12 +214,11 @@ export function PostDepositCard({
         <div>
           <h3 className="text-sm font-medium">After deposit</h3>
           <p className="mt-0.5 text-[11px] text-[var(--rs-muted)]">
-            What {brandName} does once the money is in — redirect, confirm,
-            email.
+            Where {brandName} sends you after the money lands.
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--rs-muted)]">
-          Steers to <DestPill d={routed} />
+          Opens <DestPill d={routed} />
         </span>
       </div>
 
@@ -316,7 +319,11 @@ export function PostDepositCard({
         ) : null}
       </div>
 
-      {obs.okrFlags.length ? (
+      {routed === "sportsbook" ? (
+        <p className="mt-3 text-xs text-[var(--rs-fg)]">
+          Start playing opens sports, not casino.
+        </p>
+      ) : obs.okrFlags.length ? (
         <div className="mt-3 rounded-lg border border-red-500/25 bg-red-500/5 p-3">
           <p className="text-[10px] font-medium uppercase tracking-wide text-red-300">
             Raise — OKR conflicts
@@ -332,7 +339,7 @@ export function PostDepositCard({
         </div>
       ) : (
         <p className="mt-3 text-xs text-[var(--rs-accent)]">
-          Clean — deposit lands, player is told, steered toward play.
+          Deposit lands and they tell you.
         </p>
       )}
 
@@ -413,7 +420,8 @@ export function PostDepositComparison({
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ brand, obs }) => {
+            {rows.map(({ brand, obs: raw }) => {
+              const obs = reconcilePostDeposit(raw);
               const routed =
                 obs.guidedTo ?? obs.popup.ctaTarget ?? obs.landedOn;
               const mail = obs.emails[0];

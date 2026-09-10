@@ -169,14 +169,6 @@ function sitePathSec(run: JourneyRun | null): number | null {
   return any ? total : null;
 }
 
-function confirmWaitSec(run: JourneyRun | null): number | null {
-  if (!run || run.clockFair) return null;
-  const s = stageOf(run, "deposit_confirmation");
-  if (!s?.endedAt) return null;
-  const w = s.waitSec ?? s.timeSec;
-  return w != null && w > 0 ? w : null;
-}
-
 function isOwn(brand: ResearchBrand): boolean {
   return brand.role === "own_brand";
 }
@@ -338,9 +330,27 @@ function coverageOf(
   };
 }
 
+function isRainbetBrand(brand: ResearchBrand): boolean {
+  return /rainbet/i.test(brand.name) || /rainbet\.com/i.test(brand.url);
+}
+
+/** Report is BetOnline vs Winna — Rainbet stays on Journeys, not here. */
+export function projectForReport(project: ResearchProject): ResearchProject {
+  const brands = project.brands.filter((b) => !isRainbetBrand(b));
+  const ids = new Set(brands.map((b) => b.id));
+  return {
+    ...project,
+    brands,
+    runs: project.runs.filter((r) => ids.has(r.brandId)),
+    emails: project.emails.filter((e) => ids.has(e.brandId)),
+    teardowns: project.teardowns.filter((t) => ids.has(t.brandId)),
+  };
+}
+
 export function buildResearchReportBrief(
   project: ResearchProject,
 ): ReportBrief {
+  project = projectForReport(project);
   const own = project.brands.find((b) => b.role === "own_brand") ?? null;
   const loves: ReportBite[] = [];
   const hates: ReportBite[] = [];
@@ -435,12 +445,16 @@ export function buildResearchReportBrief(
       run?.postDeposit?.balanceAlert.seen ||
       /deposit was successful|start playing/i.test(confirm?.evidence ?? "");
     if (onSiteSuccess && isOwn(brand)) {
+      const peerName =
+        displayName(
+          project.brands.find((b) => !isOwn(b))?.name ?? "the peer",
+        );
       loves.push(
         bite(
           brand,
           "love",
           "Full-page deposit success",
-          "“Your deposit was successful · $11.61 USD · Start playing” — on-site, not just an email. Winna only moved the balance.",
+          "“Your deposit was successful · $11.61 USD · Start playing” — on-site, not just an email. Winna only moved the balance, and that was hidden in a dropdown.",
           "Deposit confirmation",
           firstShot(
             [
@@ -448,6 +462,22 @@ export function buildResearchReportBrief(
               ...(run?.postDeposit?.screenshotUrls ?? []),
             ],
             "Deposit success",
+          ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Start playing goes to sports",
+          `The success CTA redirects to sportsbook. ${peerName} is casino first.`,
+          "After deposit",
+          firstShot(
+            [
+              ...(confirm?.screenshotUrls ?? []),
+              ...(run?.postDeposit?.screenshotUrls ?? []),
+            ],
+            "Start playing",
           ),
         ),
       );
@@ -582,7 +612,6 @@ export function buildResearchReportBrief(
   const ownTd = own ? tdOf(own.id) : null;
   const ownRun = own ? runOf(own.id) : null;
   const ownFair = sitePathSec(ownRun);
-  const ownWait = confirmWaitSec(ownRun);
   const peerFair = project.brands
     .filter((b) => !isOwn(b))
     .map((b) => ({
@@ -592,18 +621,19 @@ export function buildResearchReportBrief(
     .filter((x) => x.sec != null)
     .sort((a, b) => a.sec! - b.sec!)[0];
 
-  if (own && ownWait != null && ownWait >= 8 * 60) {
-    caveats.unshift({
-      brandName: displayName(own.name),
-      title: "The long clock is bitcoin, not the site",
-      body: `We sat ${fmtSec(ownWait)} waiting for funds to credit. That is not ${displayName(own.name)}’s cashier. Once money showed, first bet was ${fmtSec(ownFair)}${peerFair ? ` — same band as ${peerFair.name} at ${fmtSec(peerFair.sec)}` : ""}.`,
-    });
-  }
-
   const ownName = own ? displayName(own.name) : "You";
-  const steeredSports = /sportsbook|sports/i.test(
-    ownRun?.topFriction?.[0]?.friction ?? "",
+  const startPlayingCta = /start playing/i.test(
+    [
+      ownRun?.postDeposit?.popup.cta,
+      ownRun?.postDeposit?.guidance,
+      stageOf(ownRun, "deposit_confirmation")?.evidence,
+    ]
+      .filter(Boolean)
+      .join(" "),
   );
+  const steeredSports =
+    startPlayingCta ||
+    /sportsbook|sports/i.test(ownRun?.topFriction?.[0]?.friction ?? "");
   const casinoBuried = /buried|first tap did not open/i.test(
     stageOf(ownRun, "casino_discovery")?.friction ?? "",
   );
@@ -620,87 +650,82 @@ export function buildResearchReportBrief(
       ),
   );
 
-  const headline = (() => {
+  const peerName = peerFair?.name ?? "the other brand";
+  const clockLine =
+    sameBand && peerFair
+      ? `After funds, ${ownName} is ${fmtSec(ownFair)} to first bet. ${peerName} is ${fmtSec(peerFair.sec)}.`
+      : ownFair != null
+        ? `After funds, ${ownName} is ${fmtSec(ownFair)} to first bet.`
+        : "";
+
+  const { headline, lede } = (() => {
+    if (sameBand && ownConfirmWin && steeredSports && peerFair) {
+      return {
+        headline: "Start playing opens sports",
+        lede: [
+          clockLine,
+          `${ownName} shows a full-page deposit success. ${peerName} only updates a balance hidden in a dropdown. The button then opens the sportsbook. ${peerName} stays in casino.`,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      };
+    }
     if (sameBand && ownConfirmWin && peerFair) {
-      return `The walk matched ${peerFair.name}. ${ownName} just confirmed the deposit better.`;
+      return {
+        headline: `${ownName} shows the deposit`,
+        lede: `${clockLine} Full-page success, amount, Start playing. ${peerName} only updates a balance hidden in a dropdown.`,
+      };
     }
-    if (sameBand && steeredSports) {
-      return `Once money landed, ${ownName} was as fast as ${peerFair!.name}. Then it sent the player to sports.`;
+    if (sameBand && steeredSports && peerFair) {
+      return {
+        headline: `${ownName} opens sports after the deposit`,
+        lede: `${clockLine} ${peerName} stays in casino.`,
+      };
     }
-    if (sameBand && casinoBuried) {
-      return `Speed is a wash once funds land. ${ownName} just hides casino.`;
+    if (sameBand && casinoBuried && peerFair) {
+      return {
+        headline: `${ownName} hides casino`,
+        lede: `${clockLine} Casino is not on the main nav.`,
+      };
     }
-    if (sameBand) {
-      return `Once funds landed, ${ownName} and ${peerFair!.name} were both a few minutes to first bet.`;
+    if (sameBand && peerFair) {
+      return {
+        headline: `${fmtSec(ownFair)} to first bet`,
+        lede: `${peerName} is ${fmtSec(peerFair.sec)} on the same clock.`,
+      };
     }
     if (welcomeLove && casinoBuried) {
-      return `${welcomeLove.brandName} greets. ${ownName} buries casino.`;
+      return {
+        headline: `${welcomeLove.brandName} greets. ${ownName} hides casino.`,
+        lede: clockLine,
+      };
     }
     const done = coverage.filter((c) => c.status === "complete");
-    const blocked = coverage.filter((c) => c.status !== "complete");
-    if (done[0] && blocked[0]) {
-      return `${done[0].brandName} finished the walk. ${blocked[0].brandName} did not.`;
+    const blockedBrand = coverage.filter((c) => c.status !== "complete");
+    if (done[0] && blockedBrand[0]) {
+      return {
+        headline: `${done[0].brandName} finished. ${blockedBrand[0].brandName} did not.`,
+        lede: blockedBrand[0].note,
+      };
     }
-    return own ? `${ownName} first-bet teardown` : project.name;
+    return {
+      headline: own ? `${ownName} first-bet teardown` : project.name,
+      lede: clockLine || "What the walks recorded.",
+    };
   })();
 
-  const ledeBits: string[] = [];
-  if (sameBand && peerFair) {
-    ledeBits.push(
-      `Same band after funds: ${ownName} ${fmtSec(ownFair)}, ${peerFair.name} ${fmtSec(peerFair.sec)} — casino discovery through first bet.`,
-    );
-  }
-  if (ownConfirmWin) {
-    ledeBits.push(
-      `${ownName} put a full-page “deposit successful · Start playing” on screen. ${peerFair?.name ?? "The peer"} only moved the balance.`,
-    );
-  }
-  if (ownWait != null && ownWait >= 8 * 60) {
-    ledeBits.push(
-      `Ignore the ${fmtSec(ownTd?.depositToFirstBetSec)} wall clock — that was waiting on bitcoin, not the site.`,
-    );
-  }
-  if (steeredSports) {
-    ledeBits.push(
-      `After credit, ${ownName} steered a fresh deposit toward sports, not casino.`,
-    );
-  }
-  if (welcomeLove) {
-    ledeBits.push(
-      `${welcomeLove.brandName} greets in chat the moment the account exists.`,
-    );
-  }
   const blocked = coverage.filter((c) => c.status !== "complete" && !c.own);
-  if (blocked[0]) {
-    ledeBits.push(`${blocked[0].brandName} never finished signup.`);
-  }
-  const lede =
-    ledeBits
-      .slice(0, 3)
-      .map((s) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.trim()}.`))
-      .join(" ") ||
-    "What the walks actually recorded — likes, blocks, and the gap.";
 
   const ownFriction = ownRun?.topFriction?.[0];
-  const unfairClock = ownWait != null && ownWait >= 8 * 60;
   const metrics: ReportMetric[] = [
-    unfairClock
-      ? {
-          label: "Once funds landed",
-          value: fmtSec(ownFair),
-          hint: peerFair
-            ? `${peerFair.name} ${fmtSec(peerFair.sec)} on the same clock. Wall clock ${fmtSec(ownTd?.depositToFirstBetSec)} includes waiting on the chain — not the site.`
-            : `Wall clock ${fmtSec(ownTd?.depositToFirstBetSec)} includes ${fmtSec(ownWait)} waiting on bitcoin.`,
-          caution: true,
-        }
-      : {
-          label: "Once funds landed",
-          value: fmtSec(ownTd?.depositToFirstBetSec ?? ownFair),
-          hint: peerFair
-            ? `${peerFair.name} ${fmtSec(peerFair.sec)} on the same clock — casino through first bet.`
-            : "Casino discovery through first bet.",
-          caution: false,
-        },
+    {
+      label: "Once funds landed",
+      value: fmtSec(ownTd?.depositToFirstBetSec ?? ownFair),
+      hint: peerFair
+        ? `${peerFair.name} ${fmtSec(peerFair.sec)} on the same clock — casino through first bet.`
+        : "Casino discovery through first bet.",
+      caution: false,
+    },
     {
       label: "Coverage",
       value: `${coverage.filter((c) => c.status === "complete").length}/${coverage.length} finished`,

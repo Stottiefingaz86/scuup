@@ -306,6 +306,8 @@ export interface DepositWatchEntry {
 /** What the brand does the moment the account exists. */
 export interface PostSignupObservation {
   welcome: WelcomeTouch;
+  /** Screen they put the player on after submit. */
+  landedOn?: PlayerDestination | null;
   screenshotUrls: string[];
 }
 

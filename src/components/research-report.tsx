@@ -2,7 +2,10 @@
 
 import { Heart, Printer, TriangleAlert, X } from "lucide-react";
 import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
-import { buildResearchReportBrief } from "@/lib/research/report-brief";
+import {
+  buildResearchReportBrief,
+  projectForReport,
+} from "@/lib/research/report-brief";
 import type { ResearchProject } from "@/lib/research/types";
 import { cn } from "@/lib/utils";
 
@@ -83,7 +86,8 @@ function BiteCard({
   );
 }
 
-export function ResearchReportView({ project }: { project: ResearchProject }) {
+export function ResearchReportView({ project: raw }: { project: ResearchProject }) {
+  const project = projectForReport(raw);
   const brief = buildResearchReportBrief(project);
   const own = project.brands.find((b) => b.role === "own_brand");
 

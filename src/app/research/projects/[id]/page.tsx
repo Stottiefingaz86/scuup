@@ -9,7 +9,6 @@ import {
   NEW_REPORTS_LOCKED_MESSAGE,
 } from "@/lib/prod-locks";
 import {
-  archiveBrandJourneyRuns,
   brandHasCompletedSignup,
   brandHasTestAccount,
   createDraftRun,
@@ -42,9 +41,7 @@ import {
   ResearchEmailCard,
   ResearchEmailThumb,
 } from "@/components/research-email-card";
-import { ResearchOverviewDashboard } from "@/components/research-overview-dashboard";
 import {
-  DepositWatchTimeline,
   PostDepositCard,
   PostDepositComparison,
 } from "@/components/research-post-deposit";
@@ -77,7 +74,6 @@ import {
   FileText,
   Globe,
   Handshake,
-  LayoutDashboard,
   Mail,
   MessageSquareQuote,
   Route,
@@ -383,7 +379,6 @@ function ResearchProjectPageInner() {
   const project = useResearchProject(params.id);
   const tabFromUrl = searchParams.get("tab");
   const [tab, setTab] = useState<
-    | "overview"
     | "persona"
     | "journeys"
     | "benchmark"
@@ -396,10 +391,9 @@ function ResearchProjectPageInner() {
       tabFromUrl === "benchmark" ||
       tabFromUrl === "voice" ||
       tabFromUrl === "email" ||
-      tabFromUrl === "report" ||
-      tabFromUrl === "overview"
+      tabFromUrl === "report"
       ? tabFromUrl
-      : "overview",
+      : "journeys",
   );
   const [kind, setKind] = useState<JourneyKind>("new_player_first_bet");
   const [brandId, setBrandId] = useState<string>("");
@@ -414,7 +408,6 @@ function ResearchProjectPageInner() {
   const [liveViewUrl, setLiveViewUrl] = useState<string | null>(null);
   const [trail, setTrail] = useState<string[]>([]);
   const [runError, setRunError] = useState<string | null>(null);
-  const [inboxOk, setInboxOk] = useState<boolean | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
   /** A brand failed mid-batch — we stop here instead of rolling on to the
@@ -444,16 +437,16 @@ function ResearchProjectPageInner() {
       t === "benchmark" ||
       t === "voice" ||
       t === "email" ||
-      t === "report" ||
-      t === "overview"
+      t === "report"
     ) {
       setTab(t);
+    } else {
+      setTab("journeys");
     }
   }, [searchParams]);
 
   function selectTab(
     id:
-      | "overview"
       | "persona"
       | "journeys"
       | "benchmark"
@@ -463,7 +456,7 @@ function ResearchProjectPageInner() {
   ) {
     setTab(id);
     const url =
-      id === "overview"
+      id === "journeys"
         ? `/research/projects/${params.id}`
         : `/research/projects/${params.id}?tab=${id}`;
     router.replace(url, { scroll: false });
@@ -554,21 +547,6 @@ function ResearchProjectPageInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project?.id, activeBrandId, project?.runs]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/research/inbox")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setInboxOk(Boolean(d.configured));
-      })
-      .catch(() => {
-        if (!cancelled) setInboxOk(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   // Drop foreign / pre-project inbox noise (shared Gmail has older brand mail).
   useEffect(() => {
@@ -1008,47 +986,6 @@ function ResearchProjectPageInner() {
     });
   }
 
-  /** Archive the old walk and redo deposit → first bet on the same account. */
-  async function redoClockBrand() {
-    const brandId = runBrandId || activeBrandId;
-    if (!project || !brandId) return;
-    const brand = project.brands.find((b) => b.id === brandId);
-    if (!brandHasTestAccount(project, brandId)) {
-      setRunError("Need a registered account before a clock redo.");
-      return;
-    }
-    if (
-      !confirm(
-        `Archive ${brand?.name ?? "this brand"}'s walk and redo deposit → first bet on the same account? The old run is kept. Pay with something that credits quickly — bitcoin wait is what made the clock unfair.`,
-      )
-    ) {
-      return;
-    }
-    if (jobId) {
-      await pauseAgent();
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-    stopRequestedRef.current = false;
-    setRunning(false);
-    setJobId(null);
-    setJobStatus(null);
-    setLiveViewUrl(null);
-    setTrail([]);
-    setRunError(null);
-    setBrandId(brandId);
-    setRunBrandId(brandId);
-    const seed = archiveBrandJourneyRuns(project.id, brandId);
-    lockBrandCredentials(getResearchProject(project.id) ?? project, brandId);
-    await startTeardownRun("first_bet", {
-      brandId,
-      redoClock: true,
-      clockSeedStages: seed?.seedStages,
-      clockPostSignup: seed?.postSignup,
-      clockFeatures: seed?.features,
-      clockLobby: seed?.lobby,
-    });
-  }
-
   /** Stop the live agent (if any), wipe this brand's run, and restart registration. */
   async function runAgainBrand() {
     if (isProductionDeployPublic()) {
@@ -1100,12 +1037,6 @@ function ResearchProjectPageInner() {
       /** Money already credited — skip the watch and play on this balance. */
       fundsLanded?: boolean;
       landedShotUrl?: string;
-      /** Same account: archive the old walk and time deposit → first bet again. */
-      redoClock?: boolean;
-      clockSeedStages?: JourneyStageResult[];
-      clockPostSignup?: JourneyRun["postSignup"];
-      clockFeatures?: JourneyRun["features"];
-      clockLobby?: JourneyRun["lobby"];
       /** Override which brand to run (setState may not have flushed yet). */
       brandId?: string;
     },
@@ -1144,17 +1075,14 @@ function ResearchProjectPageInner() {
         : null;
     const skipToPlay = opts?.skipToPlay === true && reusable && run != null;
     const fundsLanded = opts?.fundsLanded === true;
-    const redoClock = opts?.redoClock === true;
     if (
       !run ||
-      redoClock ||
       (run.status === "complete" && !fundsLanded && opts?.redoPlay !== true) ||
       ((run.status === "paused" || run.status === "failed") &&
         !resumeWatch &&
         !skipToPlay &&
         !fundsLanded &&
-        opts?.redoPlay !== true &&
-        !redoClock)
+        opts?.redoPlay !== true)
     ) {
       const created = createDraftRun(liveProject.id, brand.id, kind);
       if (!created) {
@@ -1167,73 +1095,57 @@ function ResearchProjectPageInner() {
     const redoPlay = opts?.redoPlay === true || fundsLanded;
     // Redo play: clear the three play stages locally too so the cards go
     // back to "Capturing…" instead of showing the old frames.
-    const seedStages =
-      redoClock && opts.clockSeedStages?.length
-        ? opts.clockSeedStages
-        : redoPlay
-          ? run.stages.map((st) => {
-              if (fundsLanded && st.stageId === "deposit_confirmation") {
-                const shot = opts.landedShotUrl;
-                return {
-                  ...st,
-                  startedAt: st.startedAt ?? new Date().toISOString(),
-                  endedAt: st.endedAt ?? new Date().toISOString(),
-                  timeSec: 0,
-                  waitSec: 0,
-                  friction: undefined,
-                  frictionType: null,
-                  severity: null,
-                  evidence:
-                    "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery.",
-                  screenshotUrls: shot
-                    ? [
-                        shot,
-                        ...(st.screenshotUrls ?? []).filter((u) => u !== shot),
-                      ]
-                    : st.screenshotUrls,
-                };
-              }
-              if (
-                st.stageId === "casino_discovery" ||
-                st.stageId === "game_launch" ||
-                st.stageId === "first_bet" ||
-                st.stageId === "days_1_14"
-              ) {
-                return {
-                  ...st,
-                  steps: null,
-                  timeSec: null,
-                  waitSec: null,
-                  severity: null,
-                  friction: undefined,
-                  userImpact: undefined,
-                  frictionType: null,
-                  evidence: undefined,
-                  screenshotUrls: [],
-                  startedAt: null,
-                  endedAt: null,
-                };
-              }
-              return st;
-            })
-          : run.stages;
+    const seedStages = redoPlay
+      ? run.stages.map((st) => {
+          if (fundsLanded && st.stageId === "deposit_confirmation") {
+            const shot = opts.landedShotUrl;
+            return {
+              ...st,
+              startedAt: st.startedAt ?? new Date().toISOString(),
+              endedAt: st.endedAt ?? new Date().toISOString(),
+              timeSec: 0,
+              waitSec: 0,
+              friction: undefined,
+              frictionType: null,
+              severity: null,
+              evidence:
+                "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery.",
+              screenshotUrls: shot
+                ? [
+                    shot,
+                    ...(st.screenshotUrls ?? []).filter((u) => u !== shot),
+                  ]
+                : st.screenshotUrls,
+            };
+          }
+          if (
+            st.stageId === "casino_discovery" ||
+            st.stageId === "game_launch" ||
+            st.stageId === "first_bet" ||
+            st.stageId === "days_1_14"
+          ) {
+            return {
+              ...st,
+              steps: null,
+              timeSec: null,
+              waitSec: null,
+              severity: null,
+              friction: undefined,
+              userImpact: undefined,
+              frictionType: null,
+              evidence: undefined,
+              screenshotUrls: [],
+              startedAt: null,
+              endedAt: null,
+            };
+          }
+          return st;
+        })
+      : run.stages;
     patchResearchRun(project.id, run.id, {
       status: "running",
       ...(redoPlay ? { stages: seedStages, lobby: null } : {}),
       ...(fundsLanded ? { clockFair: true } : {}),
-      ...(redoClock
-        ? {
-            stages: seedStages,
-            postSignup: opts.clockPostSignup ?? null,
-            features: opts.clockFeatures ?? null,
-            lobby: opts.clockLobby ?? null,
-            postDeposit: null,
-            depositWatch: [],
-            depositAddress: null,
-            paidAt: null,
-            depositSkipped: false,
-          }
-        : {}),
     });
 
     try {
@@ -1263,18 +1175,14 @@ function ResearchProjectPageInner() {
             ? "play"
             : resumeWatch
               ? "deposit_confirmation"
-              : redoClock || resumeExisting
+              : resumeExisting
                 ? "deposit"
                 : "registration",
           resumeWatch,
           forceAhead: resumeWatch ? opts?.forceAhead === true : false,
           replayPlay: redoPlay,
           seedStages:
-            resumeWatch ||
-            skipToPlay ||
-            redoPlay ||
-            redoClock ||
-            resumeExisting
+            resumeWatch || skipToPlay || redoPlay || resumeExisting
               ? seedStages
               : null,
           seedDepositWatch:
@@ -2050,7 +1958,6 @@ function ResearchProjectPageInner() {
       <nav className="-mb-px flex gap-1 border-b border-[var(--rs-border)]">
         {(
           [
-            ["overview", "Overview", LayoutDashboard],
             ["journeys", "Journeys", Route],
             ["benchmark", "Benchmark", Scale],
             ["voice", "Voice of Player", MessageSquareQuote],
@@ -2077,27 +1984,6 @@ function ResearchProjectPageInner() {
           );
         })}
       </nav>
-
-      {tab === "overview" ? (
-        <ResearchOverviewDashboard
-          project={project}
-          inboxOk={inboxOk}
-          batchRunning={batchRunning}
-          depositBatchRunning={depositBatchRunning}
-          batchProgress={batchProgress}
-          depositBatchProgress={depositBatchProgress}
-          runError={runError}
-          trail={trail}
-          liveViewUrl={liveViewUrl}
-          onStartFresh={() => void startFreshCapture()}
-          onRetryRemaining={() => void signUpAllBrands()}
-          onDeposit={() => void depositAllBrands()}
-          onOpenBrand={(id) => {
-            setBrandId(id);
-            selectTab("journeys");
-          }}
-        />
-      ) : null}
 
       {tab === "persona" ? (
         <PersonaForm
@@ -2132,7 +2018,7 @@ function ResearchProjectPageInner() {
             resetAllBrandsFresh(project.id);
             setRunError(null);
             setBatchProgress(
-              "All brands reset — press Start fresh capture on Overview",
+              "All brands reset — start a brand from Journeys",
             );
           }}
         />
@@ -2193,39 +2079,6 @@ function ResearchProjectPageInner() {
             </div>
           ) : runError && (!runBrandId || runBrandId === activeBrandId) ? (
             <p className="text-sm text-red-400">{runError}</p>
-          ) : null}
-
-          {project &&
-          brandHasTestAccount(project, activeBrandId) &&
-          !agentBusy &&
-          project.runs.some(
-            (r) =>
-              r.brandId === activeBrandId &&
-              r.kind === kind &&
-              r.stages.some(
-                (s) => s.stageId === "deposit_confirmation" && s.endedAt,
-              ),
-          ) ? (
-            <div className="rs-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--rs-muted)]">
-                  Fair run clock
-                </p>
-                <p className="mt-0.5 text-sm text-[var(--rs-fg)]">
-                  Archive this walk and redo deposit → first bet on the same
-                  account. Pay with something that credits quickly — bitcoin
-                  wait is what made the stopwatch unfair.
-                </p>
-              </div>
-              <button
-                type="button"
-                disabled={agentBusy}
-                onClick={() => void redoClockBrand()}
-                className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)] disabled:opacity-50"
-              >
-                Redo clock
-              </button>
-            </div>
           ) : null}
 
           {latestRun ? (
@@ -2391,22 +2244,6 @@ function ResearchProjectPageInner() {
                       latestRun.id,
                     )?.subject ?? null
                   }
-                />
-              ) : null}
-
-              {latestRun.depositWatch?.length ? (
-                <DepositWatchTimeline
-                  entries={latestRun.depositWatch}
-                  live={latestRun.status === "running"}
-                  confirmed={Boolean(
-                    latestRun.postDeposit?.creditedAfterSec != null ||
-                    latestRun.stages.some(
-                      (s) =>
-                        s.stageId === "deposit_confirmation" &&
-                        s.endedAt &&
-                        !/not confirmed/i.test(s.evidence ?? ""),
-                    ),
-                  )}
                 />
               ) : null}
 
