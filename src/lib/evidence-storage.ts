@@ -6,7 +6,10 @@ import { supabase } from "./supabase-server";
 /** Where screenshot bytes live. Local dev uses the repo; Vercel uses
  * Supabase Storage (serverless FS is read-only and ephemeral). */
 function useRemoteStorage(): boolean {
-  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SECRET_KEY);
+  return Boolean(
+    (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+      (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY),
+  );
 }
 
 function localEvidenceDir(): string {

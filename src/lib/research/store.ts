@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useSyncExternalStore,
+} from "react";
 import { emptyStagesFor } from "./journeys";
 import { defaultResearchPersona } from "./persona-address";
 import { teardownFromRun } from "./teardown-summary";
@@ -131,6 +136,7 @@ function queuePush(projects: ResearchProject[]) {
   pushTimer = setTimeout(() => {
     void fetch("/api/research/workspace", {
       method: "PUT",
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projects }),
     }).catch(() => {});
@@ -145,33 +151,45 @@ function save(projects: ResearchProject[]) {
 
 let hydrated = false;
 
+/** Apply the server workspace. Never let an empty local seed hide real runs. */
+export function adoptRemoteProjects(remote: ResearchProject[]): void {
+  if (typeof window === "undefined") return;
+  const local = getSnapshot();
+  if (runCount(remote) > 0 && runCount(remote) >= runCount(local)) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+    } catch {
+      cache = remote;
+      emit();
+      readyToPush = true;
+      hydrated = true;
+      return;
+    }
+    emit();
+  }
+  readyToPush = true;
+  hydrated = true;
+}
+
 async function hydrateFromSupabase(): Promise<void> {
   if (hydrated || typeof window === "undefined") return;
   hydrated = true;
   try {
-    const res = await fetch("/api/research/workspace");
-    const data = (await res.json()) as { projects?: ResearchProject[] };
-    const remote = Array.isArray(data.projects) ? data.projects : [];
-    const local = getSnapshot();
-    if (runCount(remote) > 0 && runCount(remote) >= runCount(local)) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
-      emit();
+    const res = await fetch("/api/research/workspace", {
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
       readyToPush = true;
       return;
     }
-    readyToPush = true;
-    if (runCount(local) > 0) {
-      queuePush(local);
-      return;
-    }
-    if (local.length === 0 && remote.length === 0) {
-      save([defaultResearchProject()]);
+    const data = (await res.json()) as { projects?: ResearchProject[] };
+    const remote = Array.isArray(data.projects) ? data.projects : [];
+    adoptRemoteProjects(remote);
+    if (runCount(remote) === 0 && runCount(getSnapshot()) > 0) {
+      queuePush(getSnapshot());
     }
   } catch {
     readyToPush = true;
-    if (getSnapshot().length === 0) {
-      save([defaultResearchProject()]);
-    }
   }
 }
 
@@ -196,12 +214,19 @@ function subscribe(listener: () => void) {
 
 const EMPTY_PROJECTS: ResearchProject[] = [];
 
+export const ResearchServerProjects = createContext<ResearchProject[]>([]);
+
 export function useResearchProjects(): ResearchProject[] {
-  const projects = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_PROJECTS);
+  const server = useContext(ResearchServerProjects);
+  const projects = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    () => server,
+  );
   useEffect(() => {
     void hydrateFromSupabase();
   }, []);
-  return projects;
+  return runCount(projects) > 0 ? projects : server.length > 0 ? server : projects;
 }
 
 export function useResearchProject(id: string): ResearchProject | null {

@@ -7,8 +7,11 @@ let client: SupabaseClient | null = null;
 
 export function supabase(): SupabaseClient {
   if (client) return client;
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SECRET_KEY;
+  const url =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     throw new Error(
       "Supabase is not configured — set SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local (dashboard > Settings > API keys > secret key)."
