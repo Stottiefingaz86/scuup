@@ -169,18 +169,21 @@ export function teardownForBrand(
     return stored ? { teardown: stored, sources: { registration: null, deposit: null, activation: null } } : null;
   }
 
-  const regRun = mine.find((r) => stageDone(r, "registration")) ?? null;
+  const live = mine.filter((r) => !r.archived);
+  const pick = (pred: (r: JourneyRun) => boolean) =>
+    live.find(pred) ?? mine.find(pred) ?? null;
+
+  const regRun = pick((r) => stageDone(r, "registration"));
   const fieldRun =
-    regRun ?? mine.find((r) => stageObserved(r, "registration")) ?? null;
-  const depRun = mine.find((r) => stageDone(r, "deposit")) ?? null;
-  const actRun =
-    mine.find(
-      (r) =>
-        r.metrics.depositToFirstBetSec != null ||
-        stageDone(r, "first_bet") ||
-        stageDone(r, "casino_discovery"),
-    ) ?? null;
-  const latest = mine[0]!;
+    regRun ?? pick((r) => stageObserved(r, "registration"));
+  const depRun = pick((r) => stageDone(r, "deposit"));
+  const actRun = pick(
+    (r) =>
+      r.metrics.depositToFirstBetSec != null ||
+      stageDone(r, "first_bet") ||
+      stageDone(r, "casino_discovery"),
+  );
+  const latest = live[0] ?? mine[0]!;
 
   const recovered = recoverRegistrationMetrics(
     stageOf(regRun ?? fieldRun ?? latest, "registration"),
@@ -199,9 +202,20 @@ export function teardownForBrand(
     fieldRun ? stageFields(fieldRun.stages, "registration") || null : null,
     stored?.totalFields,
   );
+  const playSec = actRun
+    ? stageTime(
+        actRun.stages,
+        "casino_discovery",
+        "game_launch",
+        "first_bet",
+      ) || null
+    : null;
   const depositTimeSec = pickNumber(
     depRun
-      ? stageTime(depRun.stages, "deposit", "deposit_confirmation") || null
+      ? (depRun.clockFair
+          ? stageTime(depRun.stages, "deposit")
+          : stageTime(depRun.stages, "deposit", "deposit_confirmation")) ||
+        null
       : null,
     stored?.depositTimeSec,
   );
@@ -210,7 +224,9 @@ export function teardownForBrand(
     stored?.depositSteps,
   );
   const depositToFirstBetSec = pickNumber(
+    actRun?.clockFair ? playSec : null,
     actRun?.metrics.depositToFirstBetSec,
+    playSec,
     stored?.depositToFirstBetSec,
   );
   const depositToFirstBetClicks = pickNumber(

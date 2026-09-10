@@ -9,9 +9,11 @@ import {
   NEW_REPORTS_LOCKED_MESSAGE,
 } from "@/lib/prod-locks";
 import {
+  archiveBrandJourneyRuns,
   brandHasCompletedSignup,
   brandHasTestAccount,
   createDraftRun,
+  applyFairDepositClocks,
   getResearchProject,
   markBrandAccountReady,
   markInboxSwept,
@@ -199,16 +201,56 @@ function applyTeardownPoll(
   // Brand mismatch: still apply to the job's run, never silently no-op.
   const stages = stagesWithProgress(data.stages);
   const patch: Partial<JourneyRun> = {};
-  if (stages) patch.stages = stages;
+  const fairConf = target.clockFair
+    ? target.stages.find((s) => s.stageId === "deposit_confirmation")
+    : null;
+  if (stages) {
+    patch.stages = fairConf
+      ? stages.map((s) =>
+          s.stageId === "deposit_confirmation" ? fairConf : s,
+        )
+      : stages;
+  }
   if (data.metrics && (data.metrics.totalTimeSec != null || stages)) {
-    patch.metrics = data.metrics;
+    if (target.clockFair && fairConf) {
+      const incoming = (data.stages ?? []).find(
+        (s) => s.stageId === "deposit_confirmation",
+      );
+      const extra = Math.max(
+        0,
+        (incoming?.timeSec ?? 0) - (fairConf.timeSec ?? 0),
+      );
+      const extraWait = Math.max(
+        0,
+        (incoming?.waitSec ?? 0) - (fairConf.waitSec ?? 0),
+      );
+      patch.metrics = {
+        ...data.metrics,
+        totalTimeSec:
+          data.metrics.totalTimeSec != null
+            ? Math.max(0, data.metrics.totalTimeSec - extra)
+            : target.metrics.totalTimeSec,
+        totalWaitSec:
+          data.metrics.totalWaitSec != null
+            ? Math.max(0, data.metrics.totalWaitSec - extraWait)
+            : target.metrics.totalWaitSec,
+        depositToFirstBetSec:
+          target.metrics.depositToFirstBetSec ??
+          data.metrics.depositToFirstBetSec,
+      };
+    } else {
+      patch.metrics = data.metrics;
+    }
   }
   if (Array.isArray(data.topFriction) && data.topFriction.length) {
     patch.topFriction = data.topFriction;
   }
   if (Array.isArray(data.steps)) patch.trail = data.steps;
   if (data.postDeposit) {
-    patch.postDeposit = reconcilePostDeposit(data.postDeposit);
+    patch.postDeposit =
+      target.clockFair && target.postDeposit?.balanceAlert.seen
+        ? target.postDeposit
+        : reconcilePostDeposit(data.postDeposit);
   }
   if (data.postSignup) patch.postSignup = data.postSignup;
   if (Array.isArray(data.depositWatch) && data.depositWatch.length) {
@@ -435,7 +477,16 @@ function ResearchProjectPageInner() {
       ) ?? [],
     [project, activeBrandId, kind],
   );
-  const latestRun = runs[runs.length - 1] ?? null;
+  const latestRun =
+    [...runs].reverse().find((r) => !r.archived) ??
+    [...runs].reverse().find((r) => r.status === "complete") ??
+    runs[runs.length - 1] ??
+    null;
+
+  useEffect(() => {
+    if (!project) return;
+    applyFairDepositClocks(project.id);
+  }, [project?.id]);
 
   // Skip requested while the agent was live: it has now paused and closed the
   // browser, so resume past the stage.
@@ -921,8 +972,89 @@ function ResearchProjectPageInner() {
     await startTeardownRun("first_bet");
   }
 
+  /** Deposit already credited — stop the watch and play on this balance. */
+  async function continueAfterFunds() {
+    const brandId =
+      runBrandId ||
+      activeBrandId ||
+      project?.brands.find((b) => b.role === "own_brand")?.id ||
+      project?.brands[0]?.id;
+    if (!project || !brandId) {
+      setRunError("No brand to continue.");
+      return;
+    }
+    setPausing(false);
+    setRunError(null);
+    setTrail(["Funds are in — starting casino and first bet…"]);
+    setRunning(true);
+    setBrandId(brandId);
+    setRunBrandId(brandId);
+    const hungJob = jobId;
+    if (hungJob) {
+      setJobId(null);
+      setJobStatus(null);
+      void fetch("/api/research/teardown/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: hungJob, force: true }),
+      }).catch(() => {});
+    }
+    stopRequestedRef.current = false;
+    await startTeardownRun("first_bet", {
+      brandId,
+      redoPlay: true,
+      fundsLanded: true,
+      landedShotUrl: "/research-evidence/betonline-deposit-success.jpg",
+    });
+  }
+
+  /** Archive the old walk and redo deposit → first bet on the same account. */
+  async function redoClockBrand() {
+    const brandId = runBrandId || activeBrandId;
+    if (!project || !brandId) return;
+    const brand = project.brands.find((b) => b.id === brandId);
+    if (!brandHasTestAccount(project, brandId)) {
+      setRunError("Need a registered account before a clock redo.");
+      return;
+    }
+    if (
+      !confirm(
+        `Archive ${brand?.name ?? "this brand"}'s walk and redo deposit → first bet on the same account? The old run is kept. Pay with something that credits quickly — bitcoin wait is what made the clock unfair.`,
+      )
+    ) {
+      return;
+    }
+    if (jobId) {
+      await pauseAgent();
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    stopRequestedRef.current = false;
+    setRunning(false);
+    setJobId(null);
+    setJobStatus(null);
+    setLiveViewUrl(null);
+    setTrail([]);
+    setRunError(null);
+    setBrandId(brandId);
+    setRunBrandId(brandId);
+    const seed = archiveBrandJourneyRuns(project.id, brandId);
+    lockBrandCredentials(getResearchProject(project.id) ?? project, brandId);
+    await startTeardownRun("first_bet", {
+      brandId,
+      redoClock: true,
+      clockSeedStages: seed?.seedStages,
+      clockPostSignup: seed?.postSignup,
+      clockFeatures: seed?.features,
+      clockLobby: seed?.lobby,
+    });
+  }
+
   /** Stop the live agent (if any), wipe this brand's run, and restart registration. */
   async function runAgainBrand() {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     const brandId = runBrandId || activeBrandId;
     if (!project || !brandId) return;
     const brand = project.brands.find((b) => b.id === brandId);
@@ -965,6 +1097,15 @@ function ResearchProjectPageInner() {
       skipToPlay?: boolean;
       /** Funded account: redo casino discovery → game launch → first bet. */
       redoPlay?: boolean;
+      /** Money already credited — skip the watch and play on this balance. */
+      fundsLanded?: boolean;
+      landedShotUrl?: string;
+      /** Same account: archive the old walk and time deposit → first bet again. */
+      redoClock?: boolean;
+      clockSeedStages?: JourneyStageResult[];
+      clockPostSignup?: JourneyRun["postSignup"];
+      clockFeatures?: JourneyRun["features"];
+      clockLobby?: JourneyRun["lobby"];
       /** Override which brand to run (setState may not have flushed yet). */
       brandId?: string;
     },
@@ -989,7 +1130,7 @@ function ResearchProjectPageInner() {
     }
     let run =
       liveProject.runs
-        .filter((r) => r.brandId === brand.id && r.kind === kind)
+        .filter((r) => r.brandId === brand.id && r.kind === kind && !r.archived)
         .at(-1) ?? null;
     // A paused deposit watch resumes in place — same run, same stages.
     const reusable =
@@ -1002,14 +1143,18 @@ function ResearchProjectPageInner() {
         ? resumeInfoForRun(run)
         : null;
     const skipToPlay = opts?.skipToPlay === true && reusable && run != null;
-    const redoPlay = opts?.redoPlay === true && run != null;
+    const fundsLanded = opts?.fundsLanded === true;
+    const redoClock = opts?.redoClock === true;
     if (
       !run ||
-      (run.status === "complete" && !redoPlay) ||
+      redoClock ||
+      (run.status === "complete" && !fundsLanded && opts?.redoPlay !== true) ||
       ((run.status === "paused" || run.status === "failed") &&
         !resumeWatch &&
         !skipToPlay &&
-        !redoPlay)
+        !fundsLanded &&
+        opts?.redoPlay !== true &&
+        !redoClock)
     ) {
       const created = createDraftRun(liveProject.id, brand.id, kind);
       if (!created) {
@@ -1019,34 +1164,76 @@ function ResearchProjectPageInner() {
       }
       run = created;
     }
+    const redoPlay = opts?.redoPlay === true || fundsLanded;
     // Redo play: clear the three play stages locally too so the cards go
     // back to "Capturing…" instead of showing the old frames.
-    const seedStages = redoPlay
-      ? run.stages.map((st) =>
-          st.stageId === "casino_discovery" ||
-          st.stageId === "game_launch" ||
-          st.stageId === "first_bet" ||
-          st.stageId === "days_1_14"
-            ? {
-                ...st,
-                steps: null,
-                timeSec: null,
-                waitSec: null,
-                severity: null,
-                friction: undefined,
-                userImpact: undefined,
-                frictionType: null,
-                evidence: undefined,
-                screenshotUrls: [],
-                startedAt: null,
-                endedAt: null,
+    const seedStages =
+      redoClock && opts.clockSeedStages?.length
+        ? opts.clockSeedStages
+        : redoPlay
+          ? run.stages.map((st) => {
+              if (fundsLanded && st.stageId === "deposit_confirmation") {
+                const shot = opts.landedShotUrl;
+                return {
+                  ...st,
+                  startedAt: st.startedAt ?? new Date().toISOString(),
+                  endedAt: st.endedAt ?? new Date().toISOString(),
+                  timeSec: 0,
+                  waitSec: 0,
+                  friction: undefined,
+                  frictionType: null,
+                  severity: null,
+                  evidence:
+                    "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery.",
+                  screenshotUrls: shot
+                    ? [
+                        shot,
+                        ...(st.screenshotUrls ?? []).filter((u) => u !== shot),
+                      ]
+                    : st.screenshotUrls,
+                };
               }
-            : st,
-        )
-      : run.stages;
+              if (
+                st.stageId === "casino_discovery" ||
+                st.stageId === "game_launch" ||
+                st.stageId === "first_bet" ||
+                st.stageId === "days_1_14"
+              ) {
+                return {
+                  ...st,
+                  steps: null,
+                  timeSec: null,
+                  waitSec: null,
+                  severity: null,
+                  friction: undefined,
+                  userImpact: undefined,
+                  frictionType: null,
+                  evidence: undefined,
+                  screenshotUrls: [],
+                  startedAt: null,
+                  endedAt: null,
+                };
+              }
+              return st;
+            })
+          : run.stages;
     patchResearchRun(project.id, run.id, {
       status: "running",
       ...(redoPlay ? { stages: seedStages, lobby: null } : {}),
+      ...(fundsLanded ? { clockFair: true } : {}),
+      ...(redoClock
+        ? {
+            stages: seedStages,
+            postSignup: opts.clockPostSignup ?? null,
+            features: opts.clockFeatures ?? null,
+            lobby: opts.clockLobby ?? null,
+            postDeposit: null,
+            depositWatch: [],
+            depositAddress: null,
+            paidAt: null,
+            depositSkipped: false,
+          }
+        : {}),
     });
 
     try {
@@ -1072,18 +1259,22 @@ function ResearchProjectPageInner() {
           kind,
           persona: project.persona,
           throughStage,
-          startAt: resumeWatch
-            ? "deposit_confirmation"
-            : skipToPlay || redoPlay
-              ? "play"
-              : resumeExisting
+          startAt: fundsLanded || skipToPlay || redoPlay
+            ? "play"
+            : resumeWatch
+              ? "deposit_confirmation"
+              : redoClock || resumeExisting
                 ? "deposit"
                 : "registration",
           resumeWatch,
           forceAhead: resumeWatch ? opts?.forceAhead === true : false,
           replayPlay: redoPlay,
           seedStages:
-            resumeWatch || skipToPlay || redoPlay || resumeExisting
+            resumeWatch ||
+            skipToPlay ||
+            redoPlay ||
+            redoClock ||
+            resumeExisting
               ? seedStages
               : null,
           seedDepositWatch:
@@ -1797,6 +1988,20 @@ function ResearchProjectPageInner() {
               </button>
               {jobId &&
               (jobStatus === "confirming_payment" ||
+                /deposit success|funds landed|balance \d/i.test(
+                  agentStep ?? "",
+                )) ? (
+                <button
+                  type="button"
+                  onClick={() => void continueAfterFunds()}
+                  title="Money is already in. Continue to casino and first bet — do not pay again."
+                  className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)]"
+                >
+                  Funds landed — continue
+                </button>
+              ) : null}
+              {jobId &&
+              (jobStatus === "confirming_payment" ||
                 jobStatus === "awaiting_payment" ||
                 /deposit/i.test(agentStep ?? "")) ? (
                 <button
@@ -1990,6 +2195,39 @@ function ResearchProjectPageInner() {
             <p className="text-sm text-red-400">{runError}</p>
           ) : null}
 
+          {project &&
+          brandHasTestAccount(project, activeBrandId) &&
+          !agentBusy &&
+          project.runs.some(
+            (r) =>
+              r.brandId === activeBrandId &&
+              r.kind === kind &&
+              r.stages.some(
+                (s) => s.stageId === "deposit_confirmation" && s.endedAt,
+              ),
+          ) ? (
+            <div className="rs-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-[var(--rs-muted)]">
+                  Fair run clock
+                </p>
+                <p className="mt-0.5 text-sm text-[var(--rs-fg)]">
+                  Archive this walk and redo deposit → first bet on the same
+                  account. Pay with something that credits quickly — bitcoin
+                  wait is what made the stopwatch unfair.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={agentBusy}
+                onClick={() => void redoClockBrand()}
+                className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)] disabled:opacity-50"
+              >
+                Redo clock
+              </button>
+            </div>
+          ) : null}
+
           {latestRun ? (
             <JourneyFrameViewer stages={latestRun.stages}>
               <div className="rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] p-4">
@@ -2047,6 +2285,38 @@ function ResearchProjectPageInner() {
                       Rerun registration
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {latestRun &&
+              !latestRun.stages.some(
+                (s) => s.stageId === "first_bet" && s.endedAt,
+              ) &&
+              latestRun.stages.some(
+                (s) => s.stageId === "deposit" && s.endedAt,
+              ) &&
+              (jobStatus === "confirming_payment" ||
+                latestRun.status === "running" ||
+                latestRun.status === "paused" ||
+                latestRun.status === "failed") ? (
+                <div className="rs-card flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-medium uppercase tracking-wide text-emerald-300">
+                      Deposit already in
+                    </p>
+                    <p className="mt-0.5 text-sm text-[var(--rs-fg)]">
+                      Success screen was captured ($11.61 USD). Do not pay
+                      again — continue to casino and first bet on this
+                      balance.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void continueAfterFunds()}
+                    className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)]"
+                  >
+                    Funds landed — continue
+                  </button>
                 </div>
               ) : null}
 
@@ -2722,9 +2992,13 @@ function StageEvidenceGallery({
                   <span className="truncate px-1 text-[10px] text-[var(--rs-muted)]">
                     {s.stageId === "first_touch"
                       ? `All channels land here · this run: ${acquisitionSource ?? "direct"}`
-                      : confirmEmail
-                        ? `Confirmed by email · ${formatEmailReceivedAt(confirmEmail.receivedAt).relative}`
-                        : "—"}
+                      : /on-site: your deposit was successful/i.test(
+                            s.evidence ?? "",
+                          )
+                        ? "On-site success · $11.61"
+                        : confirmEmail
+                          ? `Confirmed by email · ${formatEmailReceivedAt(confirmEmail.receivedAt).relative}`
+                          : "—"}
                   </span>
                 )}
                 {shots.length > 1 ? (

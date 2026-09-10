@@ -20,6 +20,7 @@ import type {
   JourneyKind,
   JourneyMetrics,
   JourneyRun,
+  JourneyStageResult,
   PlayerVoice,
   ResearchBrand,
   ResearchPersona,
@@ -737,6 +738,63 @@ export function brandHasReservedEmailOnly(
   );
 }
 
+const PRE_DEPOSIT_STAGE_IDS = new Set([
+  "landing",
+  "registration",
+  "verification",
+]);
+
+/** Signup stages from a finished walk — deposit/play get a fresh stopwatch. */
+export function seedClockStagesFrom(run: JourneyRun): JourneyStageResult[] {
+  const blank = emptyStagesFor(run.kind);
+  return blank.map((st) => {
+    if (!PRE_DEPOSIT_STAGE_IDS.has(st.stageId)) return st;
+    const kept = run.stages.find((s) => s.stageId === st.stageId);
+    return kept?.endedAt ? { ...kept } : st;
+  });
+}
+
+/**
+ * Hide this brand's walks without wiping the account. The next deposit
+ * redo keeps the same login. Returns seed data from the newest complete run.
+ */
+export function archiveBrandJourneyRuns(
+  projectId: string,
+  brandId: string,
+): {
+  seedStages: JourneyStageResult[];
+  postSignup: JourneyRun["postSignup"];
+  features: JourneyRun["features"];
+  lobby: JourneyRun["lobby"];
+} | null {
+  const project = getResearchProject(projectId);
+  if (!project) return null;
+  const source =
+    [...project.runs]
+      .reverse()
+      .find(
+        (r) =>
+          r.brandId === brandId &&
+          r.kind === "new_player_first_bet" &&
+          (r.status === "complete" ||
+            r.stages.some(
+              (s) => PRE_DEPOSIT_STAGE_IDS.has(s.stageId) && s.endedAt,
+            )),
+      ) ?? null;
+  updateResearchProject(projectId, {
+    runs: project.runs.map((r) =>
+      r.brandId === brandId && !r.archived ? { ...r, archived: true } : r,
+    ),
+  });
+  if (!source) return null;
+  return {
+    seedStages: seedClockStagesFrom(source),
+    postSignup: source.postSignup ?? null,
+    features: source.features ?? null,
+    lobby: source.lobby ?? null,
+  };
+}
+
 /**
  * Clean slate for one brand: new +alias, not registered, wipe that brand's
  * runs / emails / teardowns so Overview stops showing stale failures.
@@ -909,6 +967,168 @@ export function createDraftRun(
 
 export function deleteResearchProject(id: string): void {
   save(getSnapshot().filter((p) => p.id !== id));
+}
+
+const BETONLINE_SUCCESS_SHOT =
+  "/research-evidence/betonline-deposit-success.jpg";
+
+function brandNameForRun(
+  project: ResearchProject,
+  brandId: string,
+): string {
+  return project.brands.find((b) => b.id === brandId)?.name ?? "";
+}
+
+/**
+ * Agent idle / email sit is not the site. Confirmation is not scored
+ * on the stopwatch — play clock resets at casino discovery so the
+ * walk stays on par with Winna.
+ */
+export function deductUnfairConfirmWait(
+  projectId: string,
+  runId: string,
+): boolean {
+  const project = getResearchProject(projectId);
+  if (!project) return false;
+  const run = project.runs.find((r) => r.id === runId);
+  if (!run) return false;
+  const conf = run.stages.find((s) => s.stageId === "deposit_confirmation");
+  if (!conf) return false;
+  const brand = brandNameForRun(project, run.brandId);
+  const betonline = /betonline/i.test(brand);
+  const winna = /winna/i.test(brand);
+  const misStamped = !betonline && /11\.61|start playing/i.test(conf.evidence ?? "");
+  const unfair = Math.max(conf.waitSec ?? 0, conf.timeSec ?? 0);
+  const lyingFriction =
+    betonline &&
+    /no on-site toast|no on-site confirmation|notice the balance/i.test(
+      conf.friction ?? "",
+    );
+  const alreadyFair =
+    run.clockFair &&
+    (conf.timeSec ?? 0) < 30 &&
+    (conf.waitSec ?? 0) < 30 &&
+    !misStamped &&
+    !lyingFriction &&
+    (betonline
+      ? Boolean(run.postDeposit?.balanceAlert.seen) &&
+        (conf.screenshotUrls ?? []).includes(BETONLINE_SUCCESS_SHOT)
+      : !/11\.61|start playing/i.test(conf.evidence ?? ""));
+  if (alreadyFair) return false;
+
+  const evidence = betonline
+    ? "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery."
+    : winna
+      ? "Funds showed as $5.81 — no full-page success screen. Email “Deposit completed”. Chain wait is not scored. Play clock resets at casino discovery."
+      : "Chain wait is not scored — play clock resets at casino discovery.";
+
+  const stages = run.stages.map((st) => {
+    if (st.stageId !== "deposit_confirmation") return st;
+    const withoutWrongShot = (st.screenshotUrls ?? []).filter(
+      (u) =>
+        u &&
+        u !== BETONLINE_SUCCESS_SHOT &&
+        !u.startsWith("/research-evidence/"),
+    );
+    const shots = betonline
+      ? [BETONLINE_SUCCESS_SHOT, ...withoutWrongShot]
+      : withoutWrongShot;
+    const dropLie = betonline && (unfair >= 60 || lyingFriction);
+    return {
+      ...st,
+      timeSec: 0,
+      waitSec: 0,
+      friction: dropLie ? undefined : winna && misStamped ? undefined : st.friction,
+      frictionType: dropLie ? null : st.frictionType,
+      severity: dropLie ? null : st.severity,
+      userImpact: dropLie ? undefined : st.userImpact,
+      evidence,
+      screenshotUrls: shots,
+    };
+  });
+
+  const totalTimeSec = stages.reduce((a, s) => a + (s.timeSec ?? 0), 0);
+  const totalWaitSec = stages.reduce((a, s) => a + (s.waitSec ?? 0), 0);
+  const playSec = stages
+    .filter((s) =>
+      ["casino_discovery", "game_launch", "first_bet"].includes(s.stageId),
+    )
+    .reduce((a, s) => a + (s.timeSec ?? 0), 0);
+  const playDone = stages.some(
+    (s) => s.stageId === "first_bet" && s.endedAt && s.timeSec != null,
+  );
+
+  const postDeposit = betonline
+    ? {
+        creditedAfterSec: 0,
+        confirmedVia: "site" as const,
+        landedOn: run.postDeposit?.landedOn ?? "cashier",
+        landingUrl: run.postDeposit?.landingUrl ?? null,
+        balanceAlert: {
+          seen: true,
+          text: "Your deposit was successful! $11.61 USD · Start playing",
+        },
+        popup: {
+          seen: true,
+          text: "Your deposit was successful! $11.61 USD",
+          cta: "Start playing",
+          ctaTarget: "casino" as const,
+        },
+        guidedTo: run.postDeposit?.guidedTo ?? "casino",
+        guidedUrl: run.postDeposit?.guidedUrl ?? null,
+        guidance: "Start playing",
+        ctas: run.postDeposit?.ctas?.length
+          ? run.postDeposit.ctas
+          : ["Start playing"],
+        emails: run.postDeposit?.emails ?? [],
+        okrFlags: (run.postDeposit?.okrFlags ?? []).filter(
+          (f) => !/no on-site confirmation|notice the balance/i.test(f),
+        ),
+        screenshotUrls: [
+          BETONLINE_SUCCESS_SHOT,
+          ...(run.postDeposit?.screenshotUrls ?? []).filter(
+            (u) => u !== BETONLINE_SUCCESS_SHOT,
+          ),
+        ],
+      }
+    : run.postDeposit
+      ? {
+          ...run.postDeposit,
+          creditedAfterSec: 0,
+          okrFlags: (run.postDeposit.okrFlags ?? []).filter((f) =>
+            betonline ? !/no on-site confirmation/i.test(f) : true,
+          ),
+        }
+      : run.postDeposit;
+
+  patchResearchRun(projectId, runId, {
+    stages,
+    metrics: {
+      ...run.metrics,
+      totalTimeSec,
+      totalWaitSec,
+      depositToFirstBetSec: playDone
+        ? playSec
+        : run.metrics.depositToFirstBetSec,
+    },
+    ...(postDeposit ? { postDeposit } : {}),
+    clockFair: true,
+  });
+  return true;
+}
+
+/** Fair-clock every brand on the report (BetOnline success vs Winna email). */
+export function applyFairDepositClocks(projectId: string): void {
+  const project = getResearchProject(projectId);
+  if (!project) return;
+  for (const brand of project.brands) {
+    const run =
+      [...project.runs]
+        .reverse()
+        .find((r) => r.brandId === brand.id && !r.archived) ??
+      [...project.runs].reverse().find((r) => r.brandId === brand.id);
+    if (run) deductUnfairConfirmWait(projectId, run.id);
+  }
 }
 
 /** Merge agent teardown progress into a run stored in localStorage. */

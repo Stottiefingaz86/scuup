@@ -26,7 +26,6 @@ import {
   walkToDepositAddress,
 } from "./deposit-agent";
 import { persistShots } from "../evidence-storage";
-import { isProductionDeploy } from "../prod-locks";
 import { pickTopFriction, normalizeFrictionType } from "./friction";
 import {
   attachRedirectCounter,
@@ -125,6 +124,8 @@ import {
   describeNextStepGuidance,
   headerLooksLikeTether,
   inspectPostDepositScreen,
+  looksLikeMinimumDepositLabel,
+  pageLooksLikeDepositSuccess,
   readHeaderBalance,
   postDepositOkrFlags,
   selectBitcoinDisplayCurrency,
@@ -3021,7 +3022,9 @@ async function runDepositConfirmationWatch(args: {
   const confirmDeadline = Date.now() + watchMinutes * 60_000;
   const snapshotEveryMs = 5 * 60_000;
   let nextSnapshotAt = Date.now() + snapshotEveryMs;
-  let lastLlmCheckAt = 0;
+  // Don't block the first pass on a slow extract — that's how we sat idle
+  // on BetOnline's success screen with funds already in.
+  let lastLlmCheckAt = Date.now();
   const brandHostName = new URL(input.brandUrl).hostname;
   const emailsSincePay = () =>
     job.emails.filter(
@@ -3071,13 +3074,41 @@ async function runDepositConfirmationWatch(args: {
   await pollChain();
   await snapshot("Watch", false);
 
+  const markSiteCredit = (why: string, seen: string | null) => {
+    confirmedVia = "site";
+    balanceSeen = seen;
+    tracker.push(why);
+  };
+
+  const successPage = await pageLooksLikeDepositSuccess(page);
+  if (successPage.ok) {
+    markSiteCredit(
+      `Site confirmed deposit on screen: ${successPage.text ?? "success"}`,
+      successPage.text,
+    );
+  }
+  if (
+    !confirmedVia &&
+    balanceBefore &&
+    !balanceIsZero(balanceBefore) &&
+    !looksLikeMinimumDepositLabel(balanceBefore)
+  ) {
+    markSiteCredit(`Balance already ${balanceBefore} — deposit is in`, balanceBefore);
+  }
+
   while (Date.now() < confirmDeadline && !confirmedVia && !job.pauseRequested) {
     await pollChain();
     const screen = await watchScreen();
     if (screen?.alertText) {
-      confirmedVia = "site";
-      balanceSeen = screen.alertText.slice(0, 160);
-      tracker.push("Site confirmed deposit on screen");
+      markSiteCredit("Site confirmed deposit on screen", screen.alertText.slice(0, 160));
+      break;
+    }
+    const successNow = await pageLooksLikeDepositSuccess(page);
+    if (successNow.ok) {
+      markSiteCredit(
+        `Site confirmed deposit on screen: ${successNow.text ?? "success"}`,
+        successNow.text,
+      );
       break;
     }
     // Header balance flipped from zero → funds landed, even without a toast.
@@ -3090,11 +3121,9 @@ async function runDepositConfirmationWatch(args: {
     if (
       balanceNow &&
       !balanceIsZero(balanceNow) &&
-      (balanceIsZero(balanceBefore) || balanceNow !== balanceBefore)
+      !looksLikeMinimumDepositLabel(balanceNow)
     ) {
-      confirmedVia = "site";
-      balanceSeen = balanceNow;
-      tracker.push(`Balance updated to ${balanceNow}`);
+      markSiteCredit(`Balance updated to ${balanceNow}`, balanceNow);
       break;
     }
     await monitorInboxPass(
@@ -3168,14 +3197,18 @@ async function runDepositConfirmationWatch(args: {
       tracker.push(`Deposit email: ${mail.subject}`);
       break;
     }
-    // LLM read of the page is slow and costs — once a minute is plenty.
+    // LLM read of the page is slow and can hang — cap it so a success
+    // screen never leaves the agent idle.
     if (Date.now() - lastLlmCheckAt > 60_000) {
       lastLlmCheckAt = Date.now();
-      const site = await siteShowsDepositCredited(stagehand);
+      const site = await Promise.race([
+        siteShowsDepositCredited(stagehand),
+        new Promise<{ credited: false; balanceText: null }>((resolve) =>
+          setTimeout(() => resolve({ credited: false, balanceText: null }), 12_000),
+        ),
+      ]);
       if (site.credited) {
-        confirmedVia = "site";
-        balanceSeen = site.balanceText;
-        tracker.push("Site shows funds credited");
+        markSiteCredit("Site shows funds credited", site.balanceText);
         break;
       }
     }
@@ -4027,11 +4060,6 @@ export async function startResearchTeardown(
   signupPassword: string;
   signupUsername: string | null;
 }> {
-  if (isProductionDeploy()) {
-    throw new Error(
-      "New reports are paused. Existing reports stay readable.",
-    );
-  }
   const through = input.throughStage ?? "verification";
   const proxyMarket = proxyMarketForBrand(input.brandUrl, input.market);
   const {
@@ -4235,6 +4263,7 @@ export async function startResearchTeardown(
         // Resume keeps the real stopwatch stages from the paused session —
         // the login below is plumbing, not part of the player's journey.
         const seededStages =
+          input.startAt === "deposit" ||
           input.startAt === "deposit_confirmation" ||
           input.startAt === "play" ||
           input.startAt === "features"

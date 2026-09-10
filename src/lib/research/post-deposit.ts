@@ -15,7 +15,11 @@ import type {
 type InspectPage = {
   evaluate: (expr: string) => Promise<unknown>;
   waitForTimeout: (ms: number) => Promise<void>;
+  frames?: () => { evaluate: (expr: string) => Promise<unknown> }[];
 };
+
+const DEPOSIT_SUCCESS_RE =
+  /deposit (?:was )?(?:successful|received|complete|confirmed|approved)|funds? (?:have been |were |are )?(?:added|credited|received|available)|successfully deposited|your deposit of|start playing|credited to your|has been credited|payment (?:received|confirmed|successful)|balance (?:has been )?updated/i;
 
 export interface PostDepositScreen {
   url: string;
@@ -197,7 +201,7 @@ export async function inspectPostDepositScreen(
         return out;
       };
 
-      const alertRe = /deposit (?:was )?(?:successful|received|complete|confirmed|approved)|funds? (?:have been |were |are )?(?:added|credited|received|available)|balance (?:has been )?updated|payment (?:received|confirmed|successful)|credited to your|has been credited|successfully deposited|your deposit of/i;
+      const alertRe = /deposit (?:was )?(?:successful|received|complete|confirmed|approved)|funds? (?:have been |were |are )?(?:added|credited|received|available)|balance (?:has been )?updated|payment (?:received|confirmed|successful)|credited to your|has been credited|successfully deposited|your deposit of|start playing/i;
       let alertText = null;
       const alertNodes = document.querySelectorAll(
         "[role='alert'], [role='status'], [class*='toast' i], [class*='snackbar' i], [class*='notification' i], [class*='alert' i], [class*='banner' i], [class*='success' i]"
@@ -263,14 +267,17 @@ export async function readHeaderBalance(
         return cs.display !== "none" && cs.visibility !== "hidden" && cs.opacity !== "0";
       };
       const moneyRe = /^(?:[A-Z]{0,4}[\\$€£¥₿]\\s?\\d[\\d,]*(?:\\.\\d{1,8})?|\\d[\\d,]*(?:\\.\\d{1,8})?\\s?(?:usd|eur|cad|gbp|btc|usdt|usdc|eth|\\$|€|£))$/i;
+      const junk = /min(?:imum)?|need help|trusted/i;
       const hinted = [...document.querySelectorAll("[class*='balance' i], [data-testid*='balance' i], [aria-label*='balance' i]")]
         .filter(vis)
         .map((el) => (el.innerText || "").replace(/\\s+/g, " ").trim())
-        .find((t) => t && t.length <= 24 && /\\d/.test(t));
+        .find((t) => t && t.length <= 24 && /\\d/.test(t) && !junk.test(t));
       if (hinted) return hinted;
       for (const el of document.querySelectorAll("button, a, div, span, p")) {
         if (!vis(el)) continue;
         const t = (el.innerText || "").replace(/\\s+/g, " ").trim();
+        const around = ((el.parentElement && el.parentElement.innerText) || "").replace(/\\s+/g, " ");
+        if (junk.test(t) || /min(?:imum)?\\s*\\d/i.test(around)) continue;
         if (t.length <= 20 && moneyRe.test(t)) return t;
       }
       return null;
@@ -279,6 +286,52 @@ export async function readHeaderBalance(
   } catch {
     return null;
   }
+}
+
+/** Cashier "Min 10 USD" is not a wallet balance. */
+export function looksLikeMinimumDepositLabel(
+  text: string | null | undefined,
+): boolean {
+  return /min(?:imum)?/i.test((text ?? "").trim());
+}
+
+/**
+ * Full-page deposit success ("Your deposit was successful", Start playing).
+ * Reads the active page plus same-origin frames — cashiers often sit in iframes.
+ */
+export async function pageLooksLikeDepositSuccess(
+  page: InspectPage,
+): Promise<{ ok: boolean; text: string | null }> {
+  const fromScreen = (raw: string | null | undefined) => {
+    const t = (raw ?? "").replace(/\s+/g, " ").trim();
+    if (!t || !DEPOSIT_SUCCESS_RE.test(t)) return null;
+    const m = t.match(DEPOSIT_SUCCESS_RE);
+    return (m?.[0] ?? t).slice(0, 160);
+  };
+  try {
+    const screen = await inspectPostDepositScreen(page);
+    const hit =
+      fromScreen(screen?.alertText) ||
+      fromScreen(screen?.popup?.text) ||
+      fromScreen(screen?.bodySnippet) ||
+      fromScreen(screen?.ctas.map((c) => c.label).join(" "));
+    if (hit) return { ok: true, text: hit };
+    const frames = page.frames?.() ?? [];
+    for (const frame of frames) {
+      try {
+        const t = await frame.evaluate(
+          `(document.body && document.body.innerText || "").slice(0, 4000)`,
+        );
+        const framed = fromScreen(typeof t === "string" ? t : null);
+        if (framed) return { ok: true, text: framed };
+      } catch {
+        /* cross-origin */
+      }
+    }
+  } catch {
+    /* keep going */
+  }
+  return { ok: false, text: null };
 }
 
 /** "$0.00" / "0.00000000 BTC" → true when the visible figure is zero. */

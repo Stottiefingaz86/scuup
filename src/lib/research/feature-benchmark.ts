@@ -116,11 +116,23 @@ export function latestRunForBrand(
   brandId: string,
 ): JourneyRun | null {
   const mine = runs.filter((r) => r.brandId === brandId);
-  for (let i = mine.length - 1; i >= 0; i--) {
-    const r = mine[i]!;
-    if (r.features || r.stages.some((s) => s.endedAt)) return r;
+  const active = mine.filter((r) => !r.archived);
+  for (let i = active.length - 1; i >= 0; i--) {
+    const r = active[i]!;
+    if (
+      r.status === "running" ||
+      r.status === "paused" ||
+      r.status === "complete" ||
+      r.features ||
+      r.stages.some((s) => s.endedAt)
+    ) {
+      return r;
+    }
   }
-  return mine[mine.length - 1] ?? null;
+  for (let i = mine.length - 1; i >= 0; i--) {
+    if (mine[i]!.status === "complete") return mine[i]!;
+  }
+  return active.at(-1) ?? mine.at(-1) ?? null;
 }
 
 function stage(run: JourneyRun | null, id: string) {

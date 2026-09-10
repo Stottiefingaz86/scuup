@@ -15,9 +15,9 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { latestRunForBrand } from "@/lib/research/feature-benchmark";
 import { brandHasCompletedSignup } from "@/lib/research/store";
 import type {
-  JourneyRun,
   ResearchBrand,
   ResearchProject,
 } from "@/lib/research/types";
@@ -31,23 +31,13 @@ function formatSec(sec: number | null | undefined): string {
   return s ? `${m}m ${s}s` : `${m}m`;
 }
 
-function latestRunForBrand(
-  project: ResearchProject,
-  brandId: string
-): JourneyRun | null {
-  for (let i = project.runs.length - 1; i >= 0; i--) {
-    if (project.runs[i]!.brandId === brandId) return project.runs[i]!;
-  }
-  return null;
-}
-
 function brandOverviewCard(
   project: ResearchProject,
   brand: ResearchBrand,
   batchRunning = false,
   batchProgress: string | null = null
 ) {
-  const latest = latestRunForBrand(project, brand.id);
+  const latest = latestRunForBrand(project.runs, brand.id);
   const signedUp = brandHasCompletedSignup(project, brand.id);
   const emails = project.emails.filter((e) => e.brandId === brand.id);
   const doneStages =

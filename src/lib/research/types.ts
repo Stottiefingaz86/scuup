@@ -325,6 +325,16 @@ export interface JourneyRun {
   metrics: JourneyMetrics;
   topFriction: TopFriction[];
   status: "draft" | "running" | "paused" | "complete" | "failed";
+  /**
+   * Kept on file when we redo the clock. Hidden from "latest" until a
+   * new walk fails and we fall back.
+   */
+  archived?: boolean;
+  /**
+   * Confirmation wait was sitting on email / chain — deducted. Play clock
+   * starts at casino discovery. Poll must not write the long wait back.
+   */
+  clockFair?: boolean;
   trail?: string[];
   error?: string;
   /** Server teardown job — used to poll deposit confirmation after manual pay. */
