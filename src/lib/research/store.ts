@@ -45,7 +45,17 @@ function hostToName(url: string): string {
   try {
     const host = new URL(url.startsWith("http") ? url : `https://${url}`)
       .hostname;
-    return host.replace(/^www\./, "").split(".")[0] ?? "Brand";
+    const raw = host.replace(/^www\./, "").split(".")[0] ?? "Brand";
+    const known: Record<string, string> = {
+      betonline: "BetOnline",
+      stake: "Stake",
+      rainbet: "Rainbet",
+      bovada: "Bovada",
+      winna: "Winna",
+    };
+    return (
+      known[raw.toLowerCase()] ?? raw.charAt(0).toUpperCase() + raw.slice(1)
+    );
   } catch {
     return "Brand";
   }
@@ -219,15 +229,15 @@ export const ResearchServerProjects = createContext<ResearchProject[]>([]);
 
 export function useResearchProjects(): ResearchProject[] {
   const server = useContext(ResearchServerProjects);
-  const projects = useSyncExternalStore(
-    subscribe,
-    getSnapshot,
-    () => server,
-  );
+  const projects = useSyncExternalStore(subscribe, getSnapshot, () => server);
   useEffect(() => {
     void hydrateFromSupabase();
   }, []);
-  return runCount(projects) > 0 ? projects : server.length > 0 ? server : projects;
+  return runCount(projects) > 0
+    ? projects
+    : server.length > 0
+      ? server
+      : projects;
 }
 
 export function useResearchProject(id: string): ResearchProject | null {
@@ -296,18 +306,23 @@ export function createResearchProject(input: {
   return project;
 }
 
+/** Write a project the UI is showing — even if localStorage only has a seed. */
+function writeResearchProject(project: ResearchProject): ResearchProject {
+  const all = getSnapshot();
+  const idx = all.findIndex((p) => p.id === project.id);
+  const next =
+    idx < 0 ? [project, ...all] : all.map((p, i) => (i === idx ? project : p));
+  save(next);
+  return project;
+}
+
 export function updateResearchProject(
   id: string,
   patch: Partial<ResearchProject>,
 ): ResearchProject | null {
-  const all = getSnapshot();
-  const idx = all.findIndex((p) => p.id === id);
-  if (idx < 0) return null;
-  const updated = { ...all[idx]!, ...patch, id };
-  const next = [...all];
-  next[idx] = updated;
-  save(next);
-  return updated;
+  const existing = getSnapshot().find((p) => p.id === id);
+  if (!existing) return null;
+  return writeResearchProject({ ...existing, ...patch, id });
 }
 
 export function saveResearchPersona(
@@ -764,6 +779,82 @@ export function resetAllBrandsFresh(projectId: string): number {
     resetBrandFresh(projectId, b.id);
   }
   return project.brands.length;
+}
+
+function normalizeBrandUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withProto = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
+  try {
+    const u = new URL(withProto);
+    if (!u.hostname.includes(".")) return null;
+    u.hash = "";
+    u.search = "";
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return null;
+  }
+}
+
+function brandHostKey(url: string): string {
+  try {
+    return new URL(url.startsWith("http") ? url : `https://${url}`).hostname
+      .replace(/^www\./, "")
+      .toLowerCase();
+  } catch {
+    return url.trim().toLowerCase();
+  }
+}
+
+/** Add a competitor to an existing project (e.g. stake.com). */
+export function addResearchCompetitor(
+  live: ResearchProject,
+  rawUrl: string,
+): ResearchBrand | { error: string } {
+  const url = normalizeBrandUrl(rawUrl);
+  if (!url) return { error: "Enter a site like stake.com" };
+  const host = brandHostKey(url);
+  if (live.brands.some((b) => brandHostKey(b.url) === host)) {
+    return { error: `${hostToName(url)} is already on this report` };
+  }
+  if (live.brands.filter((b) => b.role === "competitor").length >= 8) {
+    return { error: "This report already has eight competitors" };
+  }
+  const name = hostToName(url);
+  const brand: ResearchBrand = {
+    id: crypto.randomUUID(),
+    role: "competitor",
+    name,
+    url,
+    favicon: faviconFor(url),
+    accountEmail: researchSignupEmail(name),
+    accountPassword: null,
+    accountReady: false,
+  };
+  writeResearchProject({
+    ...live,
+    brands: [...live.brands, brand],
+  });
+  return brand;
+}
+
+/** Remove a competitor and its runs / emails / teardown. Own brand stays. */
+export function removeResearchCompetitor(
+  live: ResearchProject,
+  brandId: string,
+): boolean {
+  const brand = live.brands.find((b) => b.id === brandId);
+  if (!brand || brand.role === "own_brand") return false;
+  writeResearchProject({
+    ...live,
+    brands: live.brands.filter((b) => b.id !== brandId),
+    runs: live.runs.filter((r) => r.brandId !== brandId),
+    teardowns: live.teardowns.filter((t) => t.brandId !== brandId),
+    emails: live.emails.filter((e) => e.brandId !== brandId),
+  });
+  return true;
 }
 
 export function createDraftRun(

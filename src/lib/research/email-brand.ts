@@ -24,6 +24,7 @@ const SENDER_FAMILY: Record<string, string[]> = {
   winna: ["winna"],
   rainbet: ["rainbet"],
   betonline: ["betonline"],
+  stake: ["stake"],
 };
 
 /** True when From: is this operator (or its mail / ESP subdomain). */
@@ -56,11 +57,16 @@ export function bodyLooksLikeBrand(
 ): boolean {
   const text = hay.toLowerCase();
   const name = brand.name.trim().toLowerCase();
-  if (name.length >= 4 && new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(text)) {
+  if (
+    name.length >= 4 &&
+    new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(text)
+  ) {
     return true;
   }
   const root = brandRoot(brand.url);
-  return Boolean(root && new RegExp(`\\b${escapeRegExp(root)}\\b`, "i").test(text));
+  return Boolean(
+    root && new RegExp(`\\b${escapeRegExp(root)}\\b`, "i").test(text),
+  );
 }
 
 function escapeRegExp(s: string): string {

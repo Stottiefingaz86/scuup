@@ -30,6 +30,7 @@ import {
   JOURNEY_LABELS,
 } from "@/lib/research/journeys";
 import { ResearchJourneyTimeline } from "@/components/research-journey-timeline";
+import { ResearchBrandRoster } from "@/components/research-brand-roster";
 import {
   ResearchEmailCard,
   ResearchEmailThumb,
@@ -901,10 +902,7 @@ function ResearchProjectPageInner() {
     // Clear runs / emails / accountReady so we never skip to deposit on a
     // half-finished Cloudflare signup.
     resetBrandFresh(project.id, brandId);
-    lockBrandCredentials(
-      getResearchProject(project.id) ?? project,
-      brandId,
-    );
+    lockBrandCredentials(getResearchProject(project.id) ?? project, brandId);
     await startTeardownRun("first_bet", { brandId });
   }
 
@@ -1613,13 +1611,15 @@ function ResearchProjectPageInner() {
             {own?.name ?? project.name}
           </h1>
           <p className="mt-1 text-sm text-[var(--rs-muted)]">
-            vs{" "}
-            {project.brands
-              .filter((b) => b.role !== "own_brand")
-              .map((b) => b.name)
-              .join(", ") || "no competitors"}{" "}
-            · {project.device}
+            {project.device} teardown
           </p>
+          <div className="mt-3">
+            <ResearchBrandRoster
+              project={project}
+              activeBrandId={activeBrandId}
+              onSelect={setBrandId}
+            />
+          </div>
         </div>
       </div>
 
@@ -1806,36 +1806,11 @@ function ResearchProjectPageInner() {
 
       {tab === "journeys" ? (
         <section className="flex flex-col gap-6">
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {project.brands.map((b) => {
-              const active = b.id === activeBrandId;
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => setBrandId(b.id)}
-                  className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                    active
-                      ? "border-[var(--rs-accent)] bg-[var(--rs-accent)]/10 text-[var(--rs-fg)]"
-                      : "border-[var(--rs-border)] text-[var(--rs-muted)] hover:text-[var(--rs-fg)]"
-                  }`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={
-                      b.favicon ||
-                      `https://www.google.com/s2/favicons?domain=${encodeURIComponent(
-                        b.url,
-                      )}&sz=64`
-                    }
-                    alt=""
-                    className="size-5 rounded"
-                  />
-                  {b.name}
-                </button>
-              );
-            })}
-          </div>
+          <ResearchBrandRoster
+            project={project}
+            activeBrandId={activeBrandId}
+            onSelect={setBrandId}
+          />
 
           {batchHalt && !agentBusy ? (
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-3">
@@ -2094,8 +2069,8 @@ function ResearchProjectPageInner() {
                 .
               </p>
               <p className="mt-1 text-xs text-[var(--rs-muted)]">
-                Full flow: landing → signup → verify → deposit → first bet,
-                with screenshots and inbox evidence.
+                Full flow: landing → signup → verify → deposit → first bet, with
+                screenshots and inbox evidence.
               </p>
               <button
                 type="button"
@@ -2120,7 +2095,7 @@ function ResearchProjectPageInner() {
       ) : null}
 
       {tab === "voice" ? (
-                <PlayerVoiceTab
+        <PlayerVoiceTab
           project={project}
           onRun={() => void readPlayerVoiceAllBrands()}
           onRefreshBrand={async (brandId) => {

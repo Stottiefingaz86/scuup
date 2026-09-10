@@ -263,9 +263,7 @@ function evidenceForTheme(
   // when the top-level corpus was dropped to fit localStorage.
   if (theme.evidence?.length) {
     return {
-      reviews: [...theme.evidence].sort((a, b) =>
-        b.date.localeCompare(a.date),
-      ),
+      reviews: [...theme.evidence].sort((a, b) => b.date.localeCompare(a.date)),
       claimed: Math.max(claimed, theme.evidence.length),
       partial: false,
     };
@@ -287,17 +285,12 @@ function evidenceForTheme(
     }
   }
 
-  // Older read: only the 1–2 sample quotes were kept.
+  // Older reads only stored 1–2 analyst quotes — do not show those as
+  // reviews. The player has to refresh to load the real Trustpilot corpus.
   return {
-    reviews: theme.quotes.map((q) => ({
-      rating: q.rating,
-      title: "",
-      text: q.text,
-      date: q.date,
-      replied: false,
-    })),
+    reviews: [],
     claimed,
-    partial: claimed > theme.quotes.length,
+    partial: claimed > 0,
   };
 }
 
@@ -318,7 +311,7 @@ function MentionsButton({
       onClick={onClick}
       aria-label={
         partial
-          ? `${n} mentions — open samples`
+          ? `${n} mentions — load Trustpilot reviews`
           : `Open ${n} Trustpilot review${n === 1 ? "" : "s"}`
       }
       className="inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md border border-[var(--rs-border)] bg-[var(--rs-bg)] px-2 text-sm font-medium tabular-nums text-[var(--rs-fg)] transition-colors hover:border-[var(--rs-fg)]/40 hover:bg-[var(--rs-card)]"
@@ -367,7 +360,7 @@ function formatReviewDate(iso: string): string {
   });
 }
 
-/** Evidence popup: Trustpilot review cards + one-click refresh when samples. */
+/** Evidence popup: real Trustpilot reviews only. */
 function EvidenceDialog({
   theme,
   voice,
@@ -379,9 +372,9 @@ function EvidenceDialog({
   onClose: () => void;
   onRefresh?: () => void;
 }) {
-  const { reviews, claimed, partial } = theme
+  const { reviews, claimed } = theme
     ? evidenceForTheme(theme, voice)
-    : { reviews: [] as PlayerVoiceReview[], claimed: 0, partial: false };
+    : { reviews: [] as PlayerVoiceReview[], claimed: 0 };
 
   return (
     <Dialog open={theme != null} onOpenChange={(o) => !o && onClose()}>
@@ -409,9 +402,11 @@ function EvidenceDialog({
                 {theme.theme}
               </DialogTitle>
               <DialogDescription className="mt-2 text-[13px] leading-relaxed text-[#6b7280]">
-                {partial
-                  ? `${reviews.length} of ${claimed} reviews shown`
-                  : `${reviews.length} review${reviews.length === 1 ? "" : "s"} from Trustpilot`}
+                {reviews.length
+                  ? `${reviews.length} review${reviews.length === 1 ? "" : "s"} from Trustpilot`
+                  : claimed
+                    ? "Trustpilot reviews for this theme are not loaded yet"
+                    : "No Trustpilot reviews for this theme"}
               </DialogDescription>
               {theme.insight ? (
                 <p className="mt-3 text-[14px] leading-relaxed text-[#374151]">
@@ -420,74 +415,81 @@ function EvidenceDialog({
               ) : null}
             </header>
 
-            {partial ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#fde68a] bg-[#fffbeb] px-6 py-3.5">
-                <p className="text-[13px] leading-snug text-[#92400e]">
-                  Only sample quotes were saved for this theme.
-                </p>
-                {onRefresh ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onRefresh();
-                    }}
-                    className="shrink-0 cursor-pointer rounded-full bg-[#00b67a] px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#00a36c]"
-                  >
-                    Refresh to load all {claimed}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
             <div className="max-h-[calc(90vh-200px)] overflow-y-auto bg-[#f7f7f7] px-4 py-4 sm:px-5">
-              <ul className="flex flex-col gap-3">
-                {reviews.map((r, i) => (
-                  <li
-                    key={`${r.date}-${i}`}
-                    className="rounded-xl bg-white px-5 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-black/[0.04]"
-                  >
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                      <TrustStars
-                        n={Math.max(1, Math.min(5, Math.round(r.rating) || 1))}
-                        size={22}
-                      />
-                      <time className="text-[13px] text-[#6b7280]">
-                        {formatReviewDate(r.date)}
-                      </time>
-                    </div>
-                    {r.title ? (
-                      <h4 className="mt-3.5 text-[16px] font-semibold leading-snug text-[#111]">
-                        {r.title}
-                      </h4>
-                    ) : null}
-                    <p
-                      className={cn(
-                        "text-[15px] leading-[1.55] text-[#1f2937]",
-                        r.title ? "mt-2" : "mt-3.5",
-                      )}
+              {reviews.length === 0 ? (
+                <div className="flex flex-col items-start gap-3 rounded-xl bg-white px-5 py-6 ring-1 ring-black/[0.04]">
+                  <p className="text-[14px] leading-relaxed text-[#374151]">
+                    {claimed
+                      ? `${claimed} mention${claimed === 1 ? "" : "s"} in the window — refresh to pull the real Trustpilot reviews.`
+                      : "No Trustpilot reviews for this theme."}
+                  </p>
+                  {onRefresh && claimed > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onRefresh();
+                      }}
+                      className="cursor-pointer rounded-full bg-[#00b67a] px-3.5 py-1.5 text-[12px] font-semibold text-white hover:bg-[#00a36c]"
                     >
-                      {r.text}
-                    </p>
-                    {r.replied ? (
-                      <p className="mt-4 border-t border-[#f3f4f6] pt-3 text-[12px] font-medium text-[#00b67a]">
-                        Company replied
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-4 pb-1 text-center text-[11px] text-[#9ca3af]">
-                Reviews from{" "}
-                <a
-                  href={voice.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline decoration-dotted hover:text-[#6b7280]"
-                >
-                  Trustpilot
-                </a>
-              </p>
+                      Refresh reviews
+                    </button>
+                  ) : null}
+                </div>
+              ) : (
+                <>
+                  <ul className="flex flex-col gap-3">
+                    {reviews.map((r, i) => (
+                      <li
+                        key={`${r.date}-${i}`}
+                        className="rounded-xl bg-white px-5 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.06)] ring-1 ring-black/[0.04]"
+                      >
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                          <TrustStars
+                            n={Math.max(
+                              1,
+                              Math.min(5, Math.round(r.rating) || 1),
+                            )}
+                            size={22}
+                          />
+                          <time className="text-[13px] text-[#6b7280]">
+                            {formatReviewDate(r.date)}
+                          </time>
+                        </div>
+                        {r.title ? (
+                          <h4 className="mt-3.5 text-[16px] font-semibold leading-snug text-[#111]">
+                            {r.title}
+                          </h4>
+                        ) : null}
+                        <p
+                          className={cn(
+                            "text-[15px] leading-[1.55] text-[#1f2937]",
+                            r.title ? "mt-2" : "mt-3.5",
+                          )}
+                        >
+                          {r.text}
+                        </p>
+                        {r.replied ? (
+                          <p className="mt-4 border-t border-[#f3f4f6] pt-3 text-[12px] font-medium text-[#00b67a]">
+                            Company replied
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-4 pb-1 text-center text-[11px] text-[#9ca3af]">
+                    Reviews from{" "}
+                    <a
+                      href={voice.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="underline decoration-dotted hover:text-[#6b7280]"
+                    >
+                      Trustpilot
+                    </a>
+                  </p>
+                </>
+              )}
             </div>
           </>
         ) : null}
@@ -643,11 +645,12 @@ function BrandVoice({
     praise: voice.praise,
   };
   const all = KIND_ORDER.flatMap((k) => byKind[k]);
-  const needsRefresh = all.some(
-    (t) =>
-      t.mentions > (t.reviewIds?.length || t.quotes.length) &&
-      !(t.reviewIds?.length && voice.reviews?.length),
-  );
+  const needsRefresh = all.some((t) => {
+    const real =
+      (t.evidence?.length ?? 0) > 0 ||
+      Boolean(t.reviewIds?.length && voice.reviews?.length);
+    return t.mentions > 0 && !real;
+  });
   const negShare = voice.sampled
     ? voice.ratingSplit.negative / voice.sampled
     : 0;
@@ -669,8 +672,8 @@ function BrandVoice({
       {needsRefresh ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-4 py-3">
           <p className="text-sm text-[var(--rs-muted)]">
-            Mention counts are ready — open a number to read samples, or refresh
-            to load every Trustpilot review behind them.
+            Mention counts are ready — refresh to load the Trustpilot reviews
+            behind them.
           </p>
           {onRefresh ? (
             <button
@@ -1088,11 +1091,7 @@ export function PlayerVoiceTab({
           <BrandVoice
             brand={brand}
             voice={brand.playerVoice}
-            onRefresh={
-              onRefreshBrand
-                ? () => onRefreshBrand(brand.id)
-                : onRun
-            }
+            onRefresh={onRefreshBrand ? () => onRefreshBrand(brand.id) : onRun}
           />
         ) : (
           <div className="rounded-xl border border-dashed border-[var(--rs-border)] p-6 text-sm text-[var(--rs-muted)]">
@@ -1191,8 +1190,8 @@ export function PlayerVoiceTab({
             </p>
           ) : (
             <p className="mt-3 text-xs text-[var(--rs-muted)]">
-              Click a brand for its themes, quotes and how they square with the
-              journey.
+              Click a brand for its themes, Trustpilot reviews and how they
+              square with the journey.
             </p>
           )}
         </div>
