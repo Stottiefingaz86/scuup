@@ -14,6 +14,7 @@ import { researchSignupEmail } from "./signup-email";
 import { extractUsernameFromEmails } from "./account-username";
 import { bodyLooksLikeBrand, senderLooksLikeBrand } from "./email-brand";
 import { autoMarketForBrands } from "../brand-markets";
+import { isProductionDeployPublic } from "@/lib/prod-locks";
 import type {
   EmailWatchItem,
   JourneyKind,
@@ -851,6 +852,7 @@ export function removeResearchCompetitor(
   live: ResearchProject,
   brandId: string,
 ): boolean {
+  if (isProductionDeployPublic()) return false;
   const brand = live.brands.find((b) => b.id === brandId);
   if (!brand || brand.role === "own_brand") return false;
   writeResearchProject({

@@ -493,6 +493,8 @@ export async function runFeatureScan(args: {
   /** Lobby read captured during play — reused so the lobby isn't re-walked. */
   lobby: LobbyFeatures | null;
   onShot?: (label: string) => Promise<string | null>;
+  /** Public pages only — signup never completed. */
+  loggedOut?: boolean;
 }): Promise<BrandFeatureScan> {
   const { stagehand, page, tracker, brandUrl, onShot } = args;
   const signals = new Map<string, FeatureSignal>();
@@ -526,7 +528,13 @@ export async function runFeatureScan(args: {
     screenshotUrls: [],
     areaShots: [],
     areasVisited: [],
+    loggedOut: Boolean(args.loggedOut),
   };
+  if (args.loggedOut) {
+    tracker.push(
+      "Feature scan is logged out — rewards progress and account screens may be hidden",
+    );
+  }
 
   tracker.push("Feature scan: reading navigation");
   let origin = brandUrl;

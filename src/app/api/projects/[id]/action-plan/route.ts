@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import { buildActionPlan } from "@/lib/action-plan";
 import { isAdminUser, requireUser } from "@/lib/auth-server";
 import { getProjectById, listProjects, saveActionPlan } from "@/lib/project-db";
@@ -13,6 +14,8 @@ export async function POST(
   _request: NextRequest,
   ctx: RouteContext<"/api/projects/[id]/action-plan">
 ) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const user = await requireUser();
     const { id } = await ctx.params;

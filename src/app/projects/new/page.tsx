@@ -38,6 +38,10 @@ import {
   type MarketOption,
 } from "@/lib/constants";
 import {
+  isProductionDeployPublic,
+  NEW_REPORTS_LOCKED_MESSAGE,
+} from "@/lib/prod-locks";
+import {
   FREE_JOURNEYS,
   isPaidPlan,
   PLAN_COMPETITOR_LIMIT,
@@ -817,6 +821,33 @@ export default function NewProjectPage() {
   const progress = ((stepIndex + 1) / totalSteps) * 100;
   const freeProducts = ["Casino", "Sports"];
   const productChoices = isPaidPlan(plan) ? PRODUCTS : freeProducts;
+
+  if (isProductionDeployPublic()) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <header className="flex items-center px-6 py-5">
+          <ScuupLogo href="/dashboard" />
+        </header>
+        <main className="flex flex-1 items-center justify-center px-6 pb-20">
+          <div className="max-w-md text-center">
+            <p className="font-heading text-2xl font-medium tracking-tight">
+              New reports are paused
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {NEW_REPORTS_LOCKED_MESSAGE}
+            </p>
+            <Button
+              className="mt-6"
+              nativeButton={false}
+              render={<Link href="/dashboard" />}
+            >
+              Back to reports
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (limitReached) {
     return (

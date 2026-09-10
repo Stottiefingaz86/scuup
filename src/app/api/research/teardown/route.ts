@@ -3,6 +3,7 @@ import {
   getResearchTeardownJob,
   startResearchTeardown,
 } from "@/lib/research/teardown-runtime";
+import { loadTeardownJob } from "@/lib/research/teardown-job-store";
 import type { ResearchDevice, ResearchPersona } from "@/lib/research/types";
 
 export const runtime = "nodejs";
@@ -78,12 +79,8 @@ export async function POST(request: NextRequest) {
       startAt === "deposit_confirmation" && body.forceAhead === true;
     const replayPlay = startAt === "play" && body.replayPlay === true;
     const seedStages = Array.isArray(body.seedStages) ? body.seedStages : null;
-    if (startAt === "features" && !accountEmail) {
-      return NextResponse.json(
-        { error: "Feature scan needs an existing account for this brand" },
-        { status: 400 },
-      );
-    }
+    // Feature scan without an account is allowed — it walks public
+    // casino / rewards logged out (Rainbet-style verify walls).
     const seedDepositWatch = Array.isArray(body.seedDepositWatch)
       ? body.seedDepositWatch
       : null;
@@ -150,7 +147,8 @@ export async function GET(request: NextRequest) {
   if (!jobId) {
     return NextResponse.json({ error: "jobId required" }, { status: 400 });
   }
-  const job = getResearchTeardownJob(jobId);
+  const job =
+    getResearchTeardownJob(jobId) ?? (await loadTeardownJob(jobId));
   if (!job) return NextResponse.json({ status: "none" });
   return NextResponse.json({
     status: job.status,

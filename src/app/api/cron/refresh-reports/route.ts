@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import * as Sentry from "@sentry/nextjs";
 import { isAdminUser, requireUser } from "@/lib/auth-server";
 import { analyzeJourney } from "@/lib/analyst";
@@ -251,6 +252,8 @@ async function runDesignRefresh(job: RefreshJob): Promise<void> {
 }
 
 export async function GET(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   if (!(await authorized(request))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

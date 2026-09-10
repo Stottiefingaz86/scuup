@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import * as Sentry from "@sentry/nextjs";
 import { isAdminUser, planFor, requireUser } from "@/lib/auth-server";
 import { buildDesignReview, extractDesignSignals } from "@/lib/design-review";
@@ -13,6 +14,8 @@ export const maxDuration = 300;
 /** Read the brand's live rendered code, measure design/accessibility
  * signals, and build the designer's review against journey screenshots. */
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const user = await requireUser();
     const body = await request.json();

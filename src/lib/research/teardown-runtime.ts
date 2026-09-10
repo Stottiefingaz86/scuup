@@ -66,6 +66,10 @@ import {
 } from "./fast-fill";
 import { JourneyStageTracker } from "./stage-tracker";
 import {
+  persistTeardownJob,
+  queuePersistTeardownJob,
+} from "./teardown-job-store";
+import {
   buildSignupPersona,
   defaultTestPassword,
   personaVariables,
@@ -3508,6 +3512,60 @@ async function captureAfterDeposit(args: {
   }
 }
 
+/** Public casino + rewards when signup dies (verify wall, Register missing). */
+async function runLoggedOutPublicWalk(
+  job: ResearchTeardownJob,
+  tracker: JourneyStageTracker,
+  stagehand: Stagehand,
+  page: AgentPage,
+): Promise<void> {
+  for (const id of ["deposit", "deposit_confirmation"]) {
+    const st = tracker.stage(id);
+    if (!st || st.endedAt) continue;
+    if (!st.startedAt) tracker.begin(id);
+    tracker.end(id, {
+      evidence:
+        "Skipped — signup did not complete; remaining walk is logged out",
+    });
+  }
+  tracker.push(
+    "Signup blocked — continuing logged out: casino, features, rewards",
+  );
+  const streams = new Map<string, StageShotStream>();
+  const onShot = async (stageId: string, label: string) => {
+    let st = streams.get(stageId);
+    if (!st) {
+      st = createShotStream(page, tracker, stageId);
+      streams.set(stageId, st);
+    }
+    await st.push(label);
+  };
+  const { lobby } = await runCasinoPlayFlow(stagehand, page, tracker, {
+    funded: false,
+    onShot,
+  });
+  job.lobby = lobby;
+  const disc = tracker.stage("casino_discovery");
+  if (disc?.endedAt) {
+    disc.evidence = `Logged out · ${disc.evidence ?? "public casino"}`;
+  }
+  try {
+    job.features = await runFeatureScan({
+      stagehand,
+      page,
+      tracker,
+      brandUrl: job.brandUrl,
+      lobby: job.lobby,
+      loggedOut: true,
+      onShot: async () => captureResearchShot(page),
+    });
+  } catch (e) {
+    tracker.push(
+      `Logged-out feature scan skipped: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+}
+
 async function runPlayFlow(
   job: ResearchTeardownJob,
   tracker: JourneyStageTracker,
@@ -3987,7 +4045,11 @@ export async function startResearchTeardown(
     input.brandUrl,
   );
 
-  if (stageRank(through) >= stageRank("verification") && !inboxConfigured()) {
+  if (
+    input.startAt !== "features" &&
+    stageRank(through) >= stageRank("verification") &&
+    !inboxConfigured()
+  ) {
     throw new Error("Gmail IMAP not configured");
   }
 
@@ -4051,7 +4113,13 @@ export async function startResearchTeardown(
     proxyMarket,
   };
   jobs.set(jobId, job);
+  void persistTeardownJob(job);
   const tracker = new JourneyStageTracker(job);
+  const record = tracker.push.bind(tracker);
+  tracker.push = (message: string) => {
+    record(message);
+    queuePersistTeardownJob(job);
+  };
   const isMobile = input.device === "mobile";
   tracker.push(
     `Creating remote browser (${proxyMarket}${
@@ -4108,6 +4176,7 @@ export async function startResearchTeardown(
     job.error = e instanceof Error ? e.message : String(e);
     job.status = "failed";
     tracker.push(`Failed: ${job.error}`);
+    await persistTeardownJob(job);
     return {
       jobId,
       liveViewUrl: null,
@@ -4129,9 +4198,10 @@ export async function startResearchTeardown(
   tracker.push("Remote browser ready — opening site");
 
   void (async () => {
+    let page: AgentPage | null = null;
     try {
       if (stopIfPaused(job, tracker)) return;
-      const page =
+      page =
         stagehand.context.activePage() ?? (await stagehand.context.newPage());
       if (isMobile) await applyMobileEmulation(page);
 
@@ -4164,24 +4234,38 @@ export async function startResearchTeardown(
           input.startAt === "features"
             ? job.stages.map((st) => ({ ...st }))
             : null;
-        await loginExistingAccount({
-          job,
-          tracker,
-          stagehand,
-          page,
-          input,
-          email,
-          resolvedPassword,
-        });
+        if (input.startAt === "features" && !input.accountEmail) {
+          tracker.push("No saved account — opening the site logged out");
+          await page.goto(input.brandUrl, {
+            waitUntil: "domcontentloaded",
+            timeoutMs: 45_000,
+          });
+        } else {
+          await loginExistingAccount({
+            job,
+            tracker,
+            stagehand,
+            page,
+            input,
+            email,
+            resolvedPassword,
+          });
+        }
         if (seededStages) job.stages = seededStages;
         if (input.startAt === "features") {
-          // Nothing timed here — inventory the site and stop.
+          const loggedOut = !job.authenticated;
+          if (loggedOut) {
+            tracker.push(
+              "No session — scanning public casino / rewards logged out",
+            );
+          }
           job.features = await runFeatureScan({
             stagehand,
             page,
             tracker,
             brandUrl: input.brandUrl,
             lobby: job.lobby,
+            loggedOut,
             onShot: async () => captureResearchShot(page),
           });
           job.topFriction = pickTopFriction(job.stages);
@@ -4296,7 +4380,14 @@ export async function startResearchTeardown(
         !job.authenticated &&
         stageRank(through) >= stageRank("verification")
       ) {
-        throw new Error("Signup did not complete");
+        const why = job.error || "Signup did not complete";
+        tracker.push(`${why} — not stopping; reading the public site logged out`);
+        await runLoggedOutPublicWalk(job, tracker, stagehand, page);
+        job.error = `${why} · public casino / rewards scanned logged out`;
+        job.topFriction = pickTopFriction(job.stages);
+        job.status = "failed";
+        job.sessionOpen = false;
+        return;
       }
 
       if (
@@ -4339,10 +4430,21 @@ export async function startResearchTeardown(
         job.status = "failed";
         job.sessionOpen = false;
         tracker.push(`Failed: ${job.error}`);
+        if (!job.authenticated && page && input.kind !== "returning_player_login") {
+          try {
+            await runLoggedOutPublicWalk(job, tracker, stagehand, page);
+            job.error = `${job.error} · public casino / rewards scanned logged out`;
+          } catch (scanErr) {
+            tracker.push(
+              `Logged-out walk skipped: ${scanErr instanceof Error ? scanErr.message : String(scanErr)}`,
+            );
+          }
+        }
       }
       tracker.recomputeMetrics();
     } finally {
       sessionHandles.delete(jobId);
+      await persistTeardownJob(job);
       if (job.sessionOpen) {
         tracker.push(
           job.status === "awaiting_sms"

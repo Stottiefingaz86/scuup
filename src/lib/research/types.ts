@@ -406,6 +406,8 @@ export interface BrandFeatureScan {
    * only the frames that back it. */
   areaShots?: { area: string; url: string }[];
   areasVisited: string[];
+  /** True when we never got an account — public casino / rewards only. */
+  loggedOut?: boolean;
 }
 
 export interface BenchmarkCell {

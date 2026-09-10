@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus, X } from "lucide-react";
+import { isProductionDeployPublic } from "@/lib/prod-locks";
 import {
   addResearchCompetitor,
   removeResearchCompetitor,
@@ -89,7 +90,7 @@ export function ResearchBrandRoster({
                   </span>
                 ) : null}
               </button>
-              {b.role === "competitor" ? (
+              {b.role === "competitor" && !isProductionDeployPublic() ? (
                 <button
                   type="button"
                   aria-label={`Remove ${b.name}`}

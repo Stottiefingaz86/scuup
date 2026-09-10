@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import * as Sentry from "@sentry/nextjs";
 import {
   AuthError,
@@ -32,6 +33,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   let userId = "";
   let isAdmin = false;
   try {

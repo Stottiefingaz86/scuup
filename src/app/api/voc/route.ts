@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import * as Sentry from "@sentry/nextjs";
 import { isAdminUser, planFor, requireUser } from "@/lib/auth-server";
 import { getProjectById, listProjects, upsertVoc } from "@/lib/project-db";
@@ -13,6 +14,8 @@ export const maxDuration = 300;
 /** Scrape a brand's Trustpilot reviews and build its voice-of-customer
  * analysis, cross-checked against the audit. */
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const user = await requireUser();
     const body = await request.json();

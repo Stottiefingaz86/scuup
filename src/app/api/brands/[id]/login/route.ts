@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import { MARKET_PROXY_COUNTRY } from "@/lib/constants";
 import { getLoginJob, startLogin } from "@/lib/login-runtime";
 
@@ -11,6 +12,8 @@ export async function POST(
   request: NextRequest,
   ctx: RouteContext<"/api/brands/[id]/login">
 ) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const { id } = await ctx.params;
     const body = await request.json();

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import {
   AuthError,
   isAdminUser,
@@ -17,6 +18,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   // Live captures spin up real Browserbase sessions — signed-in users only.
   try {
     const user = await requireUser();

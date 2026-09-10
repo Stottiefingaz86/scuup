@@ -410,5 +410,8 @@ export function engagementCell(run: JourneyRun | null, re: RegExp): string {
   if (!scan) return "—";
   const f = scan.features.find((x) => re.test(x.name));
   if (!f) return "No";
-  return f.evidence ? `Yes · ${f.evidence.slice(0, 40)}` : "Yes";
+  const name = f.name.replace(/\s+/g, " ").trim();
+  return name && name.length <= 28 && !/^yes$/i.test(name)
+    ? `Yes · ${name}`
+    : "Yes";
 }

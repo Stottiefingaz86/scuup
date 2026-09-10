@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import {
   AuthError,
   isAdminUser,
@@ -43,6 +44,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const user = await requireUser();
     const body = await request.json();

@@ -212,6 +212,43 @@
   color: color-mix(in oklab, var(--rs-muted) 70%, transparent);
 }
 
+/* Feature matrix: qualitative copy that must wrap, not stopwatch digits. */
+.research-root .rs-table.rs-features {
+  table-layout: fixed;
+}
+
+.research-root .rs-table.rs-features thead th {
+  height: auto;
+  padding: 8px 12px;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: unset;
+}
+
+.research-root .rs-table.rs-features thead th.rs-brand {
+  text-align: left;
+}
+
+.research-root .rs-table.rs-features tbody td.rs-feature {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.research-root .rs-table.rs-features tbody td.rs-area {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--rs-muted);
+  background: color-mix(in oklab, var(--rs-bg) 80%, transparent);
+  vertical-align: top;
+}
+
+.research-root .rs-table.rs-features tbody tr.rs-area-start td {
+  border-top: 1px solid var(--rs-border);
+}
+
 /* —— First-touch funnel: traffic flowing from every channel into Landing —— */
 @keyframes rs-flow {
   to {
@@ -303,5 +340,20 @@
   70%,
   100% {
     box-shadow: 0 0 0 5px transparent;
+  }
+}
+
+@media print {
+  .research-root .rs-report {
+    max-width: none;
+    gap: 2.25rem;
+  }
+
+  .research-root .rs-report h2 {
+    break-after: avoid;
+  }
+
+  .research-root .rs-report section {
+    break-inside: avoid;
   }
 }

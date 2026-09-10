@@ -59,11 +59,11 @@ import {
   featureBenchmarkEvidence,
   latestRunForBrand,
 } from "@/lib/research/feature-benchmark";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
 import {
   FrameThumb,
   JourneyFrameViewer,
 } from "@/components/research-frame-viewer";
+import { ResearchReportView } from "@/components/research-report";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Eye,
@@ -93,12 +93,7 @@ import {
   recoverRegistrationMetrics,
   teardownForBrand,
 } from "@/lib/research/teardown-summary";
-import {
-  competitorGapInsights,
-  frictionStrategyLine,
-  strategyBriefForUi,
-  strategyNorthStarBlurb,
-} from "@/lib/research/strategy";
+import { competitorGapInsights } from "@/lib/research/strategy";
 import {
   defaultResearchPersona,
   randomCanadianAddress,
@@ -580,6 +575,7 @@ function ResearchProjectPageInner() {
     if (!jobId || !project) return;
     let cancelled = false;
     let inFlight = false;
+    let goneMisses = 0;
     const tick = async () => {
       if (inFlight) return;
       inFlight = true;
@@ -591,8 +587,8 @@ function ResearchProjectPageInner() {
         const data = await res.json();
         if (cancelled) return;
         if (data.status === "none") {
-          // The server no longer knows this job (restart / redeploy). Park the
-          // run so it can be resumed instead of spinning forever.
+          goneMisses += 1;
+          if (goneMisses < JOB_GONE_POLLS) return;
           const run = project.runs.find((r) => r.agentJobId === jobId);
           if (run && run.status === "running") {
             const canResume = Boolean(resumeInfoForRun(run));
@@ -600,7 +596,7 @@ function ResearchProjectPageInner() {
               status: canResume ? "paused" : "failed",
               error: canResume
                 ? undefined
-                : "Agent session was lost (server restarted). Start again.",
+                : "The remote browser session disappeared. Start this brand again.",
             });
           }
           setRunning(false);
@@ -608,6 +604,7 @@ function ResearchProjectPageInner() {
           setJobStatus(null);
           return;
         }
+        goneMisses = 0;
         if (Array.isArray(data.steps) && data.steps.length) {
           setTrail(data.steps);
         }
@@ -1172,13 +1169,101 @@ function ResearchProjectPageInner() {
     if (failures.length) setVoiceError(failures.join(" · "));
   }
 
+  async function scanBrandFeatures(
+    brandId: string,
+    opts?: { loggedOut?: boolean; progressPrefix?: string },
+  ) {
+    if (!project) return;
+    const live = getResearchProject(project.id) ?? project;
+    const brand = live.brands.find((b) => b.id === brandId);
+    if (!brand) return;
+    const run =
+      latestRunForBrand(live.runs, brand.id) ??
+      createDraftRun(live.id, brand.id, "new_player_first_bet");
+    if (!run) return;
+    const loggedOut =
+      opts?.loggedOut === true || !brandHasTestAccount(live, brand.id);
+    setRunBrandId(brand.id);
+    setRunError(null);
+    setTrail([]);
+    setFeatureScanProgress(
+      `${opts?.progressPrefix ?? ""}${brand.name} — ${
+        loggedOut ? "logged out scan…" : "logging in…"
+      }`,
+    );
+    const res = await fetch("/api/research/teardown", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        runId: run.id,
+        projectId: live.id,
+        brandId: brand.id,
+        brandUrl: brand.url,
+        brandName: brand.name,
+        market: live.market,
+        device: live.device,
+        kind: "new_player_first_bet",
+        persona: live.persona,
+        throughStage: "first_bet",
+        startAt: "features",
+        seedStages: run.stages,
+        accountEmail: loggedOut ? null : brand.accountEmail ?? null,
+        accountPassword: loggedOut
+          ? null
+          : lockBrandCredentials(live, brand.id) || null,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "failed to start");
+    const scanJobId = data.jobId as string;
+    setJobId(scanJobId);
+    if (data.liveViewUrl) setLiveViewUrl(data.liveViewUrl);
+    patchResearchRun(live.id, run.id, { agentJobId: scanJobId });
+    const deadline = Date.now() + 10 * 60_000;
+    let goneMisses = 0;
+    for (;;) {
+      if (stopRequestedRef.current) break;
+      await new Promise((r) => setTimeout(r, 3000));
+      const poll = await fetch(
+        `/api/research/teardown?jobId=${encodeURIComponent(scanJobId)}`,
+        { cache: "no-store" },
+      );
+      const status = await poll.json();
+      if (status.status === "none") {
+        goneMisses += 1;
+        if (goneMisses >= JOB_GONE_POLLS) {
+          throw new Error(
+            "Lost contact with this brand's browser. Retry the scan.",
+          );
+        }
+        continue;
+      }
+      goneMisses = 0;
+      if (status.liveViewUrl) setLiveViewUrl(status.liveViewUrl);
+      if (Array.isArray(status.steps)) {
+        setTrail(status.steps);
+        const last = String(status.steps[status.steps.length - 1] ?? "");
+        setFeatureScanProgress(
+          `${opts?.progressPrefix ?? ""}${brand.name} — ${last.slice(0, 90) || "scanning…"}`,
+        );
+      }
+      applyTeardownPoll(live.id, run.id, status, brand.id);
+      if (status.features) {
+        patchResearchRun(live.id, run.id, { features: status.features });
+      }
+      if (status.status === "success") return;
+      if (status.status === "failed") {
+        throw new Error(status.error ?? "scan failed");
+      }
+      if (Date.now() >= deadline) throw new Error("Feature scan timed out");
+    }
+  }
+
   async function scanFeaturesAllBrands() {
     if (!project) return;
-    const ready = project.brands.filter((b) =>
-      brandHasTestAccount(project, b.id),
-    );
+    const ready = project.brands;
     if (ready.length === 0) {
-      setRunError("No brands with an account yet — sign up first.");
+      setRunError("No brands on this project.");
       return;
     }
     setRunError(null);
@@ -1188,73 +1273,13 @@ function ResearchProjectPageInner() {
     stopRequestedRef.current = false;
     for (let i = 0; i < ready.length; i++) {
       if (stopRequestedRef.current) break;
-      const brand = ready[i]!;
-      const live = getResearchProject(project.id) ?? project;
-      const run =
-        latestRunForBrand(live.runs, brand.id) ??
-        createDraftRun(live.id, brand.id, "new_player_first_bet");
-      if (!run) continue;
-      setRunBrandId(brand.id);
-      setTrail([]);
-      setFeatureScanProgress(
-        `${i + 1}/${ready.length}: ${brand.name} — logging in…`,
-      );
       try {
-        const res = await fetch("/api/research/teardown", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            runId: run.id,
-            projectId: live.id,
-            brandId: brand.id,
-            brandUrl: brand.url,
-            brandName: brand.name,
-            market: live.market,
-            device: live.device,
-            kind: "new_player_first_bet",
-            persona: live.persona,
-            throughStage: "first_bet",
-            startAt: "features",
-            seedStages: run.stages,
-            accountEmail: brand.accountEmail ?? null,
-            accountPassword: lockBrandCredentials(live, brand.id) || null,
-          }),
+        await scanBrandFeatures(ready[i]!.id, {
+          progressPrefix: `${i + 1}/${ready.length}: `,
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error ?? "failed to start");
-        const scanJobId = data.jobId as string;
-        setJobId(scanJobId);
-        if (data.liveViewUrl) setLiveViewUrl(data.liveViewUrl);
-        const deadline = Date.now() + 8 * 60_000;
-        for (;;) {
-          if (stopRequestedRef.current) break;
-          await new Promise((r) => setTimeout(r, 3000));
-          const poll = await fetch(
-            `/api/research/teardown?jobId=${encodeURIComponent(scanJobId)}`,
-            { cache: "no-store" },
-          );
-          const status = await poll.json();
-          if (status.status === "none") throw new Error("Agent job lost");
-          if (status.liveViewUrl) setLiveViewUrl(status.liveViewUrl);
-          if (Array.isArray(status.steps)) {
-            setTrail(status.steps);
-            const last = String(status.steps[status.steps.length - 1] ?? "");
-            setFeatureScanProgress(
-              `${i + 1}/${ready.length}: ${brand.name} — ${last.slice(0, 90) || "scanning…"}`,
-            );
-          }
-          if (status.features) {
-            patchResearchRun(live.id, run.id, { features: status.features });
-          }
-          if (status.status === "success") break;
-          if (status.status === "failed") {
-            throw new Error(status.error ?? "scan failed");
-          }
-          if (Date.now() >= deadline) throw new Error("Feature scan timed out");
-        }
       } catch (e) {
         setRunError(
-          `${brand.name}: ${e instanceof Error ? e.message : "feature scan failed"}`,
+          `${ready[i]!.name}: ${e instanceof Error ? e.message : "feature scan failed"}`,
         );
       }
     }
@@ -1263,6 +1288,20 @@ function ResearchProjectPageInner() {
     setJobId(null);
     setRunBrandId(null);
     setTrail([]);
+  }
+
+  async function scanActiveBrandLoggedOut() {
+    if (!project || !activeBrandId) return;
+    stopRequestedRef.current = false;
+    try {
+      await scanBrandFeatures(activeBrandId, { loggedOut: true });
+    } catch (e) {
+      setRunError(
+        e instanceof Error ? e.message : "Logged-out scan failed",
+      );
+    } finally {
+      setFeatureScanProgress(null);
+    }
   }
 
   async function depositAllBrands() {
@@ -1324,6 +1363,7 @@ function ResearchProjectPageInner() {
         patchResearchRun(project.id, run.id, { agentJobId: jobId });
 
         const deadline = Date.now() + 15 * 60_000;
+        let goneMisses = 0;
         for (;;) {
           if (stopRequestedRef.current) break;
           await new Promise((r) => setTimeout(r, 3000));
@@ -1338,8 +1378,15 @@ function ResearchProjectPageInner() {
             mergeResearchEmails(project.id, status.emails);
           }
           if (status.status === "none") {
-            throw new Error("Agent job lost — re-run deposit for this brand");
+            goneMisses += 1;
+            if (goneMisses >= JOB_GONE_POLLS) {
+              throw new Error(
+                "Lost contact with this brand's browser. Re-run deposit for this brand.",
+              );
+            }
+            continue;
           }
+          goneMisses = 0;
           applyTeardownPoll(project.id, run.id, status, brand.id);
           if (status.status === "awaiting_payment") {
             queued += 1;
@@ -1478,6 +1525,7 @@ function ResearchProjectPageInner() {
         setRunning(true);
         if (data.liveViewUrl) setLiveViewUrl(data.liveViewUrl);
 
+        let goneMisses = 0;
         for (;;) {
           if (stopRequestedRef.current) {
             halted = true;
@@ -1503,10 +1551,15 @@ function ResearchProjectPageInner() {
             mergeResearchEmails(live.id, status.emails);
           }
           if (status.status === "none") {
-            throw new Error(
-              "Agent job lost (server restarted?) — evidence may be incomplete; re-run this brand",
-            );
+            goneMisses += 1;
+            if (goneMisses >= JOB_GONE_POLLS) {
+              throw new Error(
+                "Lost contact with this brand's browser. Retry it, or skip and continue the batch.",
+              );
+            }
+            continue;
           }
+          goneMisses = 0;
           applyTeardownPoll(live.id, run.id, status, freshBrand.id);
           if (
             status.status === "awaiting_payment" ||
@@ -1858,17 +1911,17 @@ function ResearchProjectPageInner() {
           />
 
           {batchHalt && !agentBusy ? (
-            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/[0.06] px-4 py-3">
+            <div className="flex flex-wrap items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/[0.07] px-4 py-3">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-red-300">
-                  Stopped at {batchHalt.brandName} — the batch will not move on
-                  until you decide.
+                <p className="text-sm font-medium">
+                  Batch paused at {batchHalt.brandName}
                 </p>
-                <p className="mt-0.5 text-xs text-red-200/80">
-                  {batchHalt.error}
+                <p className="mt-0.5 text-xs leading-relaxed text-[var(--rs-muted)]">
+                  {batchHalt.error} This is the agent session, not a finding
+                  about the site.
                 </p>
               </div>
-              <div className="flex shrink-0 gap-2">
+              <div className="flex shrink-0 flex-wrap gap-2">
                 <button
                   type="button"
                   className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3.5 py-2 text-sm font-medium text-[var(--rs-bg)]"
@@ -1888,6 +1941,17 @@ function ResearchProjectPageInner() {
                   }
                 >
                   Skip &amp; continue
+                </button>
+                <button
+                  type="button"
+                  className="cursor-pointer rounded-lg px-3 py-2 text-sm text-[var(--rs-muted)] hover:text-[var(--rs-fg)]"
+                  onClick={() => {
+                    setBatchHalt(null);
+                    setBatchProgress(null);
+                    setRunError(null);
+                  }}
+                >
+                  Dismiss
                 </button>
               </div>
             </div>
@@ -1931,17 +1995,27 @@ function ResearchProjectPageInner() {
                       Registration incomplete
                     </p>
                     <p className="mt-0.5 text-sm text-[var(--rs-fg)]">
-                      Wipe this brand&apos;s frames and start signup again from
-                      a fresh +alias email.
+                      Signup did not finish. Scan casino, features and rewards
+                      logged out — or wipe and try registration again.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void runAgainBrand()}
-                    className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)]"
-                  >
-                    Rerun registration
-                  </button>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={agentBusy}
+                      onClick={() => void scanActiveBrandLoggedOut()}
+                      className="cursor-pointer rounded-lg bg-[var(--rs-accent)] px-3 py-1.5 text-xs font-medium text-[var(--rs-bg)] disabled:opacity-50"
+                    >
+                      Scan logged out
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void runAgainBrand()}
+                      className="cursor-pointer rounded-lg border border-[var(--rs-border)] px-3 py-1.5 text-xs font-medium text-[var(--rs-fg)]"
+                    >
+                      Rerun registration
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -2177,6 +2251,10 @@ function ResearchProjectPageInner() {
     </div>
   );
 }
+
+/** Prod polls often hit a different isolate than the runner. Wait out a
+ * few empty reads before treating the job as gone. */
+const JOB_GONE_POLLS = 8;
 
 /** Stored text that should read as empty ("null", "none", "—"). */
 function cellText(v: string | null | undefined): string | null {
@@ -2880,187 +2958,6 @@ function EmailWatchPanel({
   );
 }
 
-function ResearchReportView({
-  project,
-}: {
-  project: import("@/lib/research/types").ResearchProject;
-}) {
-  const completeRuns = project.runs.filter((r) => r.status === "complete");
-  const own = project.brands.find((b) => b.role === "own_brand");
-
-  return (
-    <article className="mx-auto flex w-full max-w-3xl flex-col gap-10 print:max-w-none">
-      <header>
-        <p className="text-xs uppercase tracking-[0.16em] text-[var(--rs-muted)]">
-          Scuup Research deliverable
-        </p>
-        <h2 className="mt-2 font-heading text-3xl font-medium tracking-tight">
-          {project.name}
-        </h2>
-        <p className="mt-2 text-sm text-[var(--rs-muted)]">
-          {project.device} · {completeRuns.length} completed run
-          {completeRuns.length === 1 ? "" : "s"} · {project.emails.length}{" "}
-          emails documented
-        </p>
-      </header>
-
-      <section className="flex flex-col gap-3">
-        <h3 className="font-heading text-xl font-medium">Strategy lens</h3>
-        {(() => {
-          const brief = strategyBriefForUi();
-          return (
-            <div className="grid gap-3 text-sm sm:grid-cols-3">
-              <div className="rounded-xl border border-[var(--rs-border)] p-4">
-                <p className="text-xs uppercase tracking-wide text-[var(--rs-muted)]">
-                  Where we want to go
-                </p>
-                <p className="mt-2 leading-snug text-[var(--rs-fg)]">
-                  {brief.want}
-                </p>
-              </div>
-              <div className="rounded-xl border border-[var(--rs-border)] p-4">
-                <p className="text-xs uppercase tracking-wide text-[var(--rs-muted)]">
-                  How we get there
-                </p>
-                <p className="mt-2 leading-snug text-[var(--rs-fg)]">
-                  {brief.how}
-                </p>
-              </div>
-              <div className="rounded-xl border border-[var(--rs-border)] p-4">
-                <p className="text-xs uppercase tracking-wide text-[var(--rs-muted)]">
-                  What competitors do well
-                </p>
-                <p className="mt-2 leading-snug text-[var(--rs-fg)]">
-                  {brief.compare}
-                </p>
-              </div>
-            </div>
-          );
-        })()}
-        <p className="text-xs text-[var(--rs-muted)]">
-          {strategyNorthStarBlurb()}
-        </p>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h3 className="font-heading text-xl font-medium">Executive read</h3>
-        <p className="text-sm leading-relaxed text-[var(--rs-muted)]">
-          {completeRuns.length === 0
-            ? "No completed journeys yet. Sign up brands, fund via Notifications, then return here for the timed teardown with screenshots and inbox evidence."
-            : `Timed journeys across ${project.brands.length} brands. Top friction scored from waits, fields, and errors — mapped to Time to stake (≤12 min) and activation.`}
-        </p>
-        {completeRuns[0]?.topFriction?.length ? (
-          <ol className="mt-2 flex flex-col gap-3">
-            {completeRuns[0].topFriction.map((f) => (
-              <li
-                key={f.rank}
-                className="rounded-xl border border-[var(--rs-border)] p-4"
-              >
-                <p className="text-xs text-[var(--rs-muted)]">
-                  #{f.rank} · {frictionStrategyLine(f)}
-                </p>
-                <p className="mt-1 font-medium">{f.friction}</p>
-                <p className="mt-1 text-xs text-[var(--rs-muted)]">
-                  {f.evidence} — {f.whyItMatters}
-                </p>
-              </li>
-            ))}
-          </ol>
-        ) : null}
-      </section>
-
-      <section className="flex flex-col gap-4">
-        <h3 className="font-heading text-xl font-medium">
-          Journey evidence (screenshots)
-        </h3>
-        {completeRuns.length === 0 ? (
-          <p className="text-sm text-[var(--rs-muted)]">No stage shots yet.</p>
-        ) : (
-          completeRuns.map((run) => {
-            const brand = project.brands.find((b) => b.id === run.brandId);
-            const shots = run.stages.flatMap((s) =>
-              (s.screenshotUrls ?? []).map((url) => ({
-                url,
-                stage: s.label,
-                evidence: s.evidence,
-              })),
-            );
-            return (
-              <div key={run.id} className="flex flex-col gap-2">
-                <p className="text-sm font-medium">
-                  {brand?.name ?? "Brand"}
-                  {brand?.id === own?.id ? " (you)" : ""}
-                </p>
-                {shots.length === 0 ? (
-                  <p className="text-xs text-[var(--rs-muted)]">
-                    No screenshots on this run.
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {shots.map((s) => (
-                      <ScreenshotLightbox
-                        key={s.url}
-                        src={s.url}
-                        alt={s.stage}
-                        caption={`${s.stage}${s.evidence ? ` — ${s.evidence}` : ""}`}
-                        className="h-28 w-40"
-                        frame="phone"
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h3 className="font-heading text-xl font-medium">Voice of the inbox</h3>
-        <p className="text-sm text-[var(--rs-muted)]">
-          What the brand actually sent the new player — verify, welcome, bonus,
-          deposit confirm — with receive time and a clean preview.
-        </p>
-        {project.emails.length === 0 ? (
-          <p className="text-xs text-[var(--rs-muted)]">No emails yet.</p>
-        ) : (
-          <ul className="flex flex-col gap-3">
-            {[...project.emails]
-              .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt))
-              .slice(0, 12)
-              .map((e) => (
-                <li key={e.id}>
-                  <ResearchEmailCard
-                    email={e}
-                    brandLabel={
-                      project.brands.find((b) => b.id === e.brandId)?.name
-                    }
-                    compact
-                  />
-                </li>
-              ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="flex flex-col gap-3 print:hidden">
-        <h3 className="font-heading text-xl font-medium">Next</h3>
-        <p className="text-sm text-[var(--rs-muted)]">
-          Layer Trustpilot VoC against these measured gaps in a follow-up pass.
-          Use Benchmark for the competitor matrix.
-        </p>
-        <button
-          type="button"
-          onClick={() => window.print()}
-          className="w-fit rounded-lg border border-[var(--rs-border)] px-4 py-2 text-sm"
-        >
-          Print / save PDF
-        </button>
-      </section>
-    </article>
-  );
-}
-
 /**
  * A benchmark cell: the value right-aligned, then a fixed-width evidence slot
  * so every number in a column lines up whether or not it has frames.
@@ -3098,6 +2995,54 @@ function MetricCell({
         ) : null}
       </span>
       <EvidenceThumbs frames={frames} />
+    </span>
+  );
+}
+
+const FEATURE_MATRIX_ROWS = [
+  ...FEATURE_BENCHMARK_ROWS.map((row) => ({
+    ...row,
+    kind: "feature" as const,
+  })),
+  ...ENGAGEMENT_ROWS.map((row) => ({
+    area: "Engagement",
+    criteria: row.criteria,
+    kind: "engagement" as const,
+    re: row.re,
+  })),
+];
+
+function featureAreaSpan(index: number): number {
+  const row = FEATURE_MATRIX_ROWS[index];
+  if (!row) return 0;
+  if (index > 0 && FEATURE_MATRIX_ROWS[index - 1]?.area === row.area) return 0;
+  let n = 1;
+  while (FEATURE_MATRIX_ROWS[index + n]?.area === row.area) n++;
+  return n;
+}
+
+/** Qualitative feature cell — wraps, never spills into the next brand. */
+function FeatureCell({
+  value,
+  frames,
+}: {
+  value: string;
+  frames: import("@/components/research-evidence-thumbs").EvidenceFrame[];
+}) {
+  const empty = value === "—";
+  const split = /^(Yes|No)\s*[·—]\s*(.+)$/.exec(value);
+  const main = split ? split[1]! : value;
+  const note = split ? split[2]!.replace(/^["“]|["”]$/g, "") : null;
+  return (
+    <span className="flex items-start gap-2">
+      <span
+        className={cn("min-w-0 flex-1", empty && "rs-muted")}
+        title={note && note.length > 40 ? note : undefined}
+      >
+        <span className="block">{main}</span>
+        {note ? <span className="rs-sub line-clamp-2">{note}</span> : null}
+      </span>
+      {frames.length > 0 ? <EvidenceThumbs frames={frames} /> : null}
     </span>
   );
 }
@@ -3454,44 +3399,65 @@ function BenchmarkTab({
           ) : null}
         </div>
         <div className="rs-table-wrap mt-4">
-          <table className="rs-table rs-fixed rs-evidence min-w-[720px]">
+          <table
+            className="rs-table rs-features"
+            style={{
+              minWidth: 300 + 196 * Math.max(project.brands.length, 1),
+            }}
+          >
             <colgroup>
-              <col style={{ width: 130 }} />
-              <col style={{ width: 240 }} />
+              <col style={{ width: 108 }} />
+              <col style={{ width: 192 }} />
               {project.brands.map((b) => (
-                <col key={b.id} />
+                <col key={b.id} style={{ width: 196 }} />
               ))}
             </colgroup>
             <thead>
               <tr>
                 <th>Area</th>
                 <th>Criteria</th>
-                {project.brands.map((b) => (
-                  <th key={b.id} className="rs-num">
-                    {b.name}
-                  </th>
-                ))}
+                {project.brands.map((b) => {
+                  const loggedOut = Boolean(
+                    latestRunForBrand(project.runs, b.id)?.features?.loggedOut,
+                  );
+                  return (
+                    <th key={b.id} className="rs-brand">
+                      {b.name}
+                      {loggedOut ? (
+                        <span className="rs-sub">Logged out</span>
+                      ) : null}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
-              {FEATURE_BENCHMARK_ROWS.map((row, i) => {
-                const firstOfArea =
-                  i === 0 || FEATURE_BENCHMARK_ROWS[i - 1].area !== row.area;
+              {FEATURE_MATRIX_ROWS.map((row, i) => {
+                const span = featureAreaSpan(i);
                 return (
-                  <tr key={`${row.area}-${row.criteria}`}>
-                    <td className="rs-muted">{firstOfArea ? row.area : ""}</td>
+                  <tr
+                    key={`${row.area}-${row.criteria}`}
+                    className={span > 0 && i > 0 ? "rs-area-start" : undefined}
+                  >
+                    {span > 0 ? (
+                      <td className="rs-area" rowSpan={span}>
+                        {row.area}
+                      </td>
+                    ) : null}
                     <td>{row.criteria}</td>
                     {project.brands.map((b) => {
-                      const td = teardownOf(b.id);
                       const run = latestRunForBrand(project.runs, b.id);
-                      const value = featureBenchmarkCell(
-                        row.area,
-                        row.criteria,
-                        td,
-                        run,
-                      );
+                      const value =
+                        row.kind === "engagement"
+                          ? engagementCell(run, row.re)
+                          : featureBenchmarkCell(
+                              row.area,
+                              row.criteria,
+                              teardownOf(b.id),
+                              run,
+                            );
                       const frames =
-                        value === "—"
+                        value === "—" || value === "No"
                           ? []
                           : featureBenchmarkEvidence(
                               row.area,
@@ -3499,46 +3465,14 @@ function BenchmarkTab({
                               run,
                             );
                       return (
-                        <td
-                          key={b.id}
-                          className={cn(
-                            "rs-num",
-                            value === "—" ? "rs-muted" : "font-medium",
-                          )}
-                          title={value.length > 28 ? value : undefined}
-                        >
-                          <MetricCell value={value} frames={frames} text />
+                        <td key={b.id} className="rs-feature">
+                          <FeatureCell value={value} frames={frames} />
                         </td>
                       );
                     })}
                   </tr>
                 );
               })}
-              {ENGAGEMENT_ROWS.map((row, i) => (
-                <tr key={`engagement-${row.criteria}`}>
-                  <td className="rs-muted">{i === 0 ? "Engagement" : ""}</td>
-                  <td>{row.criteria}</td>
-                  {project.brands.map((b) => {
-                    const run = latestRunForBrand(project.runs, b.id);
-                    const value = engagementCell(run, row.re);
-                    const frames = /^Yes/.test(value)
-                      ? featureBenchmarkEvidence("Engagement", null, run)
-                      : [];
-                    return (
-                      <td
-                        key={b.id}
-                        className={cn(
-                          "rs-num",
-                          value === "—" ? "rs-muted" : "font-medium",
-                        )}
-                        title={value.length > 28 ? value : undefined}
-                      >
-                        <MetricCell value={value} frames={frames} text />
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
