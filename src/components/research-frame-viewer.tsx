@@ -10,7 +10,10 @@ import {
 } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
+import {
+  PhoneShotFrame,
+  ScreenshotLightbox,
+} from "@/components/screenshot-lightbox";
 import { cn } from "@/lib/utils";
 import type { JourneyStageResult } from "@/lib/research/types";
 
@@ -105,8 +108,8 @@ export function JourneyFrameViewer({
     <FrameViewerCtx.Provider value={ctx}>
       {children}
       <Dialog open={cur != null} onOpenChange={(o) => !o && setIdx(null)}>
-        <DialogContent className="w-auto max-w-[min(96vw,1200px)] gap-2 p-3 sm:max-w-[min(96vw,1200px)]">
-          <DialogTitle className="flex items-baseline gap-2 pe-8 text-sm text-muted-foreground">
+        <DialogContent className="w-auto max-w-[min(96vw,28rem)] gap-2 p-3 sm:max-w-[min(96vw,28rem)]">
+          <DialogTitle className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pe-8 text-sm text-muted-foreground">
             {cur ? (
               <>
                 <span className="font-medium text-foreground">
@@ -116,7 +119,7 @@ export function JourneyFrameViewer({
                   {cur.index}/{cur.total}
                 </span>
                 {cur.evidence ? (
-                  <span className="truncate">— {cur.evidence}</span>
+                  <span className="min-w-0 truncate">— {cur.evidence}</span>
                 ) : null}
                 <span className="ml-auto tabular-nums">
                   {idx! + 1} of {frames.length}
@@ -127,16 +130,12 @@ export function JourneyFrameViewer({
             )}
           </DialogTitle>
           <div className="relative">
-            <div className="max-h-[78vh] overflow-auto rounded-lg border">
-              {cur ? (
-                /* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */
-                <img
-                  src={cur.src}
-                  alt={`${cur.stageLabel} ${cur.index}`}
-                  className="w-full"
-                />
-              ) : null}
-            </div>
+            {cur ? (
+              <PhoneShotFrame
+                src={cur.src}
+                alt={`${cur.stageLabel} ${cur.index}`}
+              />
+            ) : null}
             <NavButton
               side="left"
               disabled={idx === 0}
@@ -218,7 +217,8 @@ export function FrameThumb(props: {
 }) {
   const ctx = useContext(FrameViewerCtx);
   const inJourney = ctx?.frames.some((f) => f.src === props.src);
-  if (!ctx || !inJourney) return <ScreenshotLightbox {...props} />;
+  if (!ctx || !inJourney)
+    return <ScreenshotLightbox {...props} frame="phone" />;
   return (
     <button
       type="button"

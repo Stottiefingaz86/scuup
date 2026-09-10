@@ -7,6 +7,7 @@ import { teardownFromRun } from "./teardown-summary";
 import { reconcilePostDeposit } from "./post-deposit";
 import { researchSignupEmail } from "./signup-email";
 import { extractUsernameFromEmails } from "./account-username";
+import { autoMarketForBrands } from "../brand-markets";
 import type {
   EmailWatchItem,
   JourneyKind,
@@ -54,12 +55,72 @@ function faviconFor(url: string): string {
   }
 }
 
+/** Same set as localhost: BetOnline vs Rainbet, Bovada, Winna (mobile). */
+function defaultResearchProject(): ResearchProject {
+  const ownBrandUrl = "https://www.betonline.ag";
+  const competitorUrls = [
+    "https://rainbet.com",
+    "https://www.bovada.lv",
+    "https://winna.com",
+  ];
+  const market = autoMarketForBrands([ownBrandUrl, ...competitorUrls]);
+  const makeBrand = (
+    url: string,
+    role: ResearchBrand["role"],
+  ): ResearchBrand => {
+    const name = hostToName(url);
+    return {
+      id: crypto.randomUUID(),
+      role,
+      name,
+      url,
+      favicon: faviconFor(url),
+      accountEmail: researchSignupEmail(name),
+      accountPassword: null,
+      accountReady: false,
+    };
+  };
+  return {
+    id: "rs-betonline-teardown",
+    name: "Betonline first-bet teardown",
+    market,
+    device: "mobile",
+    createdAt: new Date().toISOString(),
+    brands: [
+      makeBrand(ownBrandUrl, "own_brand"),
+      ...competitorUrls.map((u) => makeBrand(u, "competitor")),
+    ],
+    persona: defaultResearchPersona(market),
+    runs: [],
+    teardowns: [],
+    emails: [],
+    emailWatchDays: 14,
+  };
+}
+
 function load(): ResearchProject[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) {
+      const seeded = [defaultResearchProject()];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+      } catch {
+        /* quota */
+      }
+      return seeded;
+    }
     const projects = JSON.parse(raw) as ResearchProject[];
+    if (!Array.isArray(projects) || projects.length === 0) {
+      const seeded = [defaultResearchProject()];
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
+      } catch {
+        /* quota */
+      }
+      return seeded;
+    }
     // Older runs stored a nav-word guess for "landed on"; re-derive it from
     // the evidence on the record so the report states what happened.
     for (const p of projects) {

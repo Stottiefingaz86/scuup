@@ -434,6 +434,7 @@ export function ResearchEmailCard({
                 src={src}
                 alt={email.subject}
                 className="h-20 w-28"
+                frame="phone"
               />
             ))}
           </div>

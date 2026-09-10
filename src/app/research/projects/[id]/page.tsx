@@ -2944,6 +2944,7 @@ function ResearchReportView({
                         alt={s.stage}
                         caption={`${s.stage}${s.evidence ? ` — ${s.evidence}` : ""}`}
                         className="h-28 w-40"
+                        frame="phone"
                       />
                     ))}
                   </div>

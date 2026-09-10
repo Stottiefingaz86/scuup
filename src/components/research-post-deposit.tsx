@@ -344,6 +344,7 @@ export function PostDepositCard({
               src={src}
               alt={`After deposit ${i + 2}`}
               className="h-14 w-10 shrink-0 rounded-md ring-1 ring-white/20"
+              frame="phone"
             />
           ))}
         </div>
