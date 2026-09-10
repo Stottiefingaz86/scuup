@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { emptyStagesFor } from "./journeys";
 import { defaultResearchPersona } from "./persona-address";
 import { teardownFromRun } from "./teardown-summary";
@@ -102,25 +102,9 @@ function load(): ResearchProject[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      const seeded = [defaultResearchProject()];
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-      } catch {
-        /* quota */
-      }
-      return seeded;
-    }
+    if (!raw) return [];
     const projects = JSON.parse(raw) as ResearchProject[];
-    if (!Array.isArray(projects) || projects.length === 0) {
-      const seeded = [defaultResearchProject()];
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
-      } catch {
-        /* quota */
-      }
-      return seeded;
-    }
+    if (!Array.isArray(projects)) return [];
     // Older runs stored a nav-word guess for "landed on"; re-derive it from
     // the evidence on the record so the report states what happened.
     for (const p of projects) {
@@ -134,9 +118,61 @@ function load(): ResearchProject[] {
   }
 }
 
+function runCount(projects: ResearchProject[]): number {
+  return projects.reduce((n, p) => n + (p.runs?.length ?? 0), 0);
+}
+
+let pushTimer: ReturnType<typeof setTimeout> | null = null;
+let readyToPush = false;
+
+function queuePush(projects: ResearchProject[]) {
+  if (typeof window === "undefined" || !readyToPush) return;
+  if (pushTimer) clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    void fetch("/api/research/workspace", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projects }),
+    }).catch(() => {});
+  }, 400);
+}
+
 function save(projects: ResearchProject[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
   emit();
+  queuePush(projects);
+}
+
+let hydrated = false;
+
+async function hydrateFromSupabase(): Promise<void> {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+  try {
+    const res = await fetch("/api/research/workspace");
+    const data = (await res.json()) as { projects?: ResearchProject[] };
+    const remote = Array.isArray(data.projects) ? data.projects : [];
+    const local = getSnapshot();
+    if (runCount(remote) > 0 && runCount(remote) >= runCount(local)) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+      emit();
+      readyToPush = true;
+      return;
+    }
+    readyToPush = true;
+    if (runCount(local) > 0) {
+      queuePush(local);
+      return;
+    }
+    if (local.length === 0 && remote.length === 0) {
+      save([defaultResearchProject()]);
+    }
+  } catch {
+    readyToPush = true;
+    if (getSnapshot().length === 0) {
+      save([defaultResearchProject()]);
+    }
+  }
 }
 
 let cache: ResearchProject[] | null = null;
@@ -161,7 +197,11 @@ function subscribe(listener: () => void) {
 const EMPTY_PROJECTS: ResearchProject[] = [];
 
 export function useResearchProjects(): ResearchProject[] {
-  return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_PROJECTS);
+  const projects = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_PROJECTS);
+  useEffect(() => {
+    void hydrateFromSupabase();
+  }, []);
+  return projects;
 }
 
 export function useResearchProject(id: string): ResearchProject | null {
