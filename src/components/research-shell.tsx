@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { Bell, FolderKanban, LockKeyhole, Plus } from "lucide-react";
-import { ResearchAccountMenu } from "@/components/research-account-menu";
 import { ResearchNotificationsPanel } from "@/components/research-notifications-panel";
 import { ScuupIcon, ScuupMark } from "@/components/scuup-mark";
 import {
@@ -195,7 +194,6 @@ export function ResearchShell({ children }: { children: React.ReactNode }) {
           <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-3 border-b border-[var(--rs-border)] bg-[var(--rs-bg)]/90 px-4 backdrop-blur supports-[backdrop-filter]:bg-[var(--rs-bg)]/75">
             <SidebarTrigger className="-ms-1" />
             <div className="min-w-0 flex-1" />
-            <ResearchAccountMenu />
           </header>
           <div className="flex flex-1 flex-col">{children}</div>
         </SidebarInset>

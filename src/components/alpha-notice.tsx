@@ -12,6 +12,7 @@ const STORAGE_KEY = "scuup-alpha-notice-v1";
  */
 export function AlphaNotice() {
   useEffect(() => {
+    if (window.location.pathname.startsWith("/research")) return;
     try {
       if (localStorage.getItem(STORAGE_KEY) === "dismissed") return;
     } catch {

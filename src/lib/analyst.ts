@@ -342,7 +342,6 @@ const AGENT_PLAYBOOKS: Record<string, PlaybookStep[]> = {
         "/registration",
         "/signup",
         "/sign-up",
-        "/join",
       ],
       verify:
         "a registration or sign-up form with visible input fields (email, username, phone, or personal details) or the first step of a join wizard. NOT a login-only form, NOT the homepage hero",

@@ -269,13 +269,22 @@ export async function fastFillPersonaFields(
           /* match */
         } else if (pair.kind === "password" && type === "password") {
           /* match */
+        } else if (
+          pair.kind === "dateOfBirth" &&
+          /mm\\s*[/.-]\\s*dd\\s*[/.-]\\s*yyyy|dd\\s*[/.-]\\s*mm\\s*[/.-]\\s*yyyy/i.test(
+            placeholder
+          )
+        ) {
+          /* Bovada: placeholder mm/dd/yyyy, label may not be on the input */
         } else if (!re.test(meta)) continue;
 
         let value = pair.value;
         if (pair.kind === "dateOfBirth") {
           value = formatDob(pair, placeholder + " " + meta);
+          if (!/\\d{2}\\/\\d{2}\\/\\d{4}/.test(value) && pair.month && pair.day && pair.year) {
+            value = String(pair.month).padStart(2, "0") + "/" + String(pair.day).padStart(2, "0") + "/" + pair.year;
+          }
           dobFormatUsed = placeholder || value;
-          // Overwrite wrong format already typed (e.g. DD/MM into MM/DD field).
           const cur = String(el.value || "").trim();
           if (cur && cur !== value) {
             if (proto && proto.set) proto.set.call(el, "");
@@ -284,7 +293,10 @@ export async function fastFillPersonaFields(
             break;
           }
         } else if (el.value && String(el.value).trim().length > 0) {
-          continue;
+          const cur = String(el.value).trim();
+          const caPostal = /[A-Z]\\d[A-Z]/i.test(cur.replace(/\\s/g, ""));
+          const usZip = /^\\d{5}(-\\d{4})?$/.test(value);
+          if (!(pair.kind === "postalCode" && caPostal && usZip)) continue;
         }
 
         if (setVal(el, value)) {
@@ -869,10 +881,12 @@ export async function fastClickCreateAccount(
         const t = labelOf(el);
         if (!t || t.length > 64) continue;
         if (/log\\s*in|sign\\s*in|already have|terms|privacy|help|contact|close|dismiss|cancel|×|✕/.test(t)) continue;
-        // While the reg form is open, ONLY Create Account / submit — never
-        // Sign Up / Register (header + in-modal toggles close Rainbet's sheet).
+        // Form submit: Create Account, or Bovada's red REGISTER in the form.
+        // Header Sign Up / Register is a toggle — only count it when the
+        // form is closed.
         let score = 0;
         if (/create(\\s+an?)?\\s+account/.test(t)) score = 100;
+        else if (formOpen && /^(register|register now)$/.test(t)) score = 100;
         else if (
           !formOpen &&
           (/^sign\\s*up$/.test(t) || t === "register" || /sign\\s*up|register|join now/.test(t))
@@ -1263,70 +1277,169 @@ export async function onCasinoDistraction(page: PageLike): Promise<boolean> {
   }
 }
 
+const REG_CTA_SCRIPT = `(() => {
+  ${HELPERS}
+  const good = /^(register(?:\\s*now)?|sign\\s*up(?:\\s*now)?|create\\s*(?:an\\s*)?account|join(?:\\s*now)?|joinnow)$/i;
+  const bad = /log\\s*in|sign\\s*in|deposit|play now|provably|terms|privacy|help|join\\s*(game|table|rain|bet)|placed by/i;
+  const inGameTile = (el) =>
+    Boolean(el.closest("[class*='game' i], [class*='tile' i], [class*='slot' i], [class*='live-bet' i], [data-testid*='game' i]"));
+  const inNav = (el) =>
+    Boolean(el.closest("nav, aside, [role='navigation'], [role='dialog'], [role='menu'], [class*='menu' i], [class*='drawer' i], [class*='hamburger' i], [class*='overlay' i], [class*='offcanvas' i], [class*='sheet' i], [class*='nav-' i]"));
+  const labelOf = (el) =>
+    (el.innerText || el.textContent || el.getAttribute("aria-label") || "")
+      .replace(/\\s+/g, " ")
+      .trim();
+  const nodes = [...document.querySelectorAll("a, button, [role=button], [role=link], span, p, em, strong, div")];
+  const candidates = nodes
+    .filter(visible)
+    .map((el) => {
+      const t = labelOf(el);
+      const href = ((el.getAttribute && el.getAttribute("href")) || "").toLowerCase();
+      return { el, t, href };
+    })
+    .filter(({ el, t, href }) => {
+      if (!t || t.length > 28) return false;
+      if (bad.test(t) || inGameTile(el)) return false;
+      if (/\\/join\\/?$/i.test((href.split("?")[0] || ""))) return false;
+      // After hamburger: prefer "Register now" even if the drawer isn't a <nav>.
+      if (window.__rsMenuOnly && !inNav(el) && !/register/i.test(t)) return false;
+      if (good.test(t)) {
+        const tag = el.tagName;
+        const linked =
+          tag === "A" ||
+          tag === "BUTTON" ||
+          el.getAttribute("role") === "button" ||
+          el.getAttribute("role") === "link" ||
+          Boolean(el.closest("a[href]"));
+        if (!linked && !/^(join(?:\\s*now)?|joinnow|register(?:\\s*now)?)$/i.test(t)) return false;
+        return true;
+      }
+      // /join is a blank Bovada URL — never treat it as registration.
+        if (/\\/join\\/?$/i.test((href.split("?")[0] || ""))) return false;
+        if (/\\/(register|signup|sign-up)\\b/i.test(href) && !/bet|casino\\/game/i.test(href)) {
+          return /^sign|^reg|^create/i.test(t) || t.length < 16;
+        }
+      return false;
+    });
+  candidates.sort((a, b) => {
+    const ar = a.el.getBoundingClientRect();
+    const br = b.el.getBoundingClientRect();
+    const aNav = inNav(a.el) ? 0 : 1;
+    const bNav = inNav(b.el) ? 0 : 1;
+    if (window.__rsMenuOnly && aNav !== bNav) return aNav - bNav;
+    const aReg = /register/i.test(a.t) ? 0 : 1;
+    const bReg = /register/i.test(b.t) ? 0 : 1;
+    if (window.__rsMenuOnly && aReg !== bReg) return aReg - bReg;
+    const aHead = ar.top < 140 ? 0 : 1;
+    const bHead = br.top < 140 ? 0 : 1;
+    if (aHead !== bHead) return aHead - bHead;
+    const aLink = a.el.tagName === "A" && !/\\/join\\b/i.test(a.href) ? 0 : 1;
+    const bLink = b.el.tagName === "A" && !/\\/join\\b/i.test(b.href) ? 0 : 1;
+    if (aLink !== bLink) return aLink - bLink;
+    return ar.top - br.top;
+  });
+  const pick = candidates[0];
+  if (!pick) return null;
+  try { pick.el.focus({ preventScroll: true }); } catch (_) {}
+  pick.el.click();
+  return "click:" + pick.t.slice(0, 24);
+})()`;
+
+const HAMBURGER_SCRIPT = `(() => {
+  ${HELPERS}
+  const labelOf = (el) =>
+    (el.innerText || el.textContent || el.getAttribute("aria-label") || "")
+      .replace(/\\s+/g, " ")
+      .trim();
+  const header = [...document.querySelectorAll("button, a, [role=button], [role=link]")]
+    .filter(visible)
+    .filter((el) => el.getBoundingClientRect().top < 130);
+  let best = null;
+  for (const el of header) {
+    const r = el.getBoundingClientRect();
+    const meta = [
+      el.getAttribute("aria-label") || "",
+      el.getAttribute("title") || "",
+      el.className || "",
+      el.id || "",
+    ].join(" ").toLowerCase();
+    if (/chat|message|intercom|wallet|deposit|login|sign.?in|account|profile/i.test(meta + " " + labelOf(el))) {
+      continue;
+    }
+    const named = /menu|hamburger|burger|nav-toggle|navbar-toggle/i.test(meta);
+    const iconOnly =
+      r.right > innerWidth - 88 &&
+      r.width >= 24 &&
+      r.width <= 64 &&
+      r.height >= 24 &&
+      r.height <= 64 &&
+      labelOf(el).length <= 2 &&
+      Boolean(el.querySelector("svg, img, i, [class*='icon' i]"));
+    if (named || iconOnly) {
+      best = el;
+      if (named) break;
+    }
+  }
+  if (!best) return null;
+  best.click();
+  return "menu";
+})()`;
+
+async function clickRegistrationCta(
+  page: PageLike,
+  inMenuOnly = false,
+): Promise<string | null> {
+  try {
+    if (inMenuOnly) {
+      await page.evaluate("window.__rsMenuOnly = true");
+    } else {
+      await page.evaluate("window.__rsMenuOnly = false");
+    }
+    const r = await page.evaluate(REG_CTA_SCRIPT);
+    await page.evaluate("window.__rsMenuOnly = false").catch(() => {});
+    return typeof r === "string" && r ? r : null;
+  } catch {
+    await page.evaluate("window.__rsMenuOnly = false").catch(() => {});
+    return null;
+  }
+}
+
+/** Open the header hamburger (Bovada mobile: icon-only top-right). */
+export async function fastOpenHamburgerMenu(
+  page: PageLike,
+): Promise<boolean> {
+  try {
+    const r = await page.evaluate(HAMBURGER_SCRIPT);
+    if (r !== "menu") return false;
+    await new Promise((res) => setTimeout(res, 1400));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * DOM-first open registration. Prefer header Register / Sign Up with short
- * labels — never bet rows, Join game tiles, or Create Account in ads.
+ * DOM-first open registration. Prefer header Register / Sign Up, then a
+ * short "Join now" text link (Bovada). If that click is a dud, open the
+ * hamburger and try Join / Register in the drawer. Never bet rows.
  */
 export async function fastOpenRegistration(
   page: PageLike,
+  opts?: { via?: "cta" | "menu" },
 ): Promise<string | null> {
-  const script = `(() => {
-    ${HELPERS}
-    // Short header CTAs only — "Join now" on a game tile is not registration.
-    const good = /^(register|sign\\s*up|sign\\s*up\\s*now|create\\s*account|create\\s*an\\s*account)$/i;
-    const bad = /log\\s*in|sign\\s*in|bet|deposit|play|provably|terms|privacy|help/i;
-    const candidates = [...document.querySelectorAll("a, button, [role=button], [role=link]")]
-      .filter(visible)
-      .map((el) => {
-        const t = (el.innerText || el.textContent || el.getAttribute("aria-label") || "")
-          .replace(/\\s+/g, " ")
-          .trim();
-        const href = (el.getAttribute("href") || "").toLowerCase();
-        return { el, t, href };
-      })
-      .filter(({ t, href }) => {
-        if (!t || t.length > 28) return false;
-        if (bad.test(t)) return false;
-        if (good.test(t)) return true;
-        if (/\\/(register|signup|sign-up|join)\\b/i.test(href) && !/bet|casino\\/game/i.test(href)) {
-          return /^sign|^reg|^join|^create/i.test(t) || t.length < 16;
-        }
-        return false;
-      });
-    // Prefer controls in the top header band.
-    candidates.sort((a, b) => {
-      const ay = a.el.getBoundingClientRect().top;
-      const by = b.el.getBoundingClientRect().top;
-      const aHead = ay < 120 ? 0 : 1;
-      const bHead = by < 120 ? 0 : 1;
-      if (aHead !== bHead) return aHead - bHead;
-      return ay - by;
-    });
-    const pick = candidates[0];
-    if (!pick) {
-      const menu = [...document.querySelectorAll("button, [role=button], a")].filter(visible).find((el) => {
-        const meta = ((el.getAttribute("aria-label") || "") + " " + (el.className || "") + " " + (el.id || "")).toLowerCase();
-        return /menu|hamburger|burger/i.test(meta) && el.getBoundingClientRect().top < 120;
-      });
-      if (menu) {
-        menu.click();
-        return "menu";
-      }
-      return null;
-    }
-    // No scrollIntoView — can dismiss overlays / shift the header.
-    try { pick.el.focus({ preventScroll: true }); } catch (_) {}
-    pick.el.click();
-    return "click:" + pick.t.slice(0, 24);
-  })()`;
+  const via = opts?.via ?? "cta";
   try {
-    let r = await page.evaluate(script);
-    if (r === "menu") {
-      await new Promise((res) => setTimeout(res, 900));
-      r = await page.evaluate(script);
-      if (r === "menu") return null;
+    if (via === "menu") {
+      const opened = await fastOpenHamburgerMenu(page);
+      if (!opened) return null;
+      const inMenu = await clickRegistrationCta(page, true);
+      if (inMenu) return `menu:${inMenu}`;
+      const any = await clickRegistrationCta(page, false);
+      return any ? `menu:${any}` : "menu";
     }
-    return typeof r === "string" ? r : null;
+    const cta = await clickRegistrationCta(page, false);
+    if (cta) return cta;
+    return null;
   } catch {
     return null;
   }

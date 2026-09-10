@@ -26,7 +26,10 @@ export async function unlockResearch(
     maxAge: 60 * 60 * 24 * 30,
   });
 
-  const next = String(formData.get("next") ?? "/");
-  const dest = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+  const next = String(formData.get("next") ?? "/research");
+  const dest =
+    next.startsWith("/research") && !next.startsWith("//")
+      ? next
+      : "/research";
   redirect(dest);
 }

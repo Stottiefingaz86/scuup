@@ -1635,12 +1635,11 @@ function ResearchProjectPageInner() {
               {jobId ? (
                 <button
                   type="button"
-                  disabled={pausing}
                   onClick={() => void pauseAgent()}
-                  title="Stop the agent and close the browser. Resume or run again from Journeys."
-                  className="cursor-pointer rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10 disabled:opacity-50"
+                  title="Stop now and release the remote browser so it stops billing."
+                  className="cursor-pointer rounded-lg border border-amber-500/40 px-3 py-1.5 text-xs text-amber-200 hover:bg-amber-500/10"
                 >
-                  {pausing ? "Pausing…" : "Pause"}
+                  {pausing ? "Stopping…" : "Stop"}
                 </button>
               ) : null}
               {jobId &&
@@ -3853,7 +3852,7 @@ function PersonaForm({
               ["email", "Email", "email"],
               ["password", "Password (optional)", "password"],
               ["dateOfBirth", "Date of birth", "text"],
-              ["phone", "Mobile (must receive SMS)", "tel"],
+              ["phone", "Mobile (US +1 if country code is locked)", "tel"],
               ["country", "Country", "text"],
               ["state", "Province / state", "text"],
               ["addressLine1", "Street address", "text"],
@@ -3876,11 +3875,22 @@ function PersonaForm({
                   setForm((f) => ({ ...f, [key]: e.target.value }))
                 }
                 required={key !== "password" && key !== "state"}
-                placeholder={key === "dateOfBirth" ? "YYYY-MM-DD" : undefined}
+                placeholder={
+                  key === "dateOfBirth"
+                    ? "YYYY-MM-DD"
+                    : key === "phone"
+                      ? "+1 number that can receive SMS"
+                      : undefined
+                }
               />
             </label>
           ))}
         </div>
+        <p className="text-xs text-muted-foreground">
+          Bovada and most US books lock the country code to +1. A Spanish +34
+          number cannot receive their SMS. Use a US mobile, Google Voice, or
+          similar — or skip if the site offers verify later.
+        </p>
 
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="text-muted-foreground">Notes</span>

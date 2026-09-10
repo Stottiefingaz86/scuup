@@ -25,8 +25,8 @@ const PUBLIC_PATHS = [
   /^\/cookies(\/|$)/,
   /^\/api\/showcase(\/|$)/,
   /^\/api\/contact(\/|$)/,
-  // Research product landing — projects still require auth.
-  /^\/research\/?$/,
+  /^\/research(\/|$)/,
+  /^\/api\/research(\/|$)/,
   // Stripe calls this from its servers; the signature check is the auth.
   /^\/api\/billing\/webhook$/,
   // Sentry event tunnel — must work for logged-out visitors too.
@@ -49,52 +49,55 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const host = request.headers.get("host");
 
-  // Research is behind its own 4-digit PIN (research.scuup.io, /research/*,
-  // /api/research/*). The PIN screen itself must stay reachable.
+  // Research is its own app: PIN only. Never the Scuup site password or login.
   const researchScoped =
     isResearchHost(host) ||
     pathname.startsWith(RESEARCH_BASE) ||
     pathname.startsWith("/api/research");
-  if (
-    researchScoped &&
-    researchPinEnabled() &&
-    !isResearchPinUnlocked(request.cookies.get(RESEARCH_PIN_COOKIE)?.value) &&
-    !pathname.startsWith(RESEARCH_PIN_PATH) &&
-    !(isResearchHost(host) && pathname.startsWith("/pin")) &&
-    !GATE_BYPASS.some((p) => p.test(pathname))
-  ) {
-    if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { error: "Research is PIN-protected." },
-        { status: 401 },
-      );
+  if (researchScoped) {
+    const onPinScreen =
+      pathname.startsWith(RESEARCH_PIN_PATH) ||
+      (isResearchHost(host) && pathname.startsWith("/pin"));
+    if (
+      researchPinEnabled() &&
+      !isResearchPinUnlocked(request.cookies.get(RESEARCH_PIN_COOKIE)?.value) &&
+      !onPinScreen &&
+      !GATE_BYPASS.some((p) => p.test(pathname))
+    ) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Research is PIN-protected." },
+          { status: 401 },
+        );
+      }
+      const url = request.nextUrl.clone();
+      url.pathname = isResearchHost(host) ? "/pin" : RESEARCH_PIN_PATH;
+      url.search = "";
+      if (pathname.startsWith(RESEARCH_BASE) && pathname !== RESEARCH_BASE) {
+        url.searchParams.set("next", pathname);
+      }
+      return NextResponse.redirect(url);
     }
-    const url = request.nextUrl.clone();
-    // On research.scuup.io the screen lives at /pin (rewritten below).
-    url.pathname = isResearchHost(host) ? "/pin" : RESEARCH_PIN_PATH;
-    url.search = "";
-    if (pathname !== "/" && pathname !== RESEARCH_BASE) {
-      url.searchParams.set("next", pathname);
-    }
-    return NextResponse.redirect(url);
-  }
 
-  // research.scuup.io → rewrite into /research/* without changing the browser URL.
-  // Keeps Scuup on the apex domain completely separate.
-  if (
-    isResearchHost(host) &&
-    !pathname.startsWith(RESEARCH_BASE) &&
-    !pathname.startsWith("/api/") &&
-    !pathname.startsWith("/_next") &&
-    !pathname.startsWith("/gate") &&
-    !pathname.startsWith("/login") &&
-    !pathname.startsWith("/auth") &&
-    !pathname.startsWith("/monitoring")
-  ) {
-    const url = request.nextUrl.clone();
-    url.pathname =
-      pathname === "/" ? RESEARCH_BASE : `${RESEARCH_BASE}${pathname}`;
-    return NextResponse.rewrite(url);
+    // research.scuup.io → /research/* without changing the browser URL.
+    if (
+      isResearchHost(host) &&
+      !pathname.startsWith(RESEARCH_BASE) &&
+      !pathname.startsWith("/api/") &&
+      !pathname.startsWith("/_next") &&
+      !pathname.startsWith("/monitoring")
+    ) {
+      const url = request.nextUrl.clone();
+      url.pathname =
+        pathname === "/" || pathname === "/pin"
+          ? pathname === "/pin"
+            ? RESEARCH_PIN_PATH
+            : RESEARCH_BASE
+          : `${RESEARCH_BASE}${pathname}`;
+      return NextResponse.rewrite(url);
+    }
+
+    return response;
   }
 
   // Close the site to the public until the visitor enters the password.

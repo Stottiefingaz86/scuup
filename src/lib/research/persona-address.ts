@@ -31,13 +31,13 @@ const US_STREETS = [
   "Market Street",
 ];
 
-const US_CITIES: { city: string; state: string; zip: string }[] = [
-  { city: "New York", state: "NY", zip: "10001" },
-  { city: "Jersey City", state: "NJ", zip: "07302" },
-  { city: "Miami", state: "FL", zip: "33101" },
-  { city: "Austin", state: "TX", zip: "78701" },
-  { city: "Denver", state: "CO", zip: "80202" },
-  { city: "Seattle", state: "WA", zip: "98101" },
+// Avoid Bovada-restricted states (NY, NJ, CO, PA, …). TX matches the
+// "US rest / offshore" Browserbase egress.
+const US_CITIES: { city: string; state: string; zip: string; area: string }[] = [
+  { city: "Austin", state: "TX", zip: "78701", area: "512" },
+  { city: "Houston", state: "TX", zip: "77002", area: "713" },
+  { city: "Miami", state: "FL", zip: "33101", area: "305" },
+  { city: "Seattle", state: "WA", zip: "98101", area: "206" },
 ];
 
 function pick<T>(arr: T[]): T {
@@ -89,7 +89,7 @@ export function randomUsAddress(): Pick<
     state: place.state,
     postalCode: place.zip.replace(/\d{2}$/, randomDigits(2)),
     country: "United States",
-    phone: `201555${randomDigits(4)}`,
+    phone: `${place.area}555${randomDigits(4)}`,
   };
 }
 

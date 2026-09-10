@@ -113,16 +113,15 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
     preferredProxyMarket: "Canada",
   },
   {
-    // Bovada is US-only (Bodog is the sister brand for Canada / LatAm). Its
-    // own restricted list is purely US states: AZ, CO, CT, DE, DC, KS, LA, MD,
-    // MA, MI, NV, NH, NJ, NY, OH, PA, RI, TN, VT, WV. Everything outside the
-    // US hits a geo wall — a Canadian egress was why Register went nowhere.
-    // "US (rest / offshore)" egresses from Texas, which is not restricted.
+    // Bovada is US-offshore only (Bodog is the Canada / LatAm sister).
+    // Canada hard-blocks Register. Licensed US states are also blocked.
+    // Texas ("US rest / offshore") is not on Bovada's restricted list.
     hosts: ["bovada.lv", "bovada.com"],
     blocked: [
       ...EU_REGULATED_BLOCKED,
       ...US_LICENSED,
       "Ontario, Canada",
+      "Canada",
       "Canada (rest / crypto)",
       "Brazil",
       "Mexico",

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { releaseAllRunningSessions } from "@/lib/browserbase";
 import {
   getResearchTeardownJob,
   pauseResearchJob,
@@ -8,9 +9,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Stop a long deposit watch (bank transfers can take a day). The agent
- * finishes its current check, snapshots, closes the browser and parks the
- * parks the job as "paused" — resume later, or Run again from Journeys.
+ * Stop now. Releases the Browserbase session immediately — do not wait
+ * for the current step (SMS / inbox / login) or billing keeps running.
  */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
@@ -22,11 +22,11 @@ export async function POST(request: NextRequest) {
   if (!job)
     return NextResponse.json({ error: "job not found" }, { status: 404 });
   const ok = pauseResearchJob(jobId);
+  const released = await releaseAllRunningSessions().catch(() => 0);
   return NextResponse.json({
-    ok,
+    ok: ok || released > 0,
     status: job.status,
-    reason: ok
-      ? null
-      : `Job is ${job.status} — already finished`,
+    released,
+    reason: ok || released > 0 ? null : `Job is ${job.status} — already finished`,
   });
 }

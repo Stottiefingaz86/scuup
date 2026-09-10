@@ -5,6 +5,7 @@ import {
   createContext,
   getLiveViewUrl,
   proxyConfig,
+  releaseSession,
   withSessionRetry,
 } from "../browserbase";
 import {
@@ -254,10 +255,15 @@ const store = globalThis as unknown as {
       timer: ReturnType<typeof setTimeout>;
     }
   >;
+  __researchSessionHandles?: Map<
+    string,
+    { sessionId?: string; close: () => Promise<void> }
+  >;
 };
 const jobs = (store.__researchTeardownJobs ??= new Map());
 const paymentWaits = (store.__researchPaymentWait ??= new Map());
 const smsWaits = (store.__researchSmsWait ??= new Map());
+const sessionHandles = (store.__researchSessionHandles ??= new Map());
 
 const PAYMENT_WAIT_MS = 45 * 60_000;
 const SMS_WAIT_MS = 30 * 60_000;
@@ -325,35 +331,46 @@ export function signalPaymentSent(
   return true;
 }
 
+async function abortResearchBrowser(jobId: string): Promise<void> {
+  const handle = sessionHandles.get(jobId);
+  sessionHandles.delete(jobId);
+  if (handle?.sessionId) await releaseSession(handle.sessionId);
+  await handle?.close().catch(() => {});
+}
+
+function releaseJobWaits(jobId: string) {
+  const pay = paymentWaits.get(jobId);
+  if (pay) {
+    clearTimeout(pay.timer);
+    paymentWaits.delete(jobId);
+    pay.resolve("pause");
+  }
+  const sms = smsWaits.get(jobId);
+  if (sms) {
+    clearTimeout(sms.timer);
+    smsWaits.delete(jobId);
+    sms.reject(new Error("Stopped by you"));
+  }
+}
+
 /**
- * Human wants to stop the agent (stuck registration, long deposit watch, etc.).
- * The runner notices between steps, parks the job as "paused", and closes the
- * browser so you can resume or run again.
+ * Stop now. Always releases the Browserbase session — even if Pause was
+ * already clicked and the current step is still hanging (SMS, inbox, login).
+ * Waiting for that step is what kept billing.
  */
 export function pauseResearchJob(jobId: string): boolean {
   const job = jobs.get(jobId);
   if (!job) return false;
-  if (
-    job.status === "success" ||
-    job.status === "failed" ||
-    job.status === "paused"
-  ) {
+  if (job.status === "success" || job.status === "failed") {
+    if (sessionHandles.has(jobId)) void abortResearchBrowser(jobId);
     return false;
   }
   job.pauseRequested = true;
-  job.steps.push(
-    "Pause requested — finishing this step, then closing browser",
-  );
-  // Release a pending payment wait so the runner can exit instead of sitting
-  // open until the 45-min timeout.
-  if (job.status === "awaiting_payment") {
-    const wait = paymentWaits.get(jobId);
-    if (wait) {
-      clearTimeout(wait.timer);
-      paymentWaits.delete(jobId);
-      wait.resolve("pause");
-    }
-  }
+  job.status = "paused";
+  job.sessionOpen = false;
+  job.steps.push("Stopped — browser session released now");
+  releaseJobWaits(jobId);
+  void abortResearchBrowser(jobId);
   return true;
 }
 
@@ -470,6 +487,46 @@ async function detectSmsChallenge(page: AgentPage): Promise<boolean> {
   }
 }
 
+/** Bovada and similar: SMS is optional — "verify later" / "skip for now". */
+async function clickSkipSmsIfPresent(page: AgentPage): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        const labels = [
+          "verify later",
+          "verify later?",
+          "skip for now",
+          "skip this step",
+          "skip verification",
+          "do this later",
+          "i'll do this later",
+          "not now",
+        ];
+        const nodes = [
+          ...document.querySelectorAll("button, a, [role='button'], [role='link']"),
+        ];
+        for (const el of nodes) {
+          const r = el.getBoundingClientRect();
+          if (r.width < 20 || r.height < 10) continue;
+          const s = getComputedStyle(el);
+          if (s.display === "none" || s.visibility === "hidden" || Number(s.opacity) === 0) {
+            continue;
+          }
+          const t = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().toLowerCase();
+          if (t.length > 48) continue;
+          if (labels.some((l) => t === l || t.includes(l))) {
+            el.click();
+            return true;
+          }
+        }
+        return false;
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function enterSmsCodeOnPage(
   stagehand: Stagehand,
   code: string,
@@ -479,6 +536,84 @@ async function enterSmsCodeOnPage(
     { variables: { code } },
   );
   return Boolean(res.success);
+}
+
+/**
+ * Prefer skip/verify-later when the site offers it (locked +1 country codes
+ * make a non-US number useless). Otherwise pause for a human SMS paste.
+ */
+async function handleSmsChallenge(opts: {
+  job: ResearchTeardownJob;
+  tracker: JourneyStageTracker;
+  stagehand: Stagehand;
+  page: AgentPage;
+  input: StartResearchTeardownInput;
+  phoneHint: string;
+}): Promise<boolean> {
+  const skipped = await clickSkipSmsIfPresent(opts.page);
+  if (skipped) {
+    opts.tracker.push("Skipped SMS — site offered verify later");
+    await opts.tracker.wait(opts.page, 2000, "verification");
+    return checkAgentLoggedIn(opts.stagehand);
+  }
+  await pauseForSmsAssist(opts);
+  return checkAgentLoggedIn(opts.stagehand);
+}
+
+/**
+ * Bovada "next login steps" — try the same email/password instead of
+ * waiting for mail that often never arrives.
+ */
+async function tryLoginWithSignupCredentials(
+  stagehand: Stagehand,
+  page: AgentPage,
+  tracker: JourneyStageTracker,
+  email: string,
+  password: string,
+): Promise<boolean> {
+  if (await checkAgentLoggedIn(stagehand)) return true;
+  if (!password) return false;
+  tracker.push(`Trying login as ${email} — no confirmation mail yet`);
+  const opened = await fastOpenLogin(page);
+  await tracker.wait(page, 1200, "verification");
+  if (!(await loginFormVisible(page))) {
+    await stagehand
+      .act(
+        "click Log In or Sign In (not Register / Sign Up) to open the login form",
+      )
+      .catch(() => {});
+    await tracker.wait(page, 1200, "verification");
+  }
+  if (!(await loginFormVisible(page))) {
+    tracker.push(
+      `Login form not visible after ${opened || "no"} Log In click`,
+    );
+    return false;
+  }
+  let filled = await fastFillLoginCredentials(page, { email, password });
+  if (!filled.email || !filled.password) {
+    await stagehand
+      .act(
+        "type %email% and %password% into the Log In form — do not click Register",
+        { variables: { email, password } },
+      )
+      .catch(() => {});
+    filled = await fastFillLoginCredentials(page, { email, password });
+  }
+  if (!filled.password) {
+    tracker.push("Login password field still empty");
+    return false;
+  }
+  const submitted = await fastSubmitLogin(page);
+  if (!submitted) {
+    await stagehand
+      .act("click the Log In or Sign In button to submit — not Create Account")
+      .catch(() => {});
+  }
+  await tracker.wait(page, 3500, "verification");
+  const ok = await checkAgentLoggedIn(stagehand);
+  tracker.push(ok ? "Logged in with signup credentials" : "Login did not succeed");
+  return ok;
 }
 
 /**
@@ -858,16 +993,32 @@ function resolveVars(
       "No password — set persona password or TEST_ACCOUNT_PASSWORD",
     );
   }
+  const usMarket = /united states|us \(rest|offshore|us-tx/i.test(market);
+  // Project persona is often Canadian. Bovada country is United States —
+  // a CA postal (T2P 8Y9) fails ZIP validation. Brand geo wins.
+  const useBrandAddress = usMarket || addressFallback.country === "United States";
   const merged = {
     ...base,
     email,
     dateOfBirth: persona?.dateOfBirth?.trim() || base.dateOfBirth,
-    phone: persona?.phone?.trim() || addressFallback.phone || base.phone,
-    country: persona?.country?.trim() || addressFallback.country,
-    addressLine1: persona?.addressLine1?.trim() || addressFallback.addressLine1,
-    city: persona?.city?.trim() || addressFallback.city,
-    postalCode: persona?.postalCode?.trim() || addressFallback.postalCode,
-    state: persona?.state?.trim() || addressFallback.state || base.state,
+    phone: useBrandAddress
+      ? addressFallback.phone || base.phone
+      : persona?.phone?.trim() || addressFallback.phone || base.phone,
+    country: useBrandAddress
+      ? addressFallback.country
+      : persona?.country?.trim() || addressFallback.country,
+    addressLine1: useBrandAddress
+      ? addressFallback.addressLine1
+      : persona?.addressLine1?.trim() || addressFallback.addressLine1,
+    city: useBrandAddress
+      ? addressFallback.city
+      : persona?.city?.trim() || addressFallback.city,
+    postalCode: useBrandAddress
+      ? addressFallback.postalCode
+      : persona?.postalCode?.trim() || addressFallback.postalCode,
+    state: useBrandAddress
+      ? addressFallback.state || base.state
+      : persona?.state?.trim() || addressFallback.state || base.state,
   };
   // DOB display: NA markets/addresses → MM/DD/YYYY. Fast-fill still re-reads
   // the field placeholder and reformats — that is the source of truth on-site.
@@ -891,8 +1042,11 @@ async function fillRegistrationStep(
   vars: Record<string, string>,
 ): Promise<{ filled: number; kinds: string[] }> {
   const fast = await fastFillPersonaFields(page, vars);
+  const kinds = fast.kinds.join(" ");
+  const missingDob = !/dateOfBirth/i.test(kinds);
+  const missingZip = !/postalCode/i.test(kinds);
   // Only use the LLM for leftovers — never for every character of name fields.
-  if (fast.filled < 3) {
+  if (fast.filled < 3 || missingDob || missingZip) {
     await stagehand.act(
       `Fill any still-empty registration fields using: email %email%, password %password%, first name %firstName%, last name %lastName%, full name %fullName%, date of birth %dateOfBirthDisplay%, phone %phone%, address %addressLine1%, city %city%, state %state%, postcode %postalCode%, country %country%. For date of birth, match the placeholder format exactly (e.g. if the field says MM/DD/YYYY use month/day/year — do not use DD/MM/YYYY). Paste whole values — do not type slowly. Do NOT open Terms, Privacy, Help, or Support links. Do not submit.`,
       { variables: vars },
@@ -1260,10 +1414,26 @@ async function loggedOutHeaderVisible(page: AgentPage): Promise<boolean> {
   }
 }
 
+/** Bovada red banner — not proof they emailed. Often a silent decline. */
+async function accountCreationIssueVisible(page: AgentPage): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        const t = (document.body?.innerText || "").slice(0, 8000).toLowerCase();
+        return /issue with your account creation/.test(t) ||
+          /check your email for next login/.test(t);
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Positive proof the signup went through: success/verify copy on screen, or
  * a verify/welcome email already in the job. A closed modal alone is not proof
  * — the agent may have clicked outside it.
+ * Bovada's "issue with account creation / check email" banner is NOT success.
  */
 async function signupConfirmed(
   stagehand: Stagehand,
@@ -1275,11 +1445,12 @@ async function signupConfirmed(
   ) {
     return true;
   }
+  if (await accountCreationIssueVisible(page)) return false;
   try {
     const onScreen = Boolean(
       await page.evaluate(`(() => {
         const t = (document.body?.innerText || "").slice(0, 12000);
-        return /account (has been |was )?(created|registered)|registration (successful|complete)|thanks for (signing up|registering)|verify your (email|account)|check your (inbox|email)|we('ve| have) sent (you )?(an? )?(email|link|code)|confirmation (email|link)|enter the (code|otp|verification)/i.test(t);
+        return /account (has been |was )?(created|registered)|registration (successful|complete)|thanks for (signing up|registering)|verify your (email|account)|we('ve| have) sent (you )?(an? )?(email|link|code)|confirmation (email|link)|enter the (code|otp|verification)/i.test(t);
       })()`),
     );
     if (onScreen) return true;
@@ -1315,22 +1486,61 @@ async function openRegistrationForm(
     if (await registrationFormStillOpenFast(page)) return true;
 
     await dismissDistractingModals(page);
-    const dom = await fastOpenRegistration(page);
-    if (dom) {
-      tracker.push(`Opened registration via DOM (${dom})`);
-    } else {
-      tracker.push(
-        `DOM Register miss — agent fallback (attempt ${attempt})`,
-      );
-      await stagehand
-        .act(
-          "Click the Register or Sign Up button in the site HEADER only to open the Create an Account form. Do NOT click any bet, game, Dice, casino tile, Join game, or live-bet row. Do NOT open Terms, Privacy, or Help.",
-        )
+    // Bovada /join is a blank page — never navigate there. Leave it if we
+    // already landed on it, then use Join now / hamburger only.
+    const hrefNow = String(
+      await page.evaluate("location.href").catch(() => ""),
+    );
+    if (
+      /\/join\/?(\?|#|$)/i.test(hrefNow) &&
+      typeof page.goto === "function" &&
+      !(await registrationFormStillOpenFast(page))
+    ) {
+      tracker.push("Left /join (not a real register URL) — back to homepage");
+      await page
+        .goto(brandUrl, { waitUntil: "domcontentloaded", timeoutMs: 30000 })
         .catch(() => {});
+      await preparePageAfterNavigation(page, stagehand);
+      await tracker.wait(page, 1200, "registration");
+    }
+    // 1) On-page Join now / Register. 2) If that click is a dud, hamburger.
+    const via = attempt === 1 ? "cta" : "menu";
+    const dom = await fastOpenRegistration(page, { via });
+    if (dom) {
+      tracker.push(
+        via === "menu"
+          ? `Opened hamburger — ${dom}`
+          : `Opened registration via DOM (${dom})`,
+      );
     }
     await tracker.wait(page, 2000, "registration");
     await waitForPaintedContent(page, { minChars: 40, maxMs: 6_000 });
 
+    if (await onCasinoDistraction(page)) {
+      tracker.push("Opened a bet/casino modal instead of Register — recovering");
+      continue;
+    }
+    if (await registrationFormStillOpenFast(page)) return true;
+
+    if (via === "cta") {
+      tracker.push("Landing Join now did not open the form — hamburger → Register now");
+      const menu = await fastOpenRegistration(page, { via: "menu" });
+      if (menu) tracker.push(`Hamburger Join (${menu})`);
+      await tracker.wait(page, 2000, "registration");
+      await waitForPaintedContent(page, { minChars: 40, maxMs: 6_000 });
+      if (await registrationFormStillOpenFast(page)) return true;
+    }
+
+    tracker.push(`DOM Register miss — agent fallback (attempt ${attempt})`);
+    await stagehand
+      .act(
+        via === "menu"
+          ? "The hamburger menu is open. Click the item labelled Register now (or Register / Sign Up). Do not go to /join. Do not click bets, games, or Terms."
+          : "Click Join now on the page if it opens a form. If it does not, open the hamburger menu and click Register now. Never go to /join. Do not click bets, games, or Terms.",
+      )
+      .catch(() => {});
+    await tracker.wait(page, 2000, "registration");
+    await waitForPaintedContent(page, { minChars: 40, maxMs: 6_000 });
     if (await onCasinoDistraction(page)) {
       tracker.push("Opened a bet/casino modal instead of Register — recovering");
       continue;
@@ -1451,6 +1661,10 @@ async function registrationFormStillOpenFast(
     return Boolean(
       await page.evaluate(`(() => {
         const text = (document.body?.innerText || "").slice(0, 8000).toLowerCase();
+        // Bovada: form stays on screen under "check your email for next login".
+        if (/issue with your account creation|check your email for next login/.test(text)) {
+          return false;
+        }
         const hasCreate =
           /create(\\s+an?)?\\s+account|sign\\s*up|register/.test(text);
         // Security-step page (BetOnline): no fields, just a captcha + Create
@@ -1602,6 +1816,17 @@ async function runSignupFlow(
   let errorHits = 0;
   let submittedOk = alreadyIn;
   let formatFriction: string | null = null;
+  let issueBanner = false;
+  const takeIssueBanner = async (): Promise<boolean> => {
+    if (!(await accountCreationIssueVisible(page))) return false;
+    issueBanner = true;
+    submittedOk = true;
+    tracker.push(
+      "Site: “issue with account creation — check email for next login”. Bovada often sends no mail. Stopping submit; will try login + inbox/spam.",
+    );
+    await pushRegShot();
+    return true;
+  };
 
   if (alreadyIn) {
     await captureLanding();
@@ -1777,6 +2002,7 @@ async function runSignupFlow(
         await captureLanding();
         break;
       }
+      if (await takeIssueBanner()) break;
       tracker.push("Create Account click did not close form — will retry");
     } else {
       await pushRegShot(); // form state right before submit
@@ -1788,6 +2014,7 @@ async function runSignupFlow(
         tracker.push("Create Account click missed — will retry");
       }
       await tracker.wait(page, 2000, "registration");
+      if (await takeIssueBanner()) break;
     }
     // Pull any welcome/verify mail early so the Emails tab fills during the run.
     await pollInboxEvidenceOnly(
@@ -1884,6 +2111,7 @@ async function runSignupFlow(
         break;
       }
       if (!(await registrationFormStillOpen(stagehand, page))) {
+        if (await takeIssueBanner()) break;
         if (await signupConfirmed(stagehand, page, job)) {
           submittedOk = true;
           tracker.push("Registration submitted — confirmation seen");
@@ -1895,6 +2123,8 @@ async function runSignupFlow(
           tracker.push("Could not reopen registration form");
         }
       }
+    } else if (await takeIssueBanner()) {
+      break;
     } else if (await signupConfirmed(stagehand, page, job)) {
       submittedOk = true;
       tracker.push("Registration submitted — confirmation seen");
@@ -1990,29 +2220,50 @@ async function runSignupFlow(
   }
 
   tracker.begin("verification");
-  tracker.push("Monitoring inbox — every message logged + acted on");
+  tracker.push("Monitoring inbox + spam — every message logged + acted on");
   const verifyShots = createShotStream(page, tracker, "verification");
   const pushVerifyShot = () => verifyShots.push();
   // Where the player is left after submit (verify wall / welcome / cashier).
   await pushVerifyShot();
   const verifyWaitStart = Date.now();
-  const deadline = Date.now() + 100_000;
+  issueBanner = issueBanner || (await accountCreationIssueVisible(page));
+  const password = String(vars.password ?? "");
+  if (issueBanner && !job.authenticated) {
+    tracker.push(
+      "No signup mail expected from that banner — trying login first",
+    );
+    if (
+      await tryLoginWithSignupCredentials(
+        stagehand,
+        page,
+        tracker,
+        email,
+        password,
+      )
+    ) {
+      job.authenticated = true;
+    }
+  }
+  // Banner path: don't sit 100s for mail Bovada never sends.
+  const deadline = Date.now() + (issueBanner ? 45_000 : 100_000);
   const phoneHint =
     input.persona?.phone?.trim() || String(vars.phone ?? "").trim() || "";
   let askedForSms = false;
+  let triedLogin = issueBanner;
 
   while (Date.now() < deadline && !job.authenticated) {
     if (!askedForSms && (await detectSmsChallenge(page))) {
       askedForSms = true;
-      await pauseForSmsAssist({
-        job,
-        tracker,
-        stagehand,
-        page,
-        input,
-        phoneHint,
-      });
-      if (await checkAgentLoggedIn(stagehand)) {
+      if (
+        await handleSmsChallenge({
+          job,
+          tracker,
+          stagehand,
+          page,
+          input,
+          phoneHint,
+        })
+      ) {
         job.authenticated = true;
         break;
       }
@@ -2029,6 +2280,26 @@ async function runSignupFlow(
     if (await checkAgentLoggedIn(stagehand)) {
       job.authenticated = true;
       break;
+    }
+    if (
+      !triedLogin &&
+      !job.authenticated &&
+      job.emails.length === 0 &&
+      Date.now() - verifyWaitStart > 12_000
+    ) {
+      triedLogin = true;
+      if (
+        await tryLoginWithSignupCredentials(
+          stagehand,
+          page,
+          tracker,
+          email,
+          password,
+        )
+      ) {
+        job.authenticated = true;
+        break;
+      }
     }
     if (
       job.emails.some(
@@ -2075,27 +2346,28 @@ async function runSignupFlow(
   if (!job.authenticated) {
     if (!askedForSms && (await detectSmsChallenge(page))) {
       askedForSms = true;
-      await pauseForSmsAssist({
-        job,
-        tracker,
-        stagehand,
-        page,
-        input,
-        phoneHint,
-      });
-      if (await checkAgentLoggedIn(stagehand)) {
+      if (
+        await handleSmsChallenge({
+          job,
+          tracker,
+          stagehand,
+          page,
+          input,
+          phoneHint,
+        })
+      ) {
         job.authenticated = true;
       }
     }
   }
 
-  if (!job.authenticated) {
+  if (!job.authenticated && !issueBanner) {
     tracker.push("Auto-verify incomplete — watching live view 45s");
     for (let i = 0; i < 9; i++) {
       await tracker.wait(page, 5000, "verification");
       if (!askedForSms && (await detectSmsChallenge(page))) {
         askedForSms = true;
-        await pauseForSmsAssist({
+        await handleSmsChallenge({
           job,
           tracker,
           stagehand,
@@ -2137,7 +2409,9 @@ async function runSignupFlow(
     owner: STAGE_OWNERS.verification,
     friction: job.authenticated
       ? undefined
-      : "Verification incomplete (CAPTCHA / SMS / no mail)",
+      : issueBanner && job.emails.length === 0
+        ? "Bovada said check email for next login — no message arrived (inbox + spam). Login with the same details also failed. This banner is often a silent decline, not a sent email."
+        : "Verification incomplete (CAPTCHA / SMS / no mail)",
     userImpact: job.authenticated
       ? undefined
       : "Player cannot fund or play until verified",
@@ -2145,12 +2419,18 @@ async function runSignupFlow(
     severity: job.authenticated ? null : "critical",
     evidence: verifyMails[0]
       ? `${verifyMails.length} email(s); ${verifyMails[0].subject.slice(0, 80)}; ${verifyMails[0].actionTaken ?? "noted"}`
-      : "No verification email captured",
+      : issueBanner
+        ? "No email after “check your email for next login steps”"
+        : "No verification email captured",
     screenshotUrls: [...verifyShots.shots],
   });
 
   if (!job.authenticated) {
-    throw new Error("Could not activate account — check live view + inbox");
+    throw new Error(
+      issueBanner && job.emails.length === 0
+        ? "Bovada said check email — none arrived (inbox + spam) and login failed. That banner is usually a silent decline, not a sent message."
+        : "Could not activate account — check live view + inbox",
+    );
   }
   tracker.push(`Account activated · ${job.emails.length} email(s) documented`);
 }
@@ -3335,13 +3615,14 @@ export async function startResearchTeardown(
   signupUsername: string | null;
 }> {
   const through = input.throughStage ?? "verification";
+  const proxyMarket = proxyMarketForBrand(input.brandUrl, input.market);
   const {
     vars,
     email,
     password: resolvedPassword,
   } = resolveVars(
     input.persona,
-    input.market,
+    proxyMarket,
     input.brandName,
     input.accountEmail,
     input.accountPassword,
@@ -3352,7 +3633,6 @@ export async function startResearchTeardown(
   }
 
   const jobId = `rst-${Date.now().toString(36)}`;
-  const proxyMarket = proxyMarketForBrand(input.brandUrl, input.market);
   const proxyCountry = MARKET_PROXY_COUNTRY[proxyMarket] ?? null;
   const job: ResearchTeardownJob = {
     id: jobId,
@@ -3460,6 +3740,10 @@ export async function startResearchTeardown(
   if (sessionId) {
     job.liveViewUrl = await getLiveViewUrl(sessionId).catch(() => null);
   }
+  sessionHandles.set(jobId, {
+    sessionId: sessionId || undefined,
+    close: () => stagehand.close().catch(() => {}),
+  });
   job.status = "running";
 
   void (async () => {
@@ -3675,6 +3959,7 @@ export async function startResearchTeardown(
       }
       tracker.recomputeMetrics();
     } finally {
+      sessionHandles.delete(jobId);
       if (job.sessionOpen) {
         tracker.push(
           job.status === "awaiting_sms"
@@ -3682,6 +3967,7 @@ export async function startResearchTeardown(
             : "Browser open — pay in Notifications then agent continues",
         );
       } else {
+        if (sessionId) await releaseSession(sessionId);
         await stagehand.close().catch(() => {});
       }
     }

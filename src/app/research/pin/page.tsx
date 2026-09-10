@@ -7,7 +7,7 @@ import { unlockResearch } from "./actions";
 
 function PinForm() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  const next = searchParams.get("next") || "/research";
   const [state, action, pending] = useActionState(unlockResearch, null);
   const [pin, setPin] = useState("");
 

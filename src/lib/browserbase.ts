@@ -218,3 +218,21 @@ export async function releaseSession(id: string): Promise<void> {
     }),
   }).catch(() => {});
 }
+
+export async function listRunningSessions(): Promise<{ id: string }[]> {
+  const projectId = process.env.BROWSERBASE_PROJECT_ID;
+  const qs = new URLSearchParams({ status: "RUNNING" });
+  if (projectId) qs.set("projectId", projectId);
+  const res = await fetch(`${API}/sessions?${qs}`, { headers: headers() });
+  if (!res.ok) return [];
+  const data = (await res.json()) as { sessions?: { id: string }[] } | { id: string }[];
+  if (Array.isArray(data)) return data.filter((s) => s?.id).map((s) => ({ id: s.id }));
+  return (data.sessions ?? []).filter((s) => s?.id).map((s) => ({ id: s.id }));
+}
+
+/** Kill every RUNNING Browserbase session — stops billing immediately. */
+export async function releaseAllRunningSessions(): Promise<number> {
+  const running = await listRunningSessions();
+  await Promise.all(running.map((s) => releaseSession(s.id)));
+  return running.length;
+}

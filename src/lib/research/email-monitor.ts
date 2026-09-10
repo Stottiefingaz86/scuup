@@ -169,9 +169,67 @@ function extractOtp(text: string): string | null {
   return OTP_RE.exec(text)?.[1] ?? OTP_LOOSE_RE.exec(text)?.[1] ?? null;
 }
 
+/** Bovada mail often comes from bovada.lv / bodog — not bovada.com. */
+const SENDER_FAMILY: Record<string, string[]> = {
+  bovada: ["bovada", "bodog"],
+  bodog: ["bodog", "bovada"],
+};
+
+function senderMatchesBrand(from: string, domainHint?: string): boolean {
+  if (!domainHint) return false;
+  const domain = domainHint.toLowerCase().replace(/^www\./, "");
+  if (
+    from.endsWith(`@${domain}`) ||
+    from.endsWith(`.${domain}`) ||
+    from.includes(`@${domain}`)
+  ) {
+    return true;
+  }
+  const root = domain.split(".")[0] ?? "";
+  if (root.length >= 4 && from.includes(root)) return true;
+  const extra = SENDER_FAMILY[root];
+  return Boolean(extra?.some((tok) => from.includes(tok)));
+}
+
+function headerAddresses(parsed: {
+  to?: unknown;
+  headers?: { get: (key: string) => unknown };
+}): string {
+  const toHeader = parsed.to;
+  const toList = Array.isArray(toHeader)
+    ? toHeader
+    : toHeader
+      ? [toHeader]
+      : [];
+  const fromTo = toList
+    .flatMap((t) => {
+      if (t && typeof t === "object" && "value" in t) {
+        return (
+          (t as { value: { address?: string }[] }).value?.map(
+            (a) => a.address ?? "",
+          ) ?? []
+        );
+      }
+      return [];
+    })
+    .join(", ");
+  const extraKeys = ["delivered-to", "x-original-to", "x-forwarded-to"];
+  const extras = extraKeys
+    .map((k) => {
+      const v = parsed.headers?.get(k);
+      return v == null ? "" : String(v);
+    })
+    .join(" ");
+  return `${fromTo} ${extras}`.toLowerCase();
+}
+
+const IMAP_BOXES = ["INBOX", "[Gmail]/Spam", "Spam"] as const;
+
 /**
  * Fetch every message since `since` addressed to our research inbox
- * (base or +alias). Newest last. Dedup by uid.
+ * (base or +alias). Newest last. Also reads Gmail Spam — Bovada
+ * "check your email" mail often never arrives, and when it does it
+ * lands in Spam.
  */
 export async function fetchInboxEmailsSince(opts: {
   toAddress: string;
@@ -192,98 +250,95 @@ export async function fetchInboxEmailsSince(opts: {
 
   await client.connect();
   try {
-    const lock = await client.getMailboxLock("INBOX");
-    try {
-      const uids = await client.search({ since: opts.since }, { uid: true });
-      const list = (Array.isArray(uids) ? uids : []).slice(-(opts.limit ?? 40));
-      const alias = opts.toAddress.toLowerCase();
-      const domain = opts.fromDomainHint?.toLowerCase().replace(/^www\./, "");
-      const out: CapturedInboxEmail[] = [];
+    const alias = opts.toAddress.toLowerCase();
+    const domain = opts.fromDomainHint?.toLowerCase().replace(/^www\./, "");
+    const perBox = opts.limit ?? 40;
+    const seen = new Set<string>();
+    const out: CapturedInboxEmail[] = [];
 
-      for (const uid of list) {
-        const msg = await client.fetchOne(
-          uid,
-          { source: true, internalDate: true },
-          { uid: true },
-        );
-        if (!msg || !("source" in msg) || !msg.source) continue;
-        const parsed = await simpleParser(msg.source);
-        // Prefer IMAP internalDate (server receive time) over Date: header —
-        // headers are often wrong/timezone-shifted on marketing mail.
-        const internal =
-          "internalDate" in msg && msg.internalDate instanceof Date
-            ? msg.internalDate
-            : null;
-        const receivedDate = internal ?? parsed.date ?? new Date();
-        if (receivedDate < opts.since) continue;
+    for (const box of IMAP_BOXES) {
+      try {
+        const lock = await client.getMailboxLock(box);
+        try {
+          const uids = await client.search({ since: opts.since }, { uid: true });
+          const list = (Array.isArray(uids) ? uids : []).slice(-perBox);
+          const boxSlug = box.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
 
-        const toHeader = parsed.to;
-        const toList = Array.isArray(toHeader)
-          ? toHeader
-          : toHeader
-            ? [toHeader]
-            : [];
-        const to = toList
-          .flatMap((t) => t.value.map((a) => a.address ?? ""))
-          .join(", ")
-          .toLowerCase();
-        const from = parsed.from?.value[0]?.address?.toLowerCase() ?? "";
-        const matchesAlias = matchesRecipient(to, alias);
-        const matchesDomain = domain
-          ? from.endsWith(`@${domain}`) ||
-            from.endsWith(`.${domain}`) ||
-            from.includes(`@${domain}`)
-          : false;
-        // Never pull a sibling brand's +alias into this brand's job.
-        if (isDifferentResearchAlias(to, alias)) continue;
-        // Prefer alias match; domain alone only when To isn't another +rs tag.
-        if (!matchesAlias && !matchesDomain) continue;
-        if (!matchesAlias && matchesDomain && /\+rs[a-z0-9]+@/i.test(to)) {
-          continue;
+          for (const uid of list) {
+            const msg = await client.fetchOne(
+              uid,
+              { source: true, internalDate: true },
+              { uid: true },
+            );
+            if (!msg || !("source" in msg) || !msg.source) continue;
+            const parsed = await simpleParser(msg.source);
+            const internal =
+              "internalDate" in msg && msg.internalDate instanceof Date
+                ? msg.internalDate
+                : null;
+            const receivedDate = internal ?? parsed.date ?? new Date();
+            if (receivedDate < opts.since) continue;
+
+            const to = headerAddresses(parsed);
+            const from = parsed.from?.value[0]?.address?.toLowerCase() ?? "";
+            const matchesAlias = matchesRecipient(to, alias);
+            const matchesDomain = senderMatchesBrand(from, domain);
+            if (isDifferentResearchAlias(to, alias)) continue;
+            if (!matchesAlias && !matchesDomain) continue;
+            if (!matchesAlias && matchesDomain && /\+rs[a-z0-9]+@/i.test(to)) {
+              continue;
+            }
+
+            const textBody = (parsed.text ?? "")
+              .replace(/\r\n/g, "\n")
+              .trim()
+              .slice(0, 4000);
+            const rawHtml = parsed.html ? String(parsed.html) : "";
+            const html = rawHtml ? sanitizeEmailHtml(rawHtml) : null;
+            const htmlFallback =
+              !textBody && html
+                ? html
+                    .replace(/<[^>]+>/g, " ")
+                    .replace(/\s+/g, " ")
+                    .trim()
+                    .slice(0, 4000)
+                : "";
+            const body = textBody || htmlFallback;
+            const subject = parsed.subject ?? "(no subject)";
+            const links = extractLinks(`${body}\n${rawHtml}`);
+            const otp = extractOtp(body);
+            const category = categorizeEmail(subject, body, from);
+            const receivedAt = receivedDate.toISOString();
+            const dedupe =
+              parsed.messageId || `${from}|${subject}|${receivedAt}`;
+            if (seen.has(dedupe)) continue;
+            seen.add(dedupe);
+
+            out.push({
+              id: `imap-${boxSlug}-${uid}`,
+              uid: Number(uid),
+              messageId: parsed.messageId ?? null,
+              receivedAt,
+              from,
+              to: to.trim() || alias,
+              subject,
+              body,
+              html,
+              snippet: body.replace(/\s+/g, " ").slice(0, 280),
+              links,
+              otp,
+              category,
+            });
+          }
+        } finally {
+          lock.release();
         }
-
-        const textBody = (parsed.text ?? "")
-          .replace(/\r\n/g, "\n")
-          .trim()
-          .slice(0, 4000);
-        const rawHtml = parsed.html ? String(parsed.html) : "";
-        const html = rawHtml ? sanitizeEmailHtml(rawHtml) : null;
-        const htmlFallback =
-          !textBody && html
-            ? html
-                .replace(/<[^>]+>/g, " ")
-                .replace(/\s+/g, " ")
-                .trim()
-                .slice(0, 4000)
-            : "";
-        const body = textBody || htmlFallback;
-        const subject = parsed.subject ?? "(no subject)";
-        const links = extractLinks(`${body}\n${rawHtml}`);
-        const otp = extractOtp(body);
-        const category = categorizeEmail(subject, body, from);
-        const receivedAt = receivedDate.toISOString();
-
-        out.push({
-          id: `imap-${uid}`,
-          uid: Number(uid),
-          messageId: parsed.messageId ?? null,
-          receivedAt,
-          from,
-          to: to || alias,
-          subject,
-          body,
-          html,
-          snippet: body.replace(/\s+/g, " ").slice(0, 280),
-          links,
-          otp,
-          category,
-        });
+      } catch {
+        // Gmail may not expose "Spam" vs "[Gmail]/Spam".
       }
-
-      return out.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
-    } finally {
-      lock.release();
     }
+
+    return out.sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
   } finally {
     await client.logout().catch(() => {});
   }
