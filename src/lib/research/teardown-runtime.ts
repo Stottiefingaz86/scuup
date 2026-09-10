@@ -26,6 +26,7 @@ import {
   walkToDepositAddress,
 } from "./deposit-agent";
 import { persistShots } from "../evidence-storage";
+import { isProductionDeploy } from "../prod-locks";
 import { pickTopFriction, normalizeFrictionType } from "./friction";
 import {
   attachRedirectCounter,
@@ -4026,6 +4027,11 @@ export async function startResearchTeardown(
   signupPassword: string;
   signupUsername: string | null;
 }> {
+  if (isProductionDeploy()) {
+    throw new Error(
+      "New reports are paused. Existing reports stay readable.",
+    );
+  }
   const through = input.throughStage ?? "verification";
   const proxyMarket = proxyMarketForBrand(input.brandUrl, input.market);
   const {

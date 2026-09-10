@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import { startResearchTeardown } from "@/lib/research/teardown-runtime";
 import type { ResearchDevice, ResearchPersona } from "@/lib/research/types";
 
@@ -11,6 +12,8 @@ export const maxDuration = 800;
  * Runs are started in parallel (Browserbase may rate-limit; client can retry).
  */
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const body = await request.json();
     const projectId =

@@ -257,6 +257,9 @@ export function createResearchProject(input: {
   ownBrandUrl: string;
   competitorUrls: string[];
 }): ResearchProject {
+  if (isProductionDeployPublic()) {
+    throw new Error("New reports are paused. Existing reports stay readable.");
+  }
   const brands: ResearchBrand[] = [
     {
       id: crypto.randomUUID(),

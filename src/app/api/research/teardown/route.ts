@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import {
   getResearchTeardownJob,
   startResearchTeardown,
@@ -11,6 +12,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 800;
 
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const body = await request.json();
     const brandUrl = typeof body.brandUrl === "string" ? body.brandUrl : "";

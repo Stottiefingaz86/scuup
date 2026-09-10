@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { rejectIfNewReportsLocked } from "@/lib/prod-locks";
 import {
   buildPlayerVoice,
   PLAYER_VOICE_WINDOW_MONTHS,
@@ -16,6 +17,8 @@ export const maxDuration = 300;
  * on, cross-checked against the research journey the agent ran.
  */
 export async function POST(request: NextRequest) {
+  const locked = rejectIfNewReportsLocked();
+  if (locked) return locked;
   try {
     const body = await request.json();
     const brandUrl = typeof body.brandUrl === "string" ? body.brandUrl : "";

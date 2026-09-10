@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { DEFAULT_TEST_EMAIL } from "@/lib/constants";
 import {
+  isProductionDeployPublic,
+  NEW_REPORTS_LOCKED_MESSAGE,
+} from "@/lib/prod-locks";
+import {
   brandHasCompletedSignup,
   brandHasTestAccount,
   createDraftRun,
@@ -739,6 +743,10 @@ function ResearchProjectPageInner() {
   }, [backgroundJobKey, project?.id]);
 
   async function runSignupVerify() {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     if (!project || !activeBrandId) return;
     const brand = project.brands.find((b) => b.id === activeBrandId);
     if (!brand) return;
@@ -895,6 +903,10 @@ function ResearchProjectPageInner() {
   }
 
   async function startBrandResearch() {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     if (!project || !activeBrandId) return;
     const brand = project.brands.find((b) => b.id === activeBrandId);
     if (!brand) return;
@@ -1121,6 +1133,9 @@ function ResearchProjectPageInner() {
     url: string;
   }) {
     if (!project) throw new Error("No project");
+    if (isProductionDeployPublic()) {
+      throw new Error(NEW_REPORTS_LOCKED_MESSAGE);
+    }
     const res = await fetch("/api/research/player-voice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1173,6 +1188,10 @@ function ResearchProjectPageInner() {
     brandId: string,
     opts?: { loggedOut?: boolean; progressPrefix?: string },
   ) {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     if (!project) return;
     const live = getResearchProject(project.id) ?? project;
     const brand = live.brands.find((b) => b.id === brandId);
@@ -1305,6 +1324,10 @@ function ResearchProjectPageInner() {
   }
 
   async function depositAllBrands() {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     if (!project) return;
     const ready = project.brands.filter((b) =>
       brandHasTestAccount(project, b.id),
@@ -1426,6 +1449,10 @@ function ResearchProjectPageInner() {
   }
 
   async function signUpAllBrands(opts?: { skipBrandIds?: string[] }) {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     const live = project ? getResearchProject(project.id) : null;
     if (!live) return;
     const skipBrandIds = opts?.skipBrandIds ?? [];
@@ -1666,6 +1693,10 @@ function ResearchProjectPageInner() {
     (agentBusy ? "Starting…" : null);
 
   async function startFreshCapture() {
+    if (isProductionDeployPublic()) {
+      setRunError(NEW_REPORTS_LOCKED_MESSAGE);
+      return;
+    }
     if (!project) return;
     if (
       !confirm(

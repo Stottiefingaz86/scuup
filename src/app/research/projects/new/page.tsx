@@ -17,6 +17,10 @@ import { ScuupLogo } from "@/components/scuup-logo";
 import { cn } from "@/lib/utils";
 import { faviconUrl } from "@/lib/constants";
 import { autoMarketForBrands } from "@/lib/brand-markets";
+import {
+  isProductionDeployPublic,
+  NEW_REPORTS_LOCKED_MESSAGE,
+} from "@/lib/prod-locks";
 import { createResearchProject } from "@/lib/research/store";
 import type { ResearchDevice } from "@/lib/research/types";
 
@@ -198,6 +202,33 @@ export default function NewResearchProjectPage() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [stepId, next, launch]);
+
+  if (isProductionDeployPublic()) {
+    return (
+      <div className="flex min-h-screen flex-col bg-background text-foreground">
+        <header className="flex items-center px-6 py-5">
+          <ScuupLogo href="/research" />
+        </header>
+        <main className="flex flex-1 items-center justify-center px-6 pb-20">
+          <div className="max-w-md text-center">
+            <p className="font-heading text-2xl font-medium tracking-tight">
+              New reports are paused
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              {NEW_REPORTS_LOCKED_MESSAGE}
+            </p>
+            <Button
+              className="mt-6"
+              nativeButton={false}
+              render={<Link href="/research" />}
+            >
+              Back to research
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
