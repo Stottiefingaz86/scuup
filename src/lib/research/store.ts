@@ -22,6 +22,7 @@ import type {
   JourneyRun,
   JourneyStageResult,
   PlayerVoice,
+  PostDepositObservation,
   ResearchBrand,
   ResearchPersona,
   ResearchProject,
@@ -1082,7 +1083,7 @@ export function deductUnfairConfirmWait(
           cta: "Start playing",
           ctaTarget: "sportsbook" as const,
         },
-        guidedTo: "sportsbook",
+        guidedTo: "sportsbook" as const,
         guidedUrl: run.postDeposit?.guidedUrl ?? null,
         guidance: "Start playing — redirects to sports",
         ctas: run.postDeposit?.ctas?.length
@@ -1124,7 +1125,13 @@ export function deductUnfairConfirmWait(
         ? playSec
         : run.metrics.depositToFirstBetSec,
     },
-    ...(postDeposit ? { postDeposit: reconcilePostDeposit(postDeposit) } : {}),
+    ...(postDeposit
+      ? {
+          postDeposit: reconcilePostDeposit(
+            postDeposit as PostDepositObservation,
+          ),
+        }
+      : {}),
     ...(postSignup ? { postSignup } : {}),
     clockFair: true,
   });
