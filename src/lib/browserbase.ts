@@ -43,6 +43,11 @@ export function proxyGeolocation(code: string): {
 } {
   const [country, region] = code.split("-");
   if (!region) return { country };
+  // US-FL without a city often lands on a Texas IP. Bovada then
+  // ZIP-looks-up Austin and account create dies.
+  if (country === "US" && region === "FL") {
+    return { country: "US", state: "FL", city: "Miami" };
+  }
   if (country === "US") return { country, state: region };
   // City-level CA (Toronto / Vancouver) is a thin Browserbase pool and
   // session create can hang before the site ever opens. Country-wide CA

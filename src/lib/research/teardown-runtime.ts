@@ -10,6 +10,7 @@ import {
   withSessionRetry,
 } from "../browserbase";
 import {
+  auditUrlForMarket,
   knownServedMarkets,
   looksGeoBlocked,
   proxyMarketForBrand,
@@ -41,6 +42,7 @@ import { runCasinoPlayFlow, type LobbyFeatures } from "./play-agent";
 import {
   countEmptyVisibleInputs,
   detectFormatValidationFriction,
+  fastClickContinueNext,
   fastClickCreateAccount,
   fastFillLoginCredentials,
   fastFillPersonaFields,
@@ -98,7 +100,11 @@ import { captureResearchShot, waitForPaintedContent } from "./capture-shot";
 import { syncAndActOnEmails, type EmailActionRecord } from "./email-act";
 import { extractUsernameFromEmails } from "./account-username";
 import { capturedToWatchItem, fetchInboxEmailsSince } from "./email-monitor";
-import { defaultAddressForMarket } from "./persona-address";
+import {
+  brandPhoneForForm,
+  defaultAddressForMarket,
+  randomFloridaAddress,
+} from "./persona-address";
 import { researchSignupEmail, resolveResearchSignupEmail } from "./signup-email";
 import type {
   BrandFeatureScan,
@@ -185,6 +191,8 @@ export interface ResearchTeardownJob {
   signupPassword: string | null;
   /** Brand-issued login handle (BetOnline account id), if we know it. */
   signupUsername: string | null;
+  /** Numeric account id captured after signup (BetUS). */
+  accountNumber?: string | null;
   /** Casino lobby affordances seen during discovery (search, favourites, rows). */
   lobby: LobbyFeatures | null;
   /** Post-journey feature scan (off the stopwatch). */
@@ -253,6 +261,12 @@ export interface StartResearchTeardownInput {
   accountEmail?: string | null;
   /** Password used at signup for this brand — login must reuse it. */
   accountPassword?: string | null;
+  /** SMS mobile stored on the brand (Bovada). */
+  accountPhone?: string | null;
+  /** Site username / handle saved at signup (BetUS login). */
+  accountUsername?: string | null;
+  /** Numeric account id (BetUS: Account Number or Email). */
+  accountNumber?: string | null;
 }
 
 const store = globalThis as unknown as {
@@ -997,12 +1011,15 @@ function resolveVars(
   accountEmail?: string | null,
   accountPassword?: string | null,
   brandUrl?: string,
+  accountPhone?: string | null,
 ): { vars: Record<string, string>; email: string; password: string } {
   const routing = brandUrl ? proxyMarketForBrand(brandUrl, market) : market;
   const base = buildSignupPersona({ market: routing, brandName, ownBrand: true });
   // Address follows the brand proxy, not the project market — MyBookie
   // uses Florida so we don't reuse the Canada identity they already have.
-  const addressFallback = defaultAddressForMarket(routing);
+  const addressFallback = /bovada/i.test(`${brandName} ${brandUrl ?? ""}`)
+    ? randomFloridaAddress()
+    : defaultAddressForMarket(routing);
   // Unique +alias per brand so sites don't reject "already registered".
   // Mail still lands in the shared IMAP inbox.
   const email = resolveResearchSignupEmail({
@@ -1035,9 +1052,11 @@ function resolveVars(
     ...base,
     email,
     dateOfBirth: persona?.dateOfBirth?.trim() || base.dateOfBirth,
-    phone: useBrandAddress
-      ? addressFallback.phone || base.phone
-      : persona?.phone?.trim() || addressFallback.phone || base.phone,
+    phone: accountPhone?.trim()
+      ? brandPhoneForForm(accountPhone)
+      : useBrandAddress
+        ? addressFallback.phone || base.phone
+        : persona?.phone?.trim() || addressFallback.phone || base.phone,
     country: useBrandAddress
       ? addressFallback.country
       : persona?.country?.trim() || addressFallback.country,
@@ -1619,17 +1638,17 @@ async function openRegistrationForm(
     if (await registrationFormStillOpenFast(page)) return true;
 
     await dismissDistractingModals(page);
-    // Bovada /join is a blank page — never navigate there. Leave it if we
-    // already landed on it, then use Join now / hamburger only.
+    // Bovada /join is a blank page. BetUS /join is the signup form — stay.
     const hrefNow = String(
       await page.evaluate("location.href").catch(() => ""),
     );
     if (
+      /bovada/i.test(brandUrl + hrefNow) &&
       /\/join\/?(\?|#|$)/i.test(hrefNow) &&
       typeof page.goto === "function" &&
       !(await registrationFormStillOpenFast(page))
     ) {
-      tracker.push("Left /join (not a real register URL) — back to homepage");
+      tracker.push("Left Bovada /join (not a real register URL) — back to homepage");
       await page
         .goto(brandUrl, { waitUntil: "domcontentloaded", timeoutMs: 30000 })
         .catch(() => {});
@@ -1668,8 +1687,12 @@ async function openRegistrationForm(
     await stagehand
       .act(
         via === "menu"
-          ? "The hamburger menu is open. Click the item labelled Register now (or Register / Sign Up). Do not go to /join. Do not click bets, games, or Terms."
-          : "Click Join now on the page if it opens a form. If it does not, open the hamburger menu and click Register now. Never go to /join. Do not click bets, games, or Terms.",
+          ? /bovada/i.test(brandUrl)
+            ? "The hamburger menu is open. Click Register now (or Register / Sign Up). Do not go to /join. Do not click bets, games, or Terms."
+            : "The hamburger menu is open. Click Join now / Register / Sign Up. Do not click bets, games, or Terms."
+          : /bovada/i.test(brandUrl)
+            ? "Click Join now on the page if it opens a form. If it does not, open the hamburger menu and click Register now. Never go to /join. Do not click bets, games, or Terms."
+            : "Click JOIN NOW or Register to open the signup form. Stay on /join if that is the registration page. Do not click bets, games, or Terms.",
       )
       .catch(() => {});
     await tracker.wait(page, 2000, "registration");
@@ -1734,13 +1757,79 @@ async function recordSignupLanding(
         ? 0
         : (prev.clicksToWallet ?? null),
   };
+  const number = await readIssuedAccountNumber(page);
+  if (number) job.accountNumber = number;
   tracker.push(
     `After signup landed on ${job.postSignup.landedOn ?? "unknown"}${
       job.postSignup.clicksToWallet == null
         ? ""
         : ` · ${job.postSignup.clicksToWallet} click${job.postSignup.clicksToWallet === 1 ? "" : "s"} to wallet`
-    }`,
+    }${number ? ` · account ${number}` : ""}`,
   );
+}
+
+async function readIssuedAccountNumber(page: AgentPage): Promise<string | null> {
+  try {
+    const text = String(
+      await page.evaluate("document.body?.innerText || ''").catch(() => ""),
+    );
+    const hit = text.match(
+      /account\s*number\s*(?:is|:)?\s*(\d{6,12})/i,
+    );
+    return hit?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Logged-out homepage — the original landing frame, not a later login/tunnel shot. */
+async function captureHomepageLanding(
+  page: AgentPage,
+  tracker: JourneyStageTracker,
+  stagehand: Stagehand,
+  brandUrl: string,
+): Promise<string | null> {
+  const hosts = [
+    brandUrl,
+    "https://www.betus.com.pa/",
+    "https://betus.com.pa/",
+    "https://www.betus.com/",
+    "https://betus.com/",
+  ].filter((u, i, all) => all.indexOf(u) === i);
+  for (const url of hosts) {
+    if (typeof page.goto !== "function") break;
+    await page
+      .goto(url, { waitUntil: "domcontentloaded", timeoutMs: 30_000 })
+      .catch(() => {});
+    await preparePageAfterNavigation(page, stagehand);
+    await waitForPaintedContent(page, { minChars: 40, maxMs: 10_000 });
+    await tracker.wait(page, 800, "landing");
+    const text = String(
+      await page.evaluate("document.body?.innerText || ''").catch(() => ""),
+    );
+    if (
+      /this site can.?t be reached|err_tunnel|err_connection|err_timed_out/i.test(
+        text,
+      )
+    ) {
+      tracker.push(`Homepage miss on ${url} — trying next host`);
+      continue;
+    }
+    const shot = await captureResearchShot(page);
+    if (!shot) continue;
+    const landing = tracker.stage("landing");
+    if (landing) {
+      landing.screenshotUrls = [shot];
+      landing.evidence = "Homepage loaded";
+      landing.startedAt = landing.startedAt ?? new Date().toISOString();
+      landing.endedAt = landing.endedAt ?? new Date().toISOString();
+      if (landing.timeSec == null) landing.timeSec = 0;
+    }
+    tracker.push("Captured homepage landing");
+    return shot;
+  }
+  tracker.push("Could not capture a homepage landing frame");
+  return null;
 }
 
 /**
@@ -1843,8 +1932,15 @@ async function registrationFormStillOpenFast(
         if (/issue with your account creation|check your email for next login/.test(text)) {
           return false;
         }
+        const path = (location.pathname || "").toLowerCase();
         const hasCreate =
-          /create(\\s+an?)?\\s+account|sign\\s*up|register/.test(text);
+          /create(\\s+an?)?\\s+account|sign\\s*up|register|join\\s*now/.test(text);
+        // BetUS: "Your Contact Details 1/3" — no Create Account copy, no password yet.
+        const wizard =
+          /(your\\s+)?contact\\s+details|already a member|step\\s*\\d\\s*of\\s*\\d/.test(text) &&
+          /first\\s*name/.test(text) &&
+          /(last\\s*name|e-?mail)/.test(text);
+        const onRegPath = /\\/(join|register|signup|sign-up|sign_up)\\b/.test(path);
         // Stake method picker: Create an Account + Register with Email, no
         // password field yet. Still the registration UI.
         if (hasCreate && /register with e-?mail|welcome to stake/.test(text)) {
@@ -1860,14 +1956,34 @@ async function registrationFormStillOpenFast(
         }
         // Visible fields only — a hidden login form in the DOM must not
         // make a successful signup look like "form still open".
-        const fields = document.querySelectorAll(
-          "input[type='password'], input[type='email'], input[name*='password' i], input[name*='email' i]"
-        );
-        let hasFields = false;
-        for (const el of fields) {
+        const visibleField = (el) => {
           const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) { hasFields = true; break; }
+          return r.width > 0 && r.height > 0;
+        };
+        let hasFields = false;
+        for (const el of document.querySelectorAll("input, textarea")) {
+          if (!visibleField(el)) continue;
+          const type = (el.getAttribute("type") || "text").toLowerCase();
+          if (type === "hidden" || type === "checkbox" || type === "radio" || type === "submit") continue;
+          const meta = [
+            type,
+            el.getAttribute("name") || "",
+            el.getAttribute("id") || "",
+            el.getAttribute("placeholder") || "",
+            el.getAttribute("aria-label") || "",
+            el.getAttribute("autocomplete") || "",
+          ].join(" ").toLowerCase();
+          if (
+            type === "email" ||
+            type === "password" ||
+            type === "tel" ||
+            /e-?mail|password|first\\s*name|last\\s*name|given-name|family-name|phone|mobile/.test(meta)
+          ) {
+            hasFields = true;
+            break;
+          }
         }
+        if ((wizard || onRegPath) && hasFields) return true;
         return hasCreate && hasFields;
       })()`),
     );
@@ -2019,11 +2135,24 @@ async function runSignupFlow(
       ownBrand: true,
     });
     const nextEmail = researchSignupEmail(input.brandName);
+    const keepPhone =
+      input.accountPhone?.trim() ||
+      String(vars.phone ?? "").trim();
     const next = personaVariables(
-      { ...fresh, email: nextEmail, country: vars.country, postalCode: vars.postalCode, city: vars.city, state: vars.state, addressLine1: vars.addressLine1 },
+      {
+        ...fresh,
+        email: nextEmail,
+        country: vars.country,
+        postalCode: vars.postalCode,
+        city: vars.city,
+        state: vars.state,
+        addressLine1: vars.addressLine1,
+        phone: keepPhone || fresh.phone,
+      },
       String(vars.password ?? ""),
     );
     for (const [k, v] of Object.entries(next)) vars[k] = v;
+    if (keepPhone) vars.phone = brandPhoneForForm(keepPhone);
     vars.email = nextEmail;
     email = nextEmail;
     job.signupEmail = nextEmail;
@@ -2255,9 +2384,12 @@ async function runSignupFlow(
     // Multi-step wizards only: click Continue/Next when Create Account is NOT the CTA.
     const submitUi = await inspectRegistrationSubmitUi(page);
     if (submitUi.hasContinueNext && !submitUi.hasCreateAccount) {
-      const advance = await stagehand.act(
-        "click Continue or Next for the next registration step. Do not open Terms or Help.",
-      );
+      const domAdvance = await fastClickContinueNext(page);
+      const advance = domAdvance
+        ? { success: true }
+        : await stagehand.act(
+            "click Continue or Next for the next registration step. Do not open Terms or Help.",
+          );
       if (advance.success) {
         tracker.addStep("registration", 1);
         tracker.push("Advanced to next registration step");
@@ -2603,7 +2735,10 @@ async function runSignupFlow(
   // Banner path: don't sit 100s for mail Bovada never sends.
   const deadline = Date.now() + (issueBanner ? 45_000 : 100_000);
   const phoneHint =
-    input.persona?.phone?.trim() || String(vars.phone ?? "").trim() || "";
+    String(vars.phone ?? "").trim() ||
+    input.accountPhone?.trim() ||
+    input.persona?.phone?.trim() ||
+    "";
   let askedForSms = false;
   let triedLogin = issueBanner;
 
@@ -3762,6 +3897,36 @@ async function runPlayFlow(
   });
 }
 
+/** Keep signup/deposit frames when a resume login rewrites plumbing stages. */
+function restoreSeededJourney(
+  seed: JourneyStageResult[],
+  current: JourneyStageResult[],
+): JourneyStageResult[] {
+  const play = new Set([
+    "casino_discovery",
+    "game_launch",
+    "first_bet",
+    "days_1_14",
+  ]);
+  return seed.map((st) => {
+    const now = current.find((s) => s.stageId === st.stageId);
+    if (
+      now &&
+      play.has(st.stageId) &&
+      (now.startedAt || (now.screenshotUrls?.length ?? 0) > 0)
+    ) {
+      return now;
+    }
+    const shots = [
+      ...new Set([
+        ...(st.screenshotUrls ?? []),
+        ...(now?.screenshotUrls ?? []),
+      ]),
+    ];
+    return { ...st, screenshotUrls: shots };
+  });
+}
+
 /** Full timed journey: signup → verify → deposit → play → first bet. */
 /**
  * Log into an account this project already created (post-signup). When
@@ -3777,17 +3942,24 @@ async function loginExistingAccount(args: {
   input: StartResearchTeardownInput;
   email: string;
   resolvedPassword: string;
+  /** Resume/play — do not rewrite first-touch / landing / registration. */
+  preserveJourney?: boolean;
 }): Promise<void> {
   const { job, tracker, stagehand, page, input, email, resolvedPassword } =
     args;
+  const preserve = args.preserveJourney === true;
   // Account already exists from signup — log in, don't re-register.
-  tracker.begin("first_touch");
-  tracker.end("first_touch", {
-    steps: 0,
-    evidence: "Resume after signup",
-    severity: "low",
-  });
-  tracker.begin("landing");
+  if (!preserve) {
+    tracker.begin("first_touch");
+    tracker.end("first_touch", {
+      steps: 0,
+      evidence: "Resume after signup",
+      severity: "low",
+    });
+    tracker.begin("landing");
+  } else {
+    tracker.push("Logging into existing account — keeping captured journey frames");
+  }
   await page
     .goto(input.brandUrl, {
       waitUntil: "domcontentloaded",
@@ -3795,15 +3967,17 @@ async function loginExistingAccount(args: {
     })
     .catch(() => {});
   await preparePageAfterNavigation(page, stagehand);
-  await tracker.wait(page, 2500, "landing");
-  await finalizeStage(
-    stagehand,
-    tracker,
-    "landing",
-    "Opened for deposit login",
-    {},
-    page,
-  );
+  await tracker.wait(page, 2500, preserve ? "verification" : "landing");
+  if (!preserve) {
+    await finalizeStage(
+      stagehand,
+      tracker,
+      "landing",
+      "Opened for deposit login",
+      {},
+      page,
+    );
+  }
 
   const password = resolvedPassword;
   if (!password) {
@@ -3852,14 +4026,39 @@ async function loginExistingAccount(args: {
     }
     if (!(await loginFormVisible(page))) {
       try {
-        const origin = new URL(input.brandUrl).origin;
-        await page.goto(`${origin}/login`, {
+        const live = String(
+          await page.evaluate("location.href").catch(() => input.brandUrl),
+        );
+        const origin = new URL(live || input.brandUrl).origin;
+        const betus = /betus/i.test(`${input.brandName} ${origin}`);
+        // BetUS.com/login is a dead page. The book lives on betus.com.pa
+        // and Sign In sits on /join (same wizard as registration).
+        const fallback = betus ? `${origin}/join` : `${origin}/login`;
+        await page.goto(fallback, {
           waitUntil: "domcontentloaded",
           timeoutMs: 20000,
         });
         await preparePageAfterNavigation(page, stagehand);
         await tracker.wait(page, 1500, "verification");
-        tracker.push("Login form not found in header — opened /login directly");
+        tracker.push(
+          betus
+            ? "Login form not in header — opened /join to Sign In"
+            : "Login form not found in header — opened /login directly",
+        );
+        if (betus && !(await loginFormVisible(page))) {
+          await page.evaluate(`(() => {
+            const nodes = [...document.querySelectorAll("a, button, [role=button]")];
+            for (const el of nodes) {
+              const t = (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
+              if (/^(sign\\s*in|log\\s*in|already a member)/i.test(t)) {
+                el.click();
+                return true;
+              }
+            }
+            return false;
+          })()`).catch(() => {});
+          await tracker.wait(page, 1200, "verification");
+        }
       } catch {
         /* keep going; the fill below reports what it could see */
       }
@@ -3875,31 +4074,64 @@ async function loginExistingAccount(args: {
     );
 
     // DOM fill — Stagehand often types email and skips password.
-    let filled = await fastFillLoginCredentials(page, {
+    // BetUS field is "Account Number or Email" — the persona username
+    // (jordangran224) is rejected. Email first, then the numeric account id.
+    const betus = /betus/i.test(`${input.brandName} ${input.brandUrl}`);
+    const accountNumber = (
+      input.accountNumber ||
+      job.accountNumber ||
+      ""
+    ).trim();
+    const loginIds = [
       email,
-      password,
-    });
+      /^\d{6,}$/.test(accountNumber) ? accountNumber : "",
+      !betus ? job.signupUsername?.trim() || "" : "",
+    ].filter((id, i, all) => id && all.indexOf(id) === i);
+    let filled = { email: false, password: false };
+    let loginId = loginIds[0] || email;
+    for (const id of loginIds) {
+      filled = await fastFillLoginCredentials(page, {
+        email: id,
+        password,
+      });
+      if (filled.email && filled.password) {
+        loginId = id;
+        break;
+      }
+    }
     if (!filled.password) {
       await stagehand.act(
         "type %password% into the Password field on this Log In form — do not click Register",
         { variables: { password } },
       );
       filled = await fastFillLoginCredentials(page, {
-        email,
+        email: loginId,
         password,
       });
     }
     if (!filled.email) {
       await stagehand.act(
         "type %email% into the Email or Account Number field on this Log In form",
-        { variables: { email } },
+        { variables: { email: loginId } },
       );
     }
     if (!filled.password) {
       throw new Error("Password field still empty after fill — cannot log in");
     }
+    if (
+      (await captchaChallengeVisible(page)) &&
+      !(await recaptchaSolved(page)) &&
+      !(await turnstileLooksSolved(page))
+    ) {
+      tracker.push("Waiting for Cloudflare on the login form");
+      await solveCaptchaIfPresent(page, stagehand, {
+        push: (m) => tracker.push(m),
+        shouldAbort: () => Boolean(job.pauseRequested),
+      });
+      await tracker.wait(page, 1500, "verification");
+    }
     tracker.push(
-      `Login fields filled (email ${filled.email ? "ok" : "retry"}, password ok)`,
+      `Login fields filled (${loginId} · password ok)`,
     );
     tracker.addStep("verification", 2);
     const loginShots = createShotStream(page, tracker, "verification");
@@ -3950,7 +4182,12 @@ async function loginExistingAccount(args: {
         tracker.push(
           `Not logged in yet${loginError ? ` (“${loginError}”)` : ""} — retrying once`,
         );
-        await fastFillLoginCredentials(page, { email, password });
+        const retryId =
+          loginIds.find((id) => id !== loginId) || loginId;
+        if (retryId !== loginId) {
+          tracker.push(`Trying login as ${retryId}`);
+        }
+        await fastFillLoginCredentials(page, { email: retryId, password });
         await tracker.wait(page, 600, "verification");
         if (!(await fastSubmitLogin(page))) {
           await stagehand
@@ -4135,6 +4372,10 @@ export async function startResearchTeardown(
   signupUsername: string | null;
 }> {
   const through = input.throughStage ?? "verification";
+  input = {
+    ...input,
+    brandUrl: auditUrlForMarket(input.brandUrl, input.market),
+  };
   const proxyMarket = proxyMarketForBrand(input.brandUrl, input.market);
   const {
     vars,
@@ -4151,6 +4392,7 @@ export async function startResearchTeardown(
       ? null
       : input.accountPassword,
     input.brandUrl,
+    input.accountPhone,
   );
 
   if (
@@ -4201,7 +4443,9 @@ export async function startResearchTeardown(
     topFriction: [],
     signupEmail: email,
     signupPassword: resolvedPassword,
-    signupUsername: vars.username?.trim() || null,
+    signupUsername:
+      input.accountUsername?.trim() || vars.username?.trim() || null,
+    accountNumber: input.accountNumber?.trim() || null,
     lobby: null,
     features: null,
     emails: [],
@@ -4343,6 +4587,15 @@ export async function startResearchTeardown(
           input.startAt === "features"
             ? job.stages.map((st) => ({ ...st }))
             : null;
+        const homepageShot =
+          input.startAt === "features" || input.startAt === "play"
+            ? await captureHomepageLanding(
+                page,
+                tracker,
+                stagehand,
+                input.brandUrl,
+              )
+            : null;
         if (input.startAt === "features" && !input.accountEmail) {
           tracker.push("No saved account — opening the site logged out");
           await page.goto(input.brandUrl, {
@@ -4350,17 +4603,35 @@ export async function startResearchTeardown(
             timeoutMs: 45_000,
           });
         } else {
-          await loginExistingAccount({
-            job,
-            tracker,
-            stagehand,
-            page,
-            input,
-            email,
-            resolvedPassword,
-          });
+          try {
+            await loginExistingAccount({
+              job,
+              tracker,
+              stagehand,
+              page,
+              input,
+              email,
+              resolvedPassword,
+              preserveJourney: true,
+            });
+          } finally {
+            if (seededStages) {
+              job.stages = restoreSeededJourney(seededStages, job.stages);
+            }
+            if (homepageShot) {
+              const landing = tracker.stage("landing");
+              if (landing) {
+                landing.screenshotUrls = [
+                  homepageShot,
+                  ...(landing.screenshotUrls ?? []).filter(
+                    (u) => u !== homepageShot,
+                  ),
+                ];
+                landing.evidence = "Homepage loaded";
+              }
+            }
+          }
         }
-        if (seededStages) job.stages = seededStages;
         if (input.startAt === "features") {
           const loggedOut = !job.authenticated;
           if (loggedOut) {

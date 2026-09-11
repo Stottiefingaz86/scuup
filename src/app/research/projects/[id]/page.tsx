@@ -50,6 +50,7 @@ import {
   emptyPostSignup,
   knownSignupLanding,
 } from "@/lib/research/post-signup";
+import { WalkInsightsCard } from "@/components/research-walk-insights";
 import {
   EvidenceThumbs,
   stageFrames,
@@ -201,11 +202,56 @@ function applyTeardownPoll(
     ? target.stages.find((s) => s.stageId === "deposit_confirmation")
     : null;
   if (stages) {
+    const merged = stages.map((s) => {
+      const prev = target.stages.find((p) => p.stageId === s.stageId);
+      if (!prev) return s;
+      const shots = [
+        ...new Set([
+          ...(prev.screenshotUrls ?? []),
+          ...(s.screenshotUrls ?? []),
+        ]),
+      ];
+      const keepStored =
+        (prev.screenshotUrls?.length ?? 0) > (s.screenshotUrls?.length ?? 0) &&
+        [
+          "first_touch",
+          "landing",
+          "registration",
+          "deposit",
+          "deposit_confirmation",
+        ].includes(s.stageId);
+      const homepageIn =
+        s.stageId === "landing" &&
+        /homepage loaded/i.test(s.evidence ?? "") &&
+        (s.screenshotUrls?.length ?? 0) > 0;
+      const landingJunk =
+        s.stageId === "landing" &&
+        /opened for deposit login|can.?t be reached|err_tunnel/i.test(
+          prev.evidence ?? "",
+        );
+      if (homepageIn) {
+        return {
+          ...s,
+          screenshotUrls: (s.screenshotUrls ?? []).filter(
+            (u) => !/mtwzaxkx-o4olp/.test(u),
+          ),
+        };
+      }
+      if (keepStored && !landingJunk) {
+        return { ...prev, screenshotUrls: shots };
+      }
+      return { ...s, screenshotUrls: shots };
+    });
     patch.stages = fairConf
-      ? stages.map((s) =>
-          s.stageId === "deposit_confirmation" ? fairConf : s,
+      ? merged.map((s) =>
+          s.stageId === "deposit_confirmation" ? { ...fairConf, screenshotUrls: [
+            ...new Set([
+              ...(fairConf.screenshotUrls ?? []),
+              ...(s.screenshotUrls ?? []),
+            ]),
+          ] } : s,
         )
-      : stages;
+      : merged;
   }
   if (data.metrics && (data.metrics.totalTimeSec != null || stages)) {
     if (target.clockFair && fairConf) {
@@ -822,6 +868,7 @@ function ResearchProjectPageInner() {
           throughStage: "verification",
           accountEmail: brand.accountEmail ?? null,
           accountPassword: lockBrandCredentials(project, brand.id) || null,
+          accountPhone: brand.accountPhone ?? null,
         }),
       });
       const data = await res.json();
@@ -989,11 +1036,15 @@ function ResearchProjectPageInner() {
       }).catch(() => {});
     }
     stopRequestedRef.current = false;
+    const brandName =
+      project.brands.find((b) => b.id === brandId)?.name ?? "";
     await startTeardownRun("first_bet", {
       brandId,
       redoPlay: true,
       fundsLanded: true,
-      landedShotUrl: "/research-evidence/betonline-deposit-success.jpg",
+      landedShotUrl: /betonline/i.test(brandName)
+        ? "/research-evidence/betonline-deposit-success.jpg"
+        : undefined,
     });
   }
 
@@ -1110,6 +1161,11 @@ function ResearchProjectPageInner() {
       ? run.stages.map((st) => {
           if (fundsLanded && st.stageId === "deposit_confirmation") {
             const shot = opts.landedShotUrl;
+            const brandName =
+              liveProject.brands.find((b) => b.id === brand.id)?.name ?? "";
+            const ownShots = (st.screenshotUrls ?? []).filter(
+              (u) => u && !u.includes("betonline-deposit-success"),
+            );
             return {
               ...st,
               startedAt: st.startedAt ?? new Date().toISOString(),
@@ -1119,14 +1175,14 @@ function ResearchProjectPageInner() {
               friction: undefined,
               frictionType: null,
               severity: null,
-              evidence:
-                "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery.",
+              evidence: /betonline/i.test(brandName)
+                ? "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery."
+                : /betus/i.test(brandName)
+                  ? "Phone confirmed the deposit. Site balance did not update until a manual refresh. No email, no toast, no alert. Chain wait is not scored. Play clock resets at casino discovery."
+                  : "Deposit confirmed. Chain wait is not scored. Play clock resets at casino discovery.",
               screenshotUrls: shot
-                ? [
-                    shot,
-                    ...(st.screenshotUrls ?? []).filter((u) => u !== shot),
-                  ]
-                : st.screenshotUrls,
+                ? [shot, ...ownShots.filter((u) => u !== shot)]
+                : ownShots,
             };
           }
           if (
@@ -1205,6 +1261,9 @@ function ResearchProjectPageInner() {
               : null,
           accountEmail,
           accountPassword: lockBrandCredentials(project, brand.id) || null,
+          accountPhone: brand.accountPhone ?? null,
+          accountUsername: brand.accountUsername ?? null,
+          accountNumber: brand.accountNumber ?? null,
         }),
       });
       const data = await res.json();
@@ -1343,6 +1402,9 @@ function ResearchProjectPageInner() {
         accountPassword: loggedOut
           ? null
           : lockBrandCredentials(live, brand.id) || null,
+        accountPhone: loggedOut ? null : brand.accountPhone ?? null,
+        accountUsername: loggedOut ? null : brand.accountUsername ?? null,
+        accountNumber: loggedOut ? null : brand.accountNumber ?? null,
       }),
     });
     const data = await res.json();
@@ -1389,37 +1451,6 @@ function ResearchProjectPageInner() {
       }
       if (Date.now() >= deadline) throw new Error("Feature scan timed out");
     }
-  }
-
-  async function scanFeaturesAllBrands() {
-    if (!project) return;
-    const ready = project.brands;
-    if (ready.length === 0) {
-      setRunError("No brands on this project.");
-      return;
-    }
-    setRunError(null);
-    setTrail([]);
-    setLiveViewUrl(null);
-    setJobId(null);
-    stopRequestedRef.current = false;
-    for (let i = 0; i < ready.length; i++) {
-      if (stopRequestedRef.current) break;
-      try {
-        await scanBrandFeatures(ready[i]!.id, {
-          progressPrefix: `${i + 1}/${ready.length}: `,
-        });
-      } catch (e) {
-        setRunError(
-          `${ready[i]!.name}: ${e instanceof Error ? e.message : "feature scan failed"}`,
-        );
-      }
-    }
-    setFeatureScanProgress(null);
-    setLiveViewUrl(null);
-    setJobId(null);
-    setRunBrandId(null);
-    setTrail([]);
   }
 
   async function scanActiveBrandLoggedOut() {
@@ -1485,6 +1516,7 @@ function ResearchProjectPageInner() {
             startAt: "deposit",
             accountEmail: brand.accountEmail ?? null,
             accountPassword: lockBrandCredentials(project, brand.id) || null,
+            accountPhone: brand.accountPhone ?? null,
           }),
         });
         const data = await res.json();
@@ -1650,6 +1682,7 @@ function ResearchProjectPageInner() {
             accountEmail,
             accountPassword:
               resolveBrandAccountPassword(latest, freshBrand.id) || null,
+            accountPhone: freshBrand.accountPhone ?? null,
           }),
         });
         const data = await res.json();
@@ -1792,11 +1825,18 @@ function ResearchProjectPageInner() {
 
   const own = project.brands.find((b) => b.role === "own_brand");
 
+  const runLive = project.runs.some((r) => r.status === "running");
   const agentBusy =
     batchRunning ||
     depositBatchRunning ||
     running ||
     featureScanProgress != null;
+  const showLiveBar =
+    agentBusy ||
+    runLive ||
+    jobStatus === "running" ||
+    jobStatus === "confirming_payment" ||
+    jobStatus === "awaiting_payment";
   const agentBrandName =
     project.brands.find((b) => b.id === runBrandId)?.name ?? null;
   const agentStep =
@@ -1868,7 +1908,7 @@ function ResearchProjectPageInner() {
         </div>
       </div>
 
-      {agentBusy ? (
+      {showLiveBar ? (
         <div className="rs-live-bar sticky top-2 z-20 flex flex-col gap-2 rounded-xl border bg-[var(--rs-card)] px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
@@ -1976,7 +2016,7 @@ function ResearchProjectPageInner() {
             ["journeys", "Journeys", Route],
             ["benchmark", "Benchmark", Scale],
             ["voice", "Voice of Player", MessageSquareQuote],
-            ["email", "Emails", Mail],
+            ["email", "Email Freq", Mail],
             ["report", "Report", FileText],
           ] as const
         ).map(([id, label, Icon]) => {
@@ -2173,9 +2213,17 @@ function ResearchProjectPageInner() {
                       Deposit already in
                     </p>
                     <p className="mt-0.5 text-sm text-[var(--rs-fg)]">
-                      Success screen was captured ($11.61 USD). Do not pay
-                      again — continue to casino and first bet on this
-                      balance.
+                      {/betonline/i.test(
+                        project.brands.find((b) => b.id === activeBrandId)
+                          ?.name ?? "",
+                      )
+                        ? "Success screen was captured ($11.61 USD). Do not pay again — continue to casino and first bet on this balance."
+                        : /betus/i.test(
+                              project.brands.find((b) => b.id === activeBrandId)
+                                ?.name ?? "",
+                            )
+                          ? "Deposit is in on your phone. The site stayed stale until refresh — no email or alert. Continue to casino and first bet. Do not pay again."
+                          : "Funds are in. Do not pay again — continue to casino and first bet on this balance."}
                     </p>
                   </div>
                   <button
@@ -2275,6 +2323,10 @@ function ResearchProjectPageInner() {
                 />
               ) : null}
 
+              {activeBrandId ? (
+                <WalkInsightsCard project={project} brandId={activeBrandId} />
+              ) : null}
+
               <MetricsScorecard metrics={latestRun.metrics} />
 
               <StageDetailTable stages={latestRun.stages} />
@@ -2360,14 +2412,7 @@ function ResearchProjectPageInner() {
         </section>
       ) : null}
 
-      {tab === "benchmark" ? (
-        <BenchmarkTab
-          project={project}
-          onScanFeatures={() => void scanFeaturesAllBrands()}
-          scanProgress={featureScanProgress}
-          scanDisabled={anyAgentBusy || featureScanProgress != null}
-        />
-      ) : null}
+      {tab === "benchmark" ? <BenchmarkTab project={project} /> : null}
 
       {tab === "voice" ? (
         <PlayerVoiceTab
@@ -2724,11 +2769,11 @@ function EmailWatchPanel({
     <section className="flex flex-col gap-4 text-sm">
       <div>
         <h2 className="font-heading text-lg font-medium text-[var(--rs-fg)]">
-          Emails
+          Email Freq
         </h2>
         <p className="mt-1 text-[var(--rs-muted)]">
-          {days} days after signup — welcome, bonus, VIP. Login alerts are
-          dropped. Sync to pull now.
+          {days} days after signup — welcome, bonus, VIP cadence. Login alerts
+          are dropped. Sync to pull now.
         </p>
       </div>
 
@@ -2926,14 +2971,8 @@ function FeatureCell({
 
 function BenchmarkTab({
   project,
-  onScanFeatures,
-  scanProgress,
-  scanDisabled,
 }: {
   project: import("@/lib/research/types").ResearchProject;
-  onScanFeatures?: () => void;
-  scanProgress?: string | null;
-  scanDisabled?: boolean;
 }) {
   const own = project.brands.find((b) => b.role === "own_brand");
   // Each brand's stopwatch numbers, merged across its runs (signup in one,
@@ -3035,14 +3074,35 @@ function BenchmarkTab({
           What they do better
         </h2>
         <p className="mt-1 text-sm text-[var(--rs-muted)]">
-          Strategy gaps from stopwatch data — activation path and Time to stake
-          (≤12 min OKR).
+          Strategy gaps from the stopwatch — activation path and Time to stake
+          (≤12 min OKR). Lower time and fewer actions win.
         </p>
-        <ul className="mt-3 space-y-2 text-sm text-[var(--rs-fg)]">
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
           {gaps.map((g) => (
-            <li key={g} className="flex gap-2">
-              <span className="mt-2 size-1.5 shrink-0 rounded-full bg-[var(--rs-accent)]" />
-              <span className="leading-snug text-[var(--rs-muted)]">{g}</span>
+            <li
+              key={g.title + g.body}
+              className={cn(
+                "rounded-xl border px-3.5 py-3",
+                g.tone === "protect"
+                  ? "border-emerald-500/30 bg-emerald-500/5"
+                  : g.tone === "gap"
+                    ? "border-amber-500/30 bg-amber-500/5"
+                    : "border-[var(--rs-border)] bg-[var(--rs-card)]",
+              )}
+            >
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs font-medium text-[var(--rs-fg)]">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-[var(--rs-muted)]">
+                  {g.tone === "protect"
+                    ? "Protect"
+                    : g.tone === "gap"
+                      ? "Gap"
+                      : "Next"}
+                </span>
+                {g.title}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-[var(--rs-muted)]">
+                {g.body}
+              </p>
             </li>
           ))}
         </ul>
@@ -3104,16 +3164,25 @@ function BenchmarkTab({
                   </td>
                   <td className="rs-num">
                     {row.gapRatio != null ? (
-                      <span
-                        className={
-                          row.gapRatio > 1.2
-                            ? "text-red-400"
-                            : row.gapRatio < 0.9
-                              ? "text-[var(--rs-accent)]"
-                              : ""
-                        }
-                      >
-                        {row.gapRatio}×
+                      <span className="inline-flex flex-col items-end gap-0.5">
+                        <span
+                          className={
+                            row.gapRatio > 1.2
+                              ? "text-red-400"
+                              : row.gapRatio <= 1
+                                ? "text-emerald-400"
+                                : ""
+                          }
+                        >
+                          {row.gapRatio}×
+                        </span>
+                        <span className="text-[10px] leading-3 text-[var(--rs-muted)]">
+                          {row.gapRatio < 1
+                            ? "you win"
+                            : row.gapRatio > 1
+                              ? "behind"
+                              : "tied"}
+                        </span>
                       </span>
                     ) : (
                       "—"
@@ -3245,36 +3314,14 @@ function BenchmarkTab({
       </div>
 
       <div>
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h2 className="font-heading text-lg font-medium">
-              Feature benchmark
-            </h2>
-            <p className="mt-1 text-sm text-[var(--rs-muted)]">
-              Filled from the teardown and the post-journey feature scan (nav,
-              rewards, casino lobby, sportsbook, account). A dash means not
-              observed yet.
-            </p>
-          </div>
-          {onScanFeatures ? (
-            <div className="flex flex-col items-end gap-1">
-              <button
-                type="button"
-                disabled={scanDisabled}
-                onClick={onScanFeatures}
-                className="cursor-pointer rounded-lg border border-[var(--rs-border)] px-3 py-1.5 text-xs font-medium text-[var(--rs-fg)] hover:bg-[var(--rs-bg)] disabled:cursor-default disabled:opacity-50"
-              >
-                {scanProgress ? "Scanning…" : "Scan site features"}
-              </button>
-              {!scanProgress ? (
-                <p className="text-[10px] text-[var(--rs-muted)]">
-                  Logs into each brand account · nav, rewards, casino, sports,
-                  security
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+        <h2 className="font-heading text-lg font-medium">
+          Feature benchmark
+        </h2>
+        <p className="mt-1 text-sm text-[var(--rs-muted)]">
+          Filled from the teardown and the post-journey feature scan (nav,
+          rewards, casino lobby, sportsbook, account). A dash means not
+          observed yet.
+        </p>
         <div className="rs-table-wrap mt-4">
           <table
             className="rs-table rs-features"
@@ -3632,6 +3679,11 @@ function PersonaForm({
                   <p className="mt-1 truncate text-xs text-[var(--rs-muted)]">
                     {b.accountEmail?.trim() || "No email yet"}
                   </p>
+                  {b.accountPhone?.trim() ? (
+                    <p className="mt-0.5 text-xs text-[var(--rs-muted)]">
+                      SMS {b.accountPhone.trim()}
+                    </p>
+                  ) : null}
                   {ready ? (
                     <>
                       {resolveBrandAccountUsername(project, b.id) ? (

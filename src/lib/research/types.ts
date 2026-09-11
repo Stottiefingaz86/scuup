@@ -54,6 +54,14 @@ export interface ResearchBrand {
    */
   accountUsername?: string | null;
   /**
+   * Numeric account id some books show after signup (BetUS login field).
+   */
+  accountNumber?: string | null;
+  /**
+   * Mobile for SMS OTP (Bovada). Signup must use this, not a generated 555.
+   */
+  accountPhone?: string | null;
+  /**
    * True only after signup actually succeeded (logged in / verified).
    * Pre-minted alias emails must NOT set this — or we skip register and
    * try to login on brands that never created an account.

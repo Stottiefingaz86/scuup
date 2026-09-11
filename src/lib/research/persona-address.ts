@@ -141,3 +141,20 @@ export function defaultResearchPersona(market?: string): ResearchPersona {
       "Password blank → TEST_ACCOUNT_PASSWORD. Address randomized Canada/US for signup forms.",
   };
 }
+
+/** `+1 (208) 266-2561` from whatever the human pasted. */
+export function formatBrandAccountPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  const ten =
+    digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  if (ten.length !== 10) return raw.trim();
+  return `+1 (${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
+
+/** National US form value — Bovada fields often reject a leading +1. */
+export function brandPhoneForForm(raw: string | null | undefined): string {
+  const formatted = formatBrandAccountPhone(raw ?? "");
+  const m = /^\+1 \((\d{3})\) (\d{3})-(\d{4})$/.exec(formatted);
+  // 10 digits: Bovada already shows a +1 country prefix beside the field.
+  return m ? `${m[1]}${m[2]}${m[3]}` : formatted;
+}

@@ -448,6 +448,9 @@ export function knownSignupLanding(
   if (/betonline/i.test(brandName)) {
     return { landedOn: "cashier", clicksToWallet: 0 };
   }
+  if (/betus/i.test(brandName)) {
+    return { landedOn: "cashier", clicksToWallet: 0 };
+  }
   if (/winna/i.test(brandName)) {
     return { landedOn: "casino", clicksToWallet: 1 };
   }

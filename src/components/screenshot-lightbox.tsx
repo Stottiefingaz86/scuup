@@ -9,8 +9,10 @@ export const IPHONE_VIEW_W = 390;
 export const IPHONE_VIEW_H = 844;
 
 /**
- * Show a captured frame at phone size, as the player saw it. Do not stretch
- * a 390px shot across a 1200px modal.
+ * Show a captured frame at phone size, as the player saw it.
+ * Always clip to this box — Browserbase shots are often 2–3× DPR (1170px+)
+ * and sportsbook layouts can be wider than the viewport; neither may blow
+ * out of the modal or sit off to one side.
  */
 export function PhoneShotFrame({
   src,
@@ -24,17 +26,31 @@ export function PhoneShotFrame({
   return (
     <div
       className={cn(
-        "mx-auto overflow-hidden rounded-[2rem] border bg-neutral-950 shadow-sm",
+        "relative mx-auto overflow-hidden rounded-[2rem] border bg-neutral-950 shadow-sm",
         className,
       )}
-      style={{ width: IPHONE_VIEW_W, maxWidth: "100%" }}
+      style={{
+        width: "100%",
+        maxWidth: IPHONE_VIEW_W,
+      }}
     >
       <div
-        className="overflow-y-auto overflow-x-hidden"
+        className="w-full overflow-x-hidden overflow-y-auto overscroll-contain"
         style={{ maxHeight: `min(${IPHONE_VIEW_H}px, 68vh)` }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
-        <img src={src} alt={alt} className="block h-auto w-full" />
+        <img
+          src={src}
+          alt={alt}
+          decoding="async"
+          className="block"
+          style={{
+            width: "100%",
+            maxWidth: "100%",
+            height: "auto",
+            display: "block",
+          }}
+        />
       </div>
     </div>
   );
@@ -79,7 +95,7 @@ export function ScreenshotLightbox({
           broken
             ? "flex cursor-default items-center justify-center bg-muted/30 text-xs text-muted-foreground"
             : "cursor-zoom-in hover:opacity-90",
-          className
+          className,
         )}
         title={broken ? undefined : "Click to enlarge"}
         style={style}
@@ -95,7 +111,7 @@ export function ScreenshotLightbox({
             onError={() => setBroken(true)}
             className={cn(
               "h-full w-full object-cover object-top transition-transform duration-300 group-hover:scale-[1.02]",
-              imgClassName
+              imgClassName,
             )}
           />
         )}
@@ -104,8 +120,8 @@ export function ScreenshotLightbox({
         <DialogContent
           className={
             phone
-              ? "w-auto max-w-[min(96vw,28rem)] gap-2 p-3 sm:max-w-[min(96vw,28rem)]"
-              : "w-auto max-w-[min(96vw,1200px)] gap-2 p-3 sm:max-w-[min(96vw,1200px)]"
+              ? "w-[min(96vw,28rem)] max-w-[min(96vw,28rem)] gap-2 overflow-hidden p-3 sm:max-w-[min(96vw,28rem)]"
+              : "w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] gap-2 overflow-hidden p-3 sm:max-w-[min(96vw,1200px)]"
           }
         >
           <DialogTitle className="pe-8 text-sm text-muted-foreground">
@@ -116,7 +132,11 @@ export function ScreenshotLightbox({
           ) : (
             <div className="max-h-[82vh] overflow-auto rounded-lg border">
               {/* eslint-disable-next-line @next/next/no-img-element -- runtime evidence file */}
-              <img src={src} alt={alt} className="w-full" />
+              <img
+                src={src}
+                alt={alt}
+                className="block h-auto w-full max-w-full"
+              />
             </div>
           )}
         </DialogContent>

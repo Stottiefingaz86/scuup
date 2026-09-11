@@ -85,7 +85,7 @@ export interface ReportReveal {
   kicker: string;
   headline: string;
   lede: string;
-  closer: string;
+  closer?: string;
   moves: ReportRevealMove[];
 }
 
@@ -520,6 +520,47 @@ export function buildResearchReportBrief(
     const onSiteSuccess =
       run?.postDeposit?.balanceAlert.seen ||
       /deposit was successful|start playing/i.test(confirm?.evidence ?? "");
+    const betusStale =
+      /betus/i.test(brand.name) &&
+      (run?.postDeposit
+        ? !run.postDeposit.balanceAlert.seen
+        : /manual refresh|phone confirmed|no toast|no alert/i.test(
+            confirm?.evidence ?? "",
+          ));
+    if (betusStale) {
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Balance stayed $0 until a refresh",
+          "Phone confirmed the deposit. The site showed Cash $0 / FP $0 with no toast, no alert, and no deposit email. Manual refresh was the only way to see funds. Bigger reassure gap than BetOnline’s full-page success.",
+          "Deposit confirmation",
+          firstShot(
+            [
+              ...(confirm?.screenshotUrls ?? []),
+              ...(run?.postDeposit?.screenshotUrls ?? []),
+            ],
+            "Stale balance",
+          ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Same sportsbook funnel as BetOnline",
+          "Signup → cashier, sports after funds, casino buried, traditional deposit promo. Twin journey to BetOnline — sports-first brand, not casino activation.",
+          "After deposit",
+          firstShot(
+            [
+              ...(confirm?.screenshotUrls ?? []),
+              ...(run?.postDeposit?.screenshotUrls ?? []),
+            ],
+            "Sports after deposit",
+          ),
+        ),
+      );
+    }
     if (onSiteSuccess && isOwn(brand)) {
       const peerName =
         displayName(
@@ -870,7 +911,7 @@ export function buildResearchReportBrief(
     if (sameBand && ownConfirmWin && steeredSports && peerFair) {
       return {
         headline: "We funded the player. Then we sent them to sports.",
-        lede: `We deposited $11.61. The success page said Start playing — it opened the sportsbook. Homepage banners are sports. Casino is third in the header. The lobby after that is empty: no feed, no races, no chat, no providers. ${peerName} never leaves casino after funds — live winners, races up front, rakeback already waiting. Same clock. Different product.`,
+        lede: `We deposited $11.61. The success page said Start playing and opened the sportsbook. Homepage banners are prominently sports focused. Casino is third in the header. When you open casino, the lobby is lifeless. No feed, no races, no chat, no providers. ${peerName} stays in casino once the money lands. Live winners, races up front, rakeback already waiting.`,
       };
     }
     if (sameBand && ownConfirmWin && peerFair) {
@@ -951,8 +992,7 @@ export function buildResearchReportBrief(
       ? {
           kicker: "The change",
           headline: "We funded the player. Then we sent them to sports.",
-          lede: `Start playing on ${ownName} is a sportsbook. The homepage banners are sports. Casino is third in the header. The lobby after that looks empty — no feed, no races, no chat, no providers. ${peerName} keeps them in casino: other people winning in a feed, races in the face, a rakeback claim already waiting when you close the game. That is the gap. Not the clock.`,
-          closer: `We funded $11.61 and sent them to sports. They found a dead lobby, a VIP bar that did not move, and walked away on 12¢ with no mail. ${peerName} already had rakeback to claim and a $500,000 race in the inbox. Flip those five doors — or casino stays the tab nobody opens.`,
+          lede: `Start playing on ${ownName} opens the sportsbook. Homepage banners are prominently sports focused. Casino is third in the header. When you open casino, the lobby is lifeless. No feed, no races, no chat, no providers. ${peerName} keeps them in casino. Other people winning in a feed, races up front, rakeback already waiting when you close the game.`,
           moves: [
             {
               n: "01",

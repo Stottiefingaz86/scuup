@@ -120,16 +120,24 @@ export function strategyNorthStarBlurb(): string {
 }
 
 /** Gap insight: what a competitor does better on timed onboarding. */
+export type CompetitorGapInsight = {
+  title: string;
+  body: string;
+  tone: "protect" | "gap" | "next";
+};
+
 export function competitorGapInsights(
   ownName: string,
   own: CompetitorTeardown | null,
-  others: { name: string; teardown: CompetitorTeardown }[]
-): string[] {
-  const lines: string[] = [];
+  others: { name: string; teardown: CompetitorTeardown }[],
+): CompetitorGapInsight[] {
+  const lines: CompetitorGapInsight[] = [];
   if (!own) {
-    lines.push(
-      `Run ${ownName} signup → deposit → first bet to baseline the journey audit.`
-    );
+    lines.push({
+      tone: "next",
+      title: "No baseline yet",
+      body: `Run ${ownName} signup → deposit → first bet to baseline the journey audit.`,
+    });
     return lines;
   }
 
@@ -137,13 +145,17 @@ export function competitorGapInsights(
   const targetSec = 12 * 60;
   if (timeToStake != null) {
     if (timeToStake > targetSec) {
-      lines.push(
-        `Time to stake is ${Math.round(timeToStake / 60)} min vs OKR target ≤12 — funded money is not reaching play fast enough.`
-      );
+      lines.push({
+        tone: "gap",
+        title: `Time to stake ${Math.round(timeToStake / 60)} min`,
+        body: `Outside the ≤12 min OKR — funded money is not reaching play fast enough.`,
+      });
     } else {
-      lines.push(
-        `Time to stake ${Math.round(timeToStake / 60)} min is inside the ≤12 min OKR target — protect this path.`
-      );
+      lines.push({
+        tone: "protect",
+        title: `Time to stake ${Math.round(timeToStake / 60)} min`,
+        body: `Inside the ≤12 min OKR target — protect this path.`,
+      });
     }
   }
 
@@ -152,22 +164,29 @@ export function competitorGapInsights(
     {
       key: "depositToFirstBetSec",
       label: "deposit → first stake",
-      strategy: "Activation / Time to stake — put a first casino bet within reach the moment funds clear",
+      strategy:
+        "Put a first casino bet within reach the moment funds clear.",
     },
     {
       key: "registrationTimeSec",
       label: "registration",
-      strategy: "Straightest fund path — registration friction before money",
+      strategy: "Straightest fund path — cut friction before money.",
     },
     {
       key: "depositTimeSec",
       label: "deposit / cashier",
-      strategy: "Pillar 3 — trust and performance on initial funding",
+      strategy: "Trust and performance on initial funding.",
     },
     {
       key: "totalOnboardingTimeSec",
       label: "full onboarding",
-      strategy: "Activation — distance from click to first bet",
+      strategy: "Shorten the distance from click to first bet.",
+    },
+    {
+      key: "totalOnboardingActions",
+      label: "onboarding actions",
+      strategy:
+        "Fewer clicks is better — more actions means more activation effort, not a richer product.",
     },
   ];
 
@@ -186,16 +205,28 @@ export function competitorGapInsights(
     }
     if (best != null && bestName && ownVal > best * 1.15) {
       const ratio = Math.round((ownVal / best) * 10) / 10;
-      lines.push(
-        `${bestName} is ${ratio}× faster on ${c.label}. ${c.strategy}.`
-      );
+      const faster =
+        c.key === "totalOnboardingActions" ||
+        c.key === "registrationSteps" ||
+        c.key === "depositSteps" ||
+        c.key === "depositToFirstBetClicks" ||
+        c.key === "totalFields"
+          ? "leaner"
+          : "faster";
+      lines.push({
+        tone: "gap",
+        title: `${bestName} is ${ratio}× ${faster} on ${c.label}`,
+        body: c.strategy,
+      });
     }
   }
 
   if (lines.length < 2) {
-    lines.push(
-      "Next: compare reward surfaces (homepage meter, claim cadence) — Rainbet/Stake win on frequency, not just onboarding speed."
-    );
+    lines.push({
+      tone: "next",
+      title: "Next lens",
+      body: "Compare reward surfaces (homepage meter, claim cadence) — peers often win on frequency, not just onboarding speed.",
+    });
   }
 
   return lines.slice(0, 5);

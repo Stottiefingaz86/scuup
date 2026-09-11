@@ -4,6 +4,7 @@ import {
   startResearchTeardown,
 } from "@/lib/research/teardown-runtime";
 import { loadTeardownJob } from "@/lib/research/teardown-job-store";
+import { loadResearchWorkspace } from "@/lib/research/workspace-server";
 import type { ResearchDevice, ResearchPersona } from "@/lib/research/types";
 
 export const runtime = "nodejs";
@@ -47,6 +48,31 @@ export async function POST(request: NextRequest) {
       typeof body.accountEmail === "string" ? body.accountEmail : null;
     const accountPassword =
       typeof body.accountPassword === "string" ? body.accountPassword : null;
+    let accountPhone =
+      typeof body.accountPhone === "string" ? body.accountPhone : null;
+    let accountUsername =
+      typeof body.accountUsername === "string" ? body.accountUsername : null;
+    let accountNumber =
+      typeof body.accountNumber === "string" ? body.accountNumber : null;
+    if (
+      (!accountPhone?.trim() || !accountUsername?.trim() || !accountNumber?.trim()) &&
+      projectId &&
+      brandId
+    ) {
+      try {
+        const projects = await loadResearchWorkspace();
+        const brand = projects
+          .find((p) => p.id === projectId)
+          ?.brands.find((b) => b.id === brandId);
+        accountPhone = accountPhone?.trim() || brand?.accountPhone?.trim() || null;
+        accountUsername =
+          accountUsername?.trim() || brand?.accountUsername?.trim() || null;
+        accountNumber =
+          accountNumber?.trim() || brand?.accountNumber?.trim() || null;
+      } catch {
+        /* workspace miss — keep body values */
+      }
+    }
     const startAt =
       body.startAt === "deposit"
         ? "deposit"
@@ -123,6 +149,9 @@ export async function POST(request: NextRequest) {
         seedDepositWatch,
         accountEmail,
         accountPassword,
+        accountPhone,
+        accountUsername,
+        accountNumber,
       });
 
     return NextResponse.json({

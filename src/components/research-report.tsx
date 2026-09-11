@@ -399,9 +399,6 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
               </li>
             ))}
           </ol>
-          <p className="max-w-2xl font-heading text-xl font-medium leading-snug tracking-tight">
-            {brief.reveal.closer}
-          </p>
         </section>
       ) : brief.nextMoves.length ? (
         <section className="flex flex-col gap-4">

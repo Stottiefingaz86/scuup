@@ -108,7 +108,7 @@ export function JourneyFrameViewer({
     <FrameViewerCtx.Provider value={ctx}>
       {children}
       <Dialog open={cur != null} onOpenChange={(o) => !o && setIdx(null)}>
-        <DialogContent className="w-auto max-w-[min(96vw,28rem)] gap-2 p-3 sm:max-w-[min(96vw,28rem)]">
+        <DialogContent className="w-[min(96vw,28rem)] max-w-[min(96vw,28rem)] gap-2 overflow-hidden p-3 sm:max-w-[min(96vw,28rem)]">
           <DialogTitle className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 pe-8 text-sm text-muted-foreground">
             {cur ? (
               <>
@@ -129,11 +129,14 @@ export function JourneyFrameViewer({
               "Frame"
             )}
           </DialogTitle>
-          <div className="relative">
+          {/* Cap width to the phone frame so nav buttons sit on the bezel,
+              not in empty space while a 3× DPR shot pushes the image right. */}
+          <div className="relative mx-auto w-full max-w-[390px] overflow-hidden">
             {cur ? (
               <PhoneShotFrame
                 src={cur.src}
                 alt={`${cur.stageLabel} ${cur.index}`}
+                className="mx-0"
               />
             ) : null}
             <NavButton
@@ -148,7 +151,7 @@ export function JourneyFrameViewer({
             />
           </div>
           {/* Filmstrip of the whole journey — jump anywhere. */}
-          <div className="flex gap-1 overflow-x-auto pb-1 pt-1">
+          <div className="flex max-w-full gap-1 overflow-x-auto pb-1 pt-1">
             {frames.map((f, i) => (
               <button
                 key={f.src}

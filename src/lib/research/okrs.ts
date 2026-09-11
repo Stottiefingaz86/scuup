@@ -186,12 +186,12 @@ export function comparisonMetricLabel(key: string): {
     case "totalOnboardingTimeSec":
       return {
         label: "Total onboarding time",
-        okrHint: "Leading · activation speed",
+        okrHint: "Lower is better · activation speed",
       };
     case "totalOnboardingActions":
       return {
         label: "Total onboarding actions",
-        okrHint: "Leading · activation effort",
+        okrHint: "Lower is better · fewer clicks = less effort",
       };
     default:
       return { label: key, okrHint: "" };

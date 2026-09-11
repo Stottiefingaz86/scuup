@@ -1096,7 +1096,8 @@ export function PlayerVoiceTab({
           </div>
         )
       ) : (
-        <div>
+        <div className="flex flex-col gap-6">
+          <div>
           <div className="rs-table-wrap">
             <table className="rs-table rs-fixed min-w-[900px]">
               <colgroup>
@@ -1186,8 +1187,310 @@ export function PlayerVoiceTab({
               square with the journey.
             </p>
           )}
+          </div>
+          {anyRead ? <VoiceAllSynopsis project={project} /> : null}
         </div>
       )}
     </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* All-brands synopsis                                                 */
+/* ------------------------------------------------------------------ */
+
+type VoiceBrandRow = {
+  brand: ResearchBrand;
+  voice: PlayerVoice;
+  negPct: number;
+};
+
+function themeBlob(v: PlayerVoice): string {
+  return [
+    ...v.complaints,
+    ...v.stuck,
+    ...v.asks,
+  ]
+    .map((t) => `${t.theme} ${t.vertical} ${t.stage ?? ""}`.toLowerCase())
+    .join(" · ");
+}
+
+function brandsWithVoice(project: ResearchProject): VoiceBrandRow[] {
+  return project.brands
+    .filter((b): b is ResearchBrand & { playerVoice: PlayerVoice } =>
+      Boolean(b.playerVoice),
+    )
+    .map((b) => ({
+      brand: b,
+      voice: b.playerVoice,
+      negPct: b.playerVoice.sampled
+        ? b.playerVoice.ratingSplit.negative / b.playerVoice.sampled
+        : 0,
+    }))
+    .sort(
+      (a, b) => (b.voice.trustScore ?? 0) - (a.voice.trustScore ?? 0),
+    );
+}
+
+/** Shared pain signals that show up on 2+ brands. */
+function commonSignals(rows: VoiceBrandRow[]): string[] {
+  const checks: { label: string; test: (blob: string) => boolean }[] = [
+    {
+      label: "Withdrawals delayed, pending, or blocked",
+      test: (s) => /withdraw|payout|cash.?out|pending/.test(s),
+    },
+    {
+      label: "Support feels canned, slow, or disappears",
+      test: (s) => /support|canned|ignore|ticket|live chat/.test(s),
+    },
+    {
+      label: "Bonus / VIP terms feel unfair after the fact",
+      test: (s) => /bonus|vip|wager|promo|void/.test(s),
+    },
+    {
+      label: "Wins limited, voided, or accounts restricted",
+      test: (s) => /limit|restrict|void|rigged|confiscat|banned/.test(s),
+    },
+  ];
+  const out: string[] = [];
+  for (const c of checks) {
+    const hit = rows.filter((r) => c.test(themeBlob(r.voice))).length;
+    if (hit >= 2) out.push(c.label);
+  }
+  return out.slice(0, 4);
+}
+
+function VoiceAllSynopsis({ project }: { project: ResearchProject }) {
+  const rows = brandsWithVoice(project);
+  if (rows.length < 2) return null;
+
+  const leader = rows[0]!;
+  const laggard = rows[rows.length - 1]!;
+  const common = commonSignals(rows);
+  const own = rows.find((r) => r.brand.role === "own_brand");
+
+  type GapItem = {
+    key: string;
+    brand: ResearchBrand;
+    label: string;
+    note: string;
+    tone: "critical" | "gap";
+  };
+  const gapItems: GapItem[] = [];
+  const seen = new Set<string>();
+  const pushGap = (item: GapItem) => {
+    if (seen.has(item.key) || gapItems.length >= 4) return;
+    seen.add(item.key);
+    gapItems.push(item);
+  };
+
+  for (const r of rows) {
+    if (r.negPct >= 0.6) {
+      pushGap({
+        key: `neg-${r.brand.id}`,
+        brand: r.brand,
+        label: `${Math.round(r.negPct * 100)}% negative`,
+        note: "Trust is the product problem, not onboarding speed.",
+        tone: "critical",
+      });
+    }
+  }
+  for (const r of rows) {
+    for (const a of r.voice.alignment) {
+      if (a.verdict !== "gap") continue;
+      pushGap({
+        key: `gap-${r.brand.id}-${a.area}`,
+        brand: r.brand,
+        label: a.area,
+        note: a.note,
+        tone: "gap",
+      });
+    }
+  }
+
+  const takeaway =
+    own && leader.brand.id === own.brand.id
+      ? `${leader.brand.name} leads the scoreboard, but all brands share the same war: get money out fairly. ${laggard.brand.name} is the trust laggard.`
+      : `${leader.brand.name} leads TrustScore; ${laggard.brand.name} trails. Shared pain is cash-out trust — journeys can’t prove payout speed.`;
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-[var(--rs-border)] bg-[var(--rs-card)]">
+      <div className="border-b border-[var(--rs-border)] px-4 py-3.5 sm:px-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 max-w-2xl">
+            <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--rs-muted)]">
+              Synopsis
+            </p>
+            <p className="mt-1.5 text-sm leading-relaxed text-[var(--rs-fg)]">
+              {takeaway}
+            </p>
+          </div>
+          <ol className="flex flex-wrap items-center gap-1.5">
+            {rows.map((r, i) => (
+              <li key={r.brand.id} className="flex items-center gap-1.5">
+                {i > 0 ? (
+                  <span
+                    className="text-[10px] text-[var(--rs-muted)]"
+                    aria-hidden
+                  >
+                    →
+                  </span>
+                ) : null}
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs",
+                    i === 0
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-[var(--rs-fg)]"
+                      : i === rows.length - 1
+                        ? "border-red-500/30 bg-red-500/5 text-[var(--rs-fg)]"
+                        : "border-[var(--rs-border)] text-[var(--rs-muted)]",
+                  )}
+                >
+                  <BrandFavicon brand={r.brand} />
+                  <span className="max-w-[7rem] truncate">{r.brand.name}</span>
+                  <span className="tabular-nums font-medium text-[var(--rs-fg)]">
+                    {r.voice.trustScore?.toFixed(1) ?? "—"}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+
+      <div className="grid divide-y divide-[var(--rs-border)] sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+        <section className="px-4 py-4 sm:px-5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--rs-muted)]">
+            Common
+          </p>
+          <p className="mt-0.5 text-[11px] text-[var(--rs-muted)]">
+            Shared across {rows.length} brands
+          </p>
+          {common.length ? (
+            <ul className="mt-3 space-y-2.5">
+              {common.map((c, i) => (
+                <li key={c} className="flex gap-2.5">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md bg-[var(--rs-bg)] text-[10px] font-medium tabular-nums text-[var(--rs-muted)]">
+                    {i + 1}
+                  </span>
+                  <span className="text-xs leading-snug text-[var(--rs-fg)]">
+                    {c}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-xs text-[var(--rs-muted)]">
+              No shared themes yet.
+            </p>
+          )}
+        </section>
+
+        <section className="px-4 py-4 sm:px-5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--rs-muted)]">
+            Leading
+          </p>
+          <p className="mt-0.5 text-[11px] text-[var(--rs-muted)]">
+            TrustScore rank
+          </p>
+          <div className="mt-3 space-y-3">
+            <div className="rounded-xl border border-emerald-500/35 bg-emerald-500/10 px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <BrandFavicon brand={leader.brand} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-[var(--rs-fg)]">
+                    {leader.brand.name}
+                    {leader.brand.role === "own_brand" ? (
+                      <span className="ml-1.5 text-[10px] font-normal text-[var(--rs-muted)]">
+                        you
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="text-[10px] text-emerald-400/90">Ahead</p>
+                </div>
+                <span className="text-lg font-medium tabular-nums tracking-tight text-[var(--rs-fg)]">
+                  {leader.voice.trustScore?.toFixed(1)}
+                </span>
+              </div>
+              {leader.voice.praise[0] ? (
+                <p className="mt-2 border-t border-emerald-500/20 pt-2 text-[11px] leading-snug text-[var(--rs-muted)]">
+                  Players still praise{" "}
+                  <span className="text-[var(--rs-fg)]">
+                    {leader.voice.praise[0].theme}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+
+            {laggard.brand.id !== leader.brand.id ? (
+              <div className="rounded-xl border border-red-500/25 bg-red-500/[0.06] px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <BrandFavicon brand={laggard.brand} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-[var(--rs-fg)]">
+                      {laggard.brand.name}
+                    </p>
+                    <p className="text-[10px] text-red-400/90">Trailing</p>
+                  </div>
+                  <span className="text-lg font-medium tabular-nums tracking-tight text-[var(--rs-fg)]">
+                    {laggard.voice.trustScore?.toFixed(1)}
+                  </span>
+                </div>
+                {laggard.voice.complaints[0] ? (
+                  <p className="mt-2 border-t border-red-500/15 pt-2 text-[11px] leading-snug text-[var(--rs-muted)]">
+                    Top complaint{" "}
+                    <span className="text-[var(--rs-fg)]">
+                      {laggard.voice.complaints[0].theme}
+                    </span>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <section className="px-4 py-4 sm:px-5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--rs-muted)]">
+            Gaps
+          </p>
+          <p className="mt-0.5 text-[11px] text-[var(--rs-muted)]">
+            Reviews vs journey
+          </p>
+          {gapItems.length ? (
+            <ul className="mt-3 space-y-3">
+              {gapItems.map((g) => (
+                <li key={g.key} className="flex gap-2.5">
+                  <BrandFavicon brand={g.brand} />
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-baseline gap-x-1.5 text-[11px]">
+                      <span className="font-medium text-[var(--rs-fg)]">
+                        {g.brand.name}
+                      </span>
+                      <span
+                        className={cn(
+                          "rounded px-1 py-px text-[10px] font-medium uppercase tracking-wide",
+                          g.tone === "critical"
+                            ? "bg-red-500/15 text-red-300"
+                            : "bg-amber-500/15 text-amber-200",
+                        )}
+                      >
+                        {g.label}
+                      </span>
+                    </p>
+                    <p className="mt-0.5 text-xs leading-snug text-[var(--rs-muted)]">
+                      {g.note}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-xs text-[var(--rs-muted)]">
+              No journey gaps tagged yet.
+            </p>
+          )}
+        </section>
+      </div>
+    </div>
   );
 }

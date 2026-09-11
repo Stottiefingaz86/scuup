@@ -1,4 +1,5 @@
 import { chromium } from "playwright-core";
+import { trustpilotSlugForBrand } from "./brand-markets";
 import { createSession, releaseSession } from "./browserbase";
 import { ANALYSIS_AREA_LABELS } from "./constants";
 import { PLAIN_PROSE_RULE, sanitizeVocAnalysis } from "./prose";
@@ -46,6 +47,8 @@ export interface TrustpilotScrapeOptions {
 }
 
 export function trustpilotHost(brandUrl: string): string {
+  const curated = trustpilotSlugForBrand(brandUrl);
+  if (curated) return curated;
   const host = new URL(
     brandUrl.startsWith("http") ? brandUrl : `https://${brandUrl}`,
   ).hostname;

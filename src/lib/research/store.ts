@@ -7,7 +7,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { emptyStagesFor } from "./journeys";
-import { defaultResearchPersona } from "./persona-address";
+import {
+  brandPhoneForForm,
+  defaultResearchPersona,
+  formatBrandAccountPhone,
+} from "./persona-address";
 import { teardownFromRun } from "./teardown-summary";
 import { reconcilePostDeposit } from "./post-deposit";
 import { emptyPostSignup, knownSignupLanding } from "./post-signup";
@@ -152,6 +156,50 @@ function load(): ResearchProject[] {
             landedOn: known.landedOn,
             clicksToWallet: known.clicksToWallet,
           };
+        }
+        if (!/betonline/i.test(brand)) {
+          for (const st of r.stages ?? []) {
+            const shots = (st.screenshotUrls ?? []).filter(
+              (u) => u && !u.includes("betonline-deposit-success"),
+            );
+            if (shots.length !== (st.screenshotUrls ?? []).length) {
+              st.screenshotUrls = shots;
+            }
+            if (
+              st.stageId === "deposit_confirmation" &&
+              /11\.61|start playing/i.test(st.evidence ?? "")
+            ) {
+              st.evidence = /betus/i.test(brand)
+                ? "Phone confirmed the deposit. Site balance did not update until a manual refresh. No email, no toast, no alert. Chain wait is not scored. Play clock resets at casino discovery."
+                : "Chain wait is not scored — play clock resets at casino discovery.";
+            }
+          }
+        }
+        const landing = (r.stages ?? []).find((s) => s.stageId === "landing");
+        if (landing) {
+          const shots = (landing.screenshotUrls ?? []).filter(
+            (u) => u && !/mtwzaxkx-o4olp/.test(u),
+          );
+          const homepage = shots.find((u) => /mtx0h9ki-rqx5g/.test(u));
+          if (homepage) {
+            landing.screenshotUrls = [homepage, ...shots.filter((u) => u !== homepage)];
+            landing.evidence = "Homepage loaded";
+          } else if (shots.length !== (landing.screenshotUrls ?? []).length) {
+            landing.screenshotUrls = shots;
+          }
+        }
+        const confirm = (r.stages ?? []).find(
+          (s) => s.stageId === "deposit_confirmation",
+        );
+        if (confirm) {
+          const watchShots = (r.depositWatch ?? [])
+            .map((e) => e.screenshotUrl)
+            .filter((u): u is string => Boolean(u));
+          if (watchShots.length) {
+            confirm.screenshotUrls = [
+              ...new Set([...(confirm.screenshotUrls ?? []), ...watchShots]),
+            ];
+          }
         }
       }
     }
@@ -415,6 +463,22 @@ export function saveBrandPlayerVoice(
 }
 
 /** Persist the brand-issued username / account id used at login. */
+export function saveBrandAccountNumber(
+  projectId: string,
+  brandId: string,
+  accountNumber: string,
+): void {
+  const project = getResearchProject(projectId);
+  if (!project) return;
+  const number = accountNumber.trim();
+  if (!/^\d{6,}$/.test(number)) return;
+  updateResearchProject(projectId, {
+    brands: project.brands.map((b) =>
+      b.id === brandId ? { ...b, accountNumber: number } : b,
+    ),
+  });
+}
+
 export function saveBrandAccountUsername(
   projectId: string,
   brandId: string,
@@ -445,6 +509,33 @@ export function resolveBrandAccountUsername(
 }
 
 export { extractUsernameFromEmails };
+
+/** Persist the SMS mobile used at signup for this brand (Bovada). */
+export function saveBrandAccountPhone(
+  projectId: string,
+  brandId: string,
+  accountPhone: string,
+): void {
+  const project = getResearchProject(projectId);
+  if (!project) return;
+  const phone = formatBrandAccountPhone(accountPhone);
+  if (!phone) return;
+  updateResearchProject(projectId, {
+    brands: project.brands.map((b) =>
+      b.id === brandId ? { ...b, accountPhone: phone } : b,
+    ),
+  });
+}
+
+export { formatBrandAccountPhone, brandPhoneForForm };
+
+export function resolveBrandAccountPhone(
+  project: ResearchProject,
+  brandId: string,
+): string {
+  const brand = project.brands.find((b) => b.id === brandId);
+  return formatBrandAccountPhone(brand?.accountPhone ?? "");
+}
 
 /** Persist the password used at signup — login must reuse this exact value. */
 export function saveBrandAccountPassword(
@@ -1021,6 +1112,7 @@ export function resetBrandFresh(
             accountEmail,
             accountPassword: null,
             accountUsername: null,
+            accountPhone: b.accountPhone ?? null,
             accountReady: false,
           }
         : b,
@@ -1201,6 +1293,7 @@ export function deductUnfairConfirmWait(
   const brand = brandNameForRun(project, run.brandId);
   const betonline = /betonline/i.test(brand);
   const winna = /winna/i.test(brand);
+  const betus = /betus/i.test(brand);
   const misStamped = !betonline && /11\.61|start playing/i.test(conf.evidence ?? "");
   const unfair = Math.max(conf.waitSec ?? 0, conf.timeSec ?? 0);
   const lyingFriction =
@@ -1228,7 +1321,9 @@ export function deductUnfairConfirmWait(
     ? "On-site: Your deposit was successful · $11.61 USD · Start playing. Chain wait is not scored. Play clock resets at casino discovery."
     : winna
       ? "Funds showed as $5.81 — no full-page success screen. Email “Deposit completed”. Chain wait is not scored. Play clock resets at casino discovery."
-      : "Chain wait is not scored — play clock resets at casino discovery.";
+      : betus
+        ? "Phone confirmed the deposit. Site balance did not update until a manual refresh. No email, no toast, no alert. Chain wait is not scored. Play clock resets at casino discovery."
+        : "Chain wait is not scored — play clock resets at casino discovery.";
 
   const stages = run.stages.map((st) => {
     if (st.stageId !== "deposit_confirmation") return st;
@@ -1266,7 +1361,50 @@ export function deductUnfairConfirmWait(
     (s) => s.stageId === "first_bet" && s.endedAt && s.timeSec != null,
   );
 
-  const postDeposit = betonline
+  const betusWatchShots = (run.depositWatch ?? [])
+    .map((e) => e.screenshotUrl)
+    .filter((u): u is string => Boolean(u && !u.includes("betonline-deposit-success")));
+  const postDeposit = betus
+    ? {
+        creditedAfterSec: run.postDeposit?.creditedAfterSec ?? null,
+        confirmedVia: null,
+        // After pay the book drops you on sportsbook (same pattern as BetOnline),
+        // with Cash/FP still $0 until a manual refresh — no toast, no mail.
+        landedOn: "sportsbook" as const,
+        landingUrl: run.postDeposit?.landingUrl ?? null,
+        balanceAlert: { seen: false, text: null },
+        popup: {
+          seen: false,
+          text: null,
+          cta: null,
+          ctaTarget: null,
+        },
+        guidedTo: "sportsbook" as const,
+        guidedUrl: null,
+        guidance:
+          "None — phone showed the credit; site stayed on sports with $0 until a manual refresh",
+        ctas: [],
+        emails: [],
+        okrFlags: [
+          "Routes the fresh deposit to sportsbook — works against casino Time to stake (≤12 min) and casino NR per player",
+          "No on-site confirmation that funds landed — player has to check balance manually (reassure gap)",
+          "Balance stale until refresh — no live update after chain confirm",
+          "No deposit confirmation email within the confirmation window — CRM reassurance gap",
+          "No next-step guidance after deposit (no popup, no prompt) — activation left to chance",
+        ],
+        screenshotUrls: [
+          ...new Set([
+            ...betusWatchShots,
+            ...(run.postDeposit?.screenshotUrls ?? []).filter(
+              (u) => !u.includes("betonline-deposit-success"),
+            ),
+            ...((run.stages ?? []).find((s) => s.stageId === "deposit_confirmation")
+              ?.screenshotUrls ?? []
+            ).filter((u) => u && !u.includes("betonline-deposit-success")),
+          ]),
+        ],
+      }
+    : betonline
     ? {
         creditedAfterSec: 0,
         confirmedVia: "site" as const,

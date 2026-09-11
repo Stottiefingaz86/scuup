@@ -1115,7 +1115,7 @@ export async function inspectRegistrationSubmitUi(page: PageLike): Promise<{
       )].find((el) => {
         if (!(el instanceof HTMLElement) || !visible(el)) return false;
         const t = (el.innerText || "").slice(0, 4000);
-        return /password|e-?mail|create(\\s+an?)?\\s+account|sign\\s*up|register/i.test(t);
+        return /password|e-?mail|create(\\s+an?)?\\s+account|sign\\s*up|register|contact\\s+details|first\\s*name/i.test(t);
       }) || null;
       const root = dialog || document;
       const nodes = [
@@ -1219,6 +1219,34 @@ export async function fastExpandEmailRegistration(
         );
         if (!btn) return false;
         try { btn.click(); } catch (_) {}
+        return true;
+      })()`),
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Wizard Continue / Next — BetUS-class step 1 has no Create Account yet. */
+export async function fastClickContinueNext(page: PageLike): Promise<boolean> {
+  try {
+    return Boolean(
+      await page.evaluate(`(() => {
+        ${HELPERS}
+        const nodes = [...document.querySelectorAll("button, a, [role='button'], input[type='submit']")]
+          .filter((el) => el instanceof HTMLElement && visible(el));
+        const hit = nodes.find((el) => {
+          const t = ((el.textContent || el.getAttribute("value") || "") + " " + (el.getAttribute("aria-label") || ""))
+            .replace(/\\s+/g, " ")
+            .trim()
+            .toLowerCase();
+          if (!t || t.length > 32) return false;
+          if (/log\\s*in|sign\\s*in|already|back|prev/.test(t)) return false;
+          return /^(continue|next|proceed)\\b/.test(t) || t === "continue" || t === "next";
+        });
+        if (!hit) return false;
+        try { hit.focus({ preventScroll: true }); } catch (_) {}
+        hit.click();
         return true;
       })()`),
     );
@@ -1750,7 +1778,13 @@ const REG_CTA_SCRIPT = `(() => {
     .filter(({ el, t, href }) => {
       if (!t || t.length > 28) return false;
       if (bad.test(t) || inGameTile(el)) return false;
-      if (/\\/join\\/?$/i.test((href.split("?")[0] || ""))) return false;
+      // Bovada /join is a blank page. BetUS /join is the real signup.
+      if (
+        /bovada/i.test(location.hostname) &&
+        /\\/join\\/?$/i.test((href.split("?")[0] || ""))
+      ) {
+        return false;
+      }
       // After hamburger: prefer "Register now" even if the drawer isn't a <nav>.
       if (window.__rsMenuOnly && !inNav(el) && !/register/i.test(t)) return false;
       if (good.test(t)) {
@@ -1764,9 +1798,13 @@ const REG_CTA_SCRIPT = `(() => {
         if (!linked && !/^(join(?:\\s*now)?|joinnow|register(?:\\s*now)?)$/i.test(t)) return false;
         return true;
       }
-      // /join is a blank Bovada URL — never treat it as registration.
-        if (/\\/join\\/?$/i.test((href.split("?")[0] || ""))) return false;
-        if (/\\/(register|signup|sign-up)\\b/i.test(href) && !/bet|casino\\/game/i.test(href)) {
+      if (
+        /bovada/i.test(location.hostname) &&
+        /\\/join\\/?$/i.test((href.split("?")[0] || ""))
+      ) {
+        return false;
+      }
+        if (/\\/(join|register|signup|sign-up)\\b/i.test(href) && !/bet|casino\\/game/i.test(href)) {
           return /^sign|^reg|^create/i.test(t) || t.length < 16;
         }
       return false;
@@ -1783,8 +1821,11 @@ const REG_CTA_SCRIPT = `(() => {
     const aHead = ar.top < 140 ? 0 : 1;
     const bHead = br.top < 140 ? 0 : 1;
     if (aHead !== bHead) return aHead - bHead;
-    const aLink = a.el.tagName === "A" && !/\\/join\\b/i.test(a.href) ? 0 : 1;
-    const bLink = b.el.tagName === "A" && !/\\/join\\b/i.test(b.href) ? 0 : 1;
+    const bovadaHost = /bovada/i.test(location.hostname);
+    const aLink =
+      a.el.tagName === "A" && !(bovadaHost && /\\/join\\b/i.test(a.href)) ? 0 : 1;
+    const bLink =
+      b.el.tagName === "A" && !(bovadaHost && /\\/join\\b/i.test(b.href)) ? 0 : 1;
     if (aLink !== bLink) return aLink - bLink;
     return ar.top - br.top;
   });

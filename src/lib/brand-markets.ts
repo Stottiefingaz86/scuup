@@ -33,6 +33,12 @@ interface CuratedBrandMarkets {
   /** Markets the brand serves from a different licensed domain — the audit
    * must visit that domain or the main site geo-blocks the proxy IP. */
   marketUrls?: Record<string, string>;
+  /** Always open this host, even when the roster URL is the marketing domain
+   * (BetUS.com → betus.com.pa). */
+  canonicalUrl?: string;
+  /** Trustpilot business unit path when it differs from the stripped host
+   * (e.g. betus.com → www.betus.com.pa). */
+  trustpilotSlug?: string;
   /** When set, Browserbase always egresses from this market — even if the
    * project market is listed as available. Used when a market works for
    * marketing copy but the residential tunnel fails (e.g. BetOnline + BR). */
@@ -123,12 +129,13 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
   {
     // Bovada is US-offshore only (Bodog is the Canada / LatAm sister).
     // Canada hard-blocks Register. Licensed US states are also blocked.
-    // Texas was the default; Florida is a second allowed egress so a
-    // fresh signup does not reuse the same TX identity / proxy.
+    // Texas (US-TX / "US rest") ZIP-looks-up Austin and Bovada rejects
+    // the account. Florida only — never fall back to Texas.
     hosts: ["bovada.lv", "bovada.com"],
     blocked: [
       ...EU_REGULATED_BLOCKED,
       ...US_LICENSED,
+      "US (rest / offshore)",
       "Ontario, Canada",
       "Canada",
       "Canada (rest / crypto)",
@@ -136,7 +143,7 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
       "Mexico",
       "Australia",
     ],
-    available: ["US (Florida / offshore)", "US (rest / offshore)"],
+    available: ["US (Florida / offshore)"],
     preferredProxyMarket: "US (Florida / offshore)",
   },
   {
@@ -158,6 +165,24 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
       "Mexico",
     ],
     preferredProxyMarket: "Canada",
+  },
+  {
+    // Marketing domain betus.com lands on betus.com.pa for the real book.
+    // Same US-offshore pattern as BetOnline — sports-first cashier after signup.
+    hosts: ["betus.com", "betus.com.pa"],
+    canonicalUrl: "https://www.betus.com.pa",
+    // Profile is registered under www — /review/betus.com.pa has no unit.
+    trustpilotSlug: "www.betus.com.pa",
+    blocked: [...EU_REGULATED_BLOCKED, "Ontario, Canada"],
+    available: [
+      "Canada",
+      "US (rest / offshore)",
+      "Canada (rest / crypto)",
+      "Finland",
+      "Brazil",
+      "Mexico",
+    ],
+    preferredProxyMarket: "Finland",
   },
   {
     // Florida residential went straight to Cloudflare on engine.mybookie.ag.
@@ -236,7 +261,15 @@ export function auditUrlForMarket(url: string, market: string): string {
   const rule = CURATED_BRAND_MARKETS.find((r) =>
     r.hosts.some((h) => hostMatches(url, h)),
   );
-  return rule?.marketUrls?.[market] ?? url;
+  return rule?.marketUrls?.[market] ?? rule?.canonicalUrl ?? url;
+}
+
+/** Trustpilot /review/{slug} path for a brand URL, when curated. */
+export function trustpilotSlugForBrand(url: string): string | null {
+  const rule = CURATED_BRAND_MARKETS.find((r) =>
+    r.hosts.some((h) => hostMatches(url, h)),
+  );
+  return rule?.trustpilotSlug ?? null;
 }
 
 /** Market label used for Browserbase residential geo. Falls back to the
