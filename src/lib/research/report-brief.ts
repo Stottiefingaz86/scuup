@@ -971,7 +971,7 @@ export function buildResearchReportBrief(
             },
             {
               n: "04",
-              title: "Move the bar the second they spin",
+              title: "Real-time progress",
               body: `Closed a game on ${ownName}. Checked the balance. The VIP bar did not move. Nothing to claim. Walked away on 12¢. On ${peerName} the bar had already ticked and rakeback was ready to claim. If the bar does not move, the product feels fake.`,
             },
             {
