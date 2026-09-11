@@ -2,10 +2,14 @@
 
 import { Heart, Printer, TriangleAlert, X } from "lucide-react";
 import { ScreenshotLightbox } from "@/components/screenshot-lightbox";
+import { ResearchEmailTimeline } from "@/components/research-email-timeline";
+import { StageEvidenceGallery } from "@/components/research-stage-evidence";
+import { latestRunForBrand } from "@/lib/research/feature-benchmark";
 import {
   buildResearchReportBrief,
   projectForReport,
 } from "@/lib/research/report-brief";
+import { emailsForDisplay } from "@/lib/research/store";
 import type { ResearchProject } from "@/lib/research/types";
 import { cn } from "@/lib/utils";
 
@@ -92,7 +96,7 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
   const own = project.brands.find((b) => b.role === "own_brand");
 
   return (
-    <article className="rs-report mx-auto flex w-full max-w-3xl flex-col gap-12 pb-16 print:max-w-none">
+    <article className="rs-report mx-auto flex w-full max-w-5xl flex-col gap-12 pb-16 print:max-w-none">
       <div className="flex items-start justify-between gap-4 print:hidden">
         <p className="text-xs text-[var(--rs-muted)]">
           From the walks and inbox — not workshop examples.
@@ -313,33 +317,60 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
         </section>
       ) : null}
 
-      {brief.heroes.length ? (
-        <section className="flex flex-col gap-4">
-          <SectionKicker n="05" label="One frame each" />
-          <h3 className="font-heading text-2xl font-medium tracking-tight">
-            Evidence, not a gallery
-          </h3>
-          <p className="text-sm text-[var(--rs-muted)]">
-            One shot per brand. Tap to open. The rest lives on Journeys.
-          </p>
-          <ul className="flex flex-wrap gap-3">
-            {brief.heroes.map((h) => (
-              <li key={h.brandId} className="flex w-[4.75rem] flex-col gap-1.5">
-                <ScreenshotLightbox
-                  src={h.src}
-                  alt={h.label}
-                  caption={`${h.brandName} — ${h.label}`}
-                  frame="phone"
-                  className="h-24 w-[4.75rem] rounded-xl border border-[var(--rs-border)]"
+      {(() => {
+        const inbox = emailsForDisplay(project);
+        const rows = project.brands
+          .map((b) => ({
+            brand: b,
+            run: latestRunForBrand(project.runs, b.id),
+            emails: inbox.filter((e) => e.brandId === b.id),
+          }))
+          .filter((r) => r.run || r.emails.length);
+        if (!rows.length) return null;
+        return (
+          <section className="flex flex-col gap-10">
+            <div className="flex flex-col gap-2">
+              <SectionKicker n="05" label="Evidence" />
+              <h3 className="font-heading text-2xl font-medium tracking-tight">
+                What we captured, by brand
+              </h3>
+              <p className="text-sm text-[var(--rs-muted)]">
+                Journey frames, then the inbox in the order it arrived.
+              </p>
+            </div>
+            {rows.map(({ brand, run, emails }) => (
+              <div key={brand.id} className="flex flex-col gap-5">
+                <h4 className="font-heading text-lg font-medium">
+                  {brand.role === "own_brand"
+                    ? `${brand.name} (you)`
+                    : brand.name}
+                </h4>
+                <StageEvidenceGallery
+                  heading={false}
+                  stages={run?.stages ?? []}
+                  emails={emails}
+                  acquisitionSource={run?.acquisitionSource ?? null}
                 />
-                <p className="truncate text-[11px] font-medium">
-                  {h.own ? `${h.brandName} (you)` : h.brandName}
-                </p>
-              </li>
+                {emails.length ? (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--rs-muted)]">
+                      Inbox · {emails.length}
+                    </p>
+                    <ResearchEmailTimeline
+                      emails={emails}
+                      brandName={() => ""}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-sm text-[var(--rs-muted)]">
+                    No mail on the timeline yet.
+                  </p>
+                )}
+              </div>
             ))}
-          </ul>
-        </section>
-      ) : null}
+          </section>
+        );
+      })()}
 
       {brief.reveal ? (
         <section className="flex flex-col gap-8 border-t border-[var(--rs-border)] pt-12">

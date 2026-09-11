@@ -591,7 +591,7 @@ export function buildResearchReportBrief(
           "Closed a casino game, checked the balance — the rewards bar stayed put. Nothing to claim. It does not feel live. That kills the illusion.",
           "After play",
           firstShot(
-            run.features?.areaShots
+            run?.features?.areaShots
               ?.filter((s) => s.area === "rewards")
               .map((s) => s.url),
             "VIP bar",
