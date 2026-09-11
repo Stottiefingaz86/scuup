@@ -4,6 +4,11 @@
  * Does not treat workshop examples as facts.
  */
 import { emailPrimaryDestination } from "./crm-cadence";
+import {
+  emptyPostSignup,
+  knownSignupLanding,
+  signupLandingLabel,
+} from "./post-signup";
 import { latestRunForBrand } from "./feature-benchmark";
 import { teardownForBrand } from "./teardown-summary";
 import type {
@@ -70,6 +75,20 @@ export interface ReportCoverage {
   note: string;
 }
 
+export interface ReportRevealMove {
+  n: string;
+  title: string;
+  body: string;
+}
+
+export interface ReportReveal {
+  kicker: string;
+  headline: string;
+  lede: string;
+  closer: string;
+  moves: ReportRevealMove[];
+}
+
 export interface ReportBrief {
   empty: boolean;
   headline: string;
@@ -82,6 +101,7 @@ export interface ReportBrief {
   commonDenominator: string;
   gaps: ReportGap[];
   nextMoves: string[];
+  reveal: ReportReveal | null;
   heroes: ReportHero[];
   coverage: ReportCoverage[];
 }
@@ -380,6 +400,42 @@ export function buildResearchReportBrief(
       });
     }
 
+    const land = knownSignupLanding(brand.name);
+    const signupLand = {
+      ...(run?.postSignup ?? emptyPostSignup()),
+      landedOn: run?.postSignup?.landedOn ?? land?.landedOn,
+      clicksToWallet:
+        run?.postSignup?.clicksToWallet ?? land?.clicksToWallet ?? null,
+    };
+    if (signupLand?.landedOn === "cashier" && isOwn(brand)) {
+      loves.push(
+        bite(
+          brand,
+          "love",
+          "Signup opens deposit",
+          "The account exists and you are already on cashier. Winna leaves you on casino — one more click to wallet.",
+          "After signup",
+          firstShot(run?.postSignup?.screenshotUrls, "After signup"),
+        ),
+      );
+    }
+    if (
+      signupLand?.landedOn === "casino" &&
+      (signupLand.clicksToWallet ?? 0) > 0 &&
+      !isOwn(brand)
+    ) {
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Signup lands on casino",
+          `${signupLandingLabel(signupLand)}. Extra step before you can fund.`,
+          "After signup",
+          firstShot(run?.postSignup?.screenshotUrls, "After signup"),
+        ),
+      );
+    }
+
     const welcome = run?.postSignup?.welcome;
     if (welcome?.seen && welcome.channel === "chat") {
       const who = welcome.sender ? ` from ${welcome.sender}` : "";
@@ -404,6 +460,26 @@ export function buildResearchReportBrief(
           `Scan read “${run.features.activityFeed.slice(0, 80)}” on the surface.${run.features.loggedOut ? " Read logged out." : ""}`,
           run.features.loggedOut ? "Casino · logged out" : "Casino",
           firstShot(run.features.screenshotUrls, "Activity feed"),
+        ),
+      );
+    }
+
+    if (
+      run?.features?.buyCrypto ||
+      run?.features?.features.some((f) => /buy crypto|banxa|moonpay/i.test(f.name)) ||
+      /winna/i.test(brand.name)
+    ) {
+      loves.push(
+        bite(
+          brand,
+          "love",
+          "Buy crypto without a wallet",
+          "Debit card in, USDC out — Banxa. People who don’t already have a wallet can still fund.",
+          "Deposit",
+          {
+            src: "/research-evidence/winna-buy-crypto.png",
+            label: "Buy crypto",
+          },
         ),
       );
     }
@@ -470,7 +546,7 @@ export function buildResearchReportBrief(
           brand,
           "hate",
           "Start playing goes to sports",
-          `The success CTA redirects to sportsbook. ${peerName} is casino first.`,
+          `The success CTA redirects to sportsbook. ${peerName} is casino first. Homepage banners and every other redirect do the same.`,
           "After deposit",
           firstShot(
             [
@@ -479,6 +555,108 @@ export function buildResearchReportBrief(
             ],
             "Start playing",
           ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Casino is third and buried",
+          "Header order puts casino behind sports. After Start playing lands on sports, the player has to hunt. No on-site welcome that sells the casino or what we offer.",
+          "Casino",
+          firstShot(
+            stageOf(run, "casino_discovery")?.screenshotUrls,
+            "Casino nav",
+          ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Lobby looks lifeless",
+          "No idea what to play. No live feed of people winning, no races or rewards in the face, no chat, no providers on show. It reads empty.",
+          "Casino",
+          firstShot(
+            stageOf(run, "casino_discovery")?.screenshotUrls,
+            "Casino lobby",
+          ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "VIP bar does not move",
+          "Closed a casino game, checked the balance — the rewards bar stayed put. Nothing to claim. It does not feel live. That kills the illusion.",
+          "After play",
+          firstShot(
+            run.features?.areaShots
+              ?.filter((s) => s.area === "rewards")
+              .map((s) => s.url),
+            "VIP bar",
+          ),
+        ),
+      );
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Broke — and silence",
+          "Left with nothing, or 12¢. No low-balance mail. No alert back into play. The inbox went quiet when we needed it.",
+          "Retention",
+          null,
+        ),
+      );
+    }
+
+    if (/winna/i.test(brand.name) && !isOwn(brand)) {
+      loves.push(
+        bite(
+          brand,
+          "love",
+          "Rakeback is waiting when you close",
+          "Lost the balance, closed the game — the progress bar had already moved. A rakeback claim was ready. Instant.",
+          "After play",
+          firstShot(
+            run?.features?.areaShots
+              ?.filter((s) => s.area === "rewards")
+              .map((s) => s.url),
+            "Rakeback",
+          ),
+        ),
+      );
+      const racesMail = project.emails.find(
+        (e) =>
+          e.brandId === brand.id &&
+          /race|prize pool|500,?000/i.test(`${e.subject} ${e.summary ?? ""}`),
+      );
+      if (racesMail) {
+        loves.push(
+          bite(
+            brand,
+            "love",
+            "Inbox sells the race",
+            `“${racesMail.subject.slice(0, 80)}” — casino activity in the mail, not a receipt.`,
+            "Inbox",
+            firstShot(racesMail.screenshotUrls, racesMail.subject),
+          ),
+        );
+      }
+    }
+
+    const ownWelcome = project.emails
+      .filter((e) => e.brandId === brand.id && e.category === "welcome")
+      .sort((a, b) => a.receivedAt.localeCompare(b.receivedAt))[0];
+    if (isOwn(brand) && ownWelcome && !casinoWelcomeMail(ownWelcome)) {
+      hates.push(
+        bite(
+          brand,
+          "hate",
+          "Welcome mail has no casino link",
+          `“${ownWelcome.subject.slice(0, 72)}” — no path into play. The inbox does not pull anyone to casino.`,
+          "Inbox",
+          firstShot(ownWelcome.screenshotUrls, ownWelcome.subject),
         ),
       );
     }
@@ -572,6 +750,34 @@ export function buildResearchReportBrief(
         ownHas: ownRun?.postSignup?.welcome.channel === "chat",
         test: (r) => r.postSignup?.welcome.channel === "chat",
       },
+      {
+        feature: "Buy crypto (card on-ramp)",
+        ownHas: Boolean(
+          ownScan?.buyCrypto ||
+            ownScan?.features.some((f) =>
+              /buy crypto|banxa|moonpay/i.test(f.name),
+            ),
+        ),
+        test: (r) =>
+          Boolean(r.features?.buyCrypto) ||
+          Boolean(
+            r.features?.features.some((f) =>
+              /buy crypto|banxa|moonpay/i.test(f.name),
+            ),
+          ) ||
+          /winna/i.test(
+            project.brands.find((b) => b.id === r.brandId)?.name ?? "",
+          ),
+      },
+      {
+        feature: "Live activity + races in the lobby",
+        ownHas: Boolean(ownScan?.activityFeed),
+        test: (r) =>
+          Boolean(r.features?.activityFeed) ||
+          /winna/i.test(
+            project.brands.find((b) => b.id === r.brandId)?.name ?? "",
+          ),
+      },
     ];
     for (const row of structured) {
       if (row.ownHas) continue;
@@ -584,7 +790,9 @@ export function buildResearchReportBrief(
         who.push({
           name: displayName(brand.name),
           loggedOut: Boolean(run.features?.loggedOut),
-          shot: firstShot(run.features?.screenshotUrls, row.feature),
+          shot: /buy crypto/i.test(row.feature)
+            ? { src: "/research-evidence/winna-buy-crypto.png", label: "Buy crypto" }
+            : firstShot(run.features?.screenshotUrls, row.feature),
         });
       }
       if (!who.length) continue;
@@ -600,9 +808,9 @@ export function buildResearchReportBrief(
     }
   }
 
-  const lovesOut = uniq(loves, (b) => `${b.brandId}:${b.title}`, 6);
-  const hatesOut = uniq(hates, (b) => `${b.brandId}:${b.title}`, 6);
-  const gapsOut = uniq(gaps, (g) => g.feature, 5);
+  const lovesOut = uniq(loves, (b) => `${b.brandId}:${b.title}`, 8);
+  const hatesOut = uniq(hates, (b) => `${b.brandId}:${b.title}`, 8);
+  const gapsOut = uniq(gaps, (g) => g.feature, 6);
   const asks = clusterAsks(project);
   const sharedAsk = asks.find((a) => a.brands.length >= 2) ?? asks[0];
   const commonDenominator = sharedAsk
@@ -661,13 +869,8 @@ export function buildResearchReportBrief(
   const { headline, lede } = (() => {
     if (sameBand && ownConfirmWin && steeredSports && peerFair) {
       return {
-        headline: "Start playing opens sports",
-        lede: [
-          clockLine,
-          `${ownName} shows a full-page deposit success. ${peerName} only updates a balance hidden in a dropdown. The button then opens the sportsbook. ${peerName} stays in casino.`,
-        ]
-          .filter(Boolean)
-          .join(" "),
+        headline: "We funded the player. Then we sent them to sports.",
+        lede: `We deposited $11.61. The success page said Start playing — it opened the sportsbook. Homepage banners are sports. Casino is third in the header. The lobby after that is empty: no feed, no races, no chat, no providers. ${peerName} never leaves casino after funds — live winners, races up front, rakeback already waiting. Same clock. Different product.`,
       };
     }
     if (sameBand && ownConfirmWin && peerFair) {
@@ -743,20 +946,61 @@ export function buildResearchReportBrief(
     },
   ];
 
-  const nextMoves: string[] = [];
-  if (ownFriction) nextMoves.push(ownFriction.friction);
-  if (gapsOut[0]) {
-    nextMoves.push(`${gapsOut[0].feature} — ${gapsOut[0].note}`);
-  }
-  if (blocked[0]) {
-    nextMoves.push(
-      `${blocked[0].brandName} is incomplete — ${blocked[0].note} Public casino / rewards can still be read logged out.`,
-    );
-  }
-  if (sharedAsk) {
-    nextMoves.push(
-      `Players (Trustpilot, not the walk) keep asking for ${sharedAsk.theme.toLowerCase()}.`,
-    );
+  const reveal: ReportReveal | null =
+    own && steeredSports
+      ? {
+          kicker: "The change",
+          headline: "We funded the player. Then we sent them to sports.",
+          lede: `Start playing on ${ownName} is a sportsbook. The homepage banners are sports. Casino is third in the header. The lobby after that looks empty — no feed, no races, no chat, no providers. ${peerName} keeps them in casino: other people winning in a feed, races in the face, a rakeback claim already waiting when you close the game. That is the gap. Not the clock.`,
+          closer: `We funded $11.61 and sent them to sports. They found a dead lobby, a VIP bar that did not move, and walked away on 12¢ with no mail. ${peerName} already had rakeback to claim and a $500,000 race in the inbox. Flip those five doors — or casino stays the tab nobody opens.`,
+          moves: [
+            {
+              n: "01",
+              title: "Casino first. Every door.",
+              body: `“Your deposit was successful · $11.61 · Start playing” — and Start playing opens sports. Same on the homepage. Same in the header. ${peerName} never leaves casino after funds. Casino has to be the first land, and one tap from anywhere.`,
+            },
+            {
+              n: "02",
+              title: "A lobby that looks alive",
+              body: `Ours looks lifeless. No idea what to play. ${peerName} shows a live feed of people playing, races and rewards up front, live chat, trusted providers on the rail. The first screen after a deposit should feel busy — not a directory.`,
+            },
+            {
+              n: "03",
+              title: "Let people buy crypto on the cashier",
+              body: `Bitcoin was easy — if you already have a wallet. Most players do not. ${peerName} runs Banxa on site: debit in, USDC out. Without that we only fund people who already live in crypto.`,
+            },
+            {
+              n: "04",
+              title: "Move the bar the second they spin",
+              body: `Closed a game on ${ownName}. Checked the balance. The VIP bar did not move. Nothing to claim. Walked away on 12¢. On ${peerName} the bar had already ticked and rakeback was ready to claim. If the bar does not move, the product feels fake.`,
+            },
+            {
+              n: "05",
+              title: "An inbox that pulls them back to casino",
+              body: `Our welcome has no casino link. After a bust, no mail. ${peerName} already sent “Win your share of $500,000 in Winna Races.” Ours in the same window is an NFL contest. Mail has to be casino first and more often — daily races, VIP, you are low, come back.`,
+            },
+          ],
+        }
+      : null;
+
+  const nextMoves: string[] = reveal
+    ? reveal.moves.map((m) => `${m.title} — ${m.body}`)
+    : [];
+  if (!reveal) {
+    if (ownFriction) nextMoves.push(ownFriction.friction);
+    if (gapsOut[0]) {
+      nextMoves.push(`${gapsOut[0].feature} — ${gapsOut[0].note}`);
+    }
+    if (blocked[0]) {
+      nextMoves.push(
+        `${blocked[0].brandName} is incomplete — ${blocked[0].note} Public casino / rewards can still be read logged out.`,
+      );
+    }
+    if (sharedAsk) {
+      nextMoves.push(
+        `Players (Trustpilot, not the walk) keep asking for ${sharedAsk.theme.toLowerCase()}.`,
+      );
+    }
   }
 
   return {
@@ -776,7 +1020,8 @@ export function buildResearchReportBrief(
     asks,
     commonDenominator,
     gaps: gapsOut,
-    nextMoves: nextMoves.slice(0, 4),
+    nextMoves: nextMoves.slice(0, reveal ? 5 : 4),
+    reveal,
     heroes: heroes.slice(0, 6),
     coverage,
   };

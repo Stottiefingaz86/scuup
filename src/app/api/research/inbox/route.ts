@@ -11,6 +11,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 type ListResult = Awaited<ReturnType<typeof fetchInboxEmailsSince>>;
 
@@ -41,8 +42,9 @@ function listInboxCoalesced(
   hours: number,
   extraToAddresses: string[],
   extraFromHints: string[],
+  extraSlugs: string[],
 ): Promise<ListResult> {
-  const key = `${toAddress.toLowerCase()}|${hours}|${extraToAddresses.join(",")}|${extraFromHints.join(",")}`;
+  const key = `${toAddress.toLowerCase()}|${hours}|${extraToAddresses.join(",")}|${extraFromHints.join(",")}|${extraSlugs.join(",")}`;
   const hit = listCache.get(key);
   if (hit && Date.now() - hit.at < LIST_CACHE_MS) return hit.promise;
   const promise = fetchInboxEmailsSince({
@@ -50,7 +52,8 @@ function listInboxCoalesced(
     since,
     extraToAddresses,
     extraFromHints,
-    limit: 120,
+    extraSlugs,
+    limit: 80,
   });
   listCache.set(key, { at: Date.now(), promise });
   promise.catch(() => listCache.delete(key));
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest) {
     try {
       const extraToAddresses = csvParam(request, "aliases");
       const extraFromHints = csvParam(request, "from");
+      const extraSlugs = csvParam(request, "slugs");
       const raw = await Promise.race([
         listInboxCoalesced(
           to,
@@ -107,9 +111,13 @@ export async function GET(request: NextRequest) {
           hours,
           extraToAddresses,
           extraFromHints,
+          extraSlugs,
         ),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Inbox list timed out")), 8_000),
+          setTimeout(
+            () => reject(new Error("Inbox list timed out")),
+            90_000,
+          ),
         ),
       ]);
       return NextResponse.json({

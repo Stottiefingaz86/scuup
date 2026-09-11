@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { MessageSquareQuote, Star, X } from "lucide-react";
+import { MessageSquare, MessageSquareQuote, Star, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -90,6 +90,13 @@ const KIND_ORDER: PlayerVoiceKind[] = ["complaint", "stuck", "ask", "praise"];
 function pct(n: number, total: number): string {
   if (!total) return "—";
   return `${Math.round((n / total) * 100)}%`;
+}
+
+function splitVoiceLead(text: string): { lead: string; rest: string } {
+  const t = text.trim();
+  const m = t.match(/^(.+?[.!?])(?:\s+|$)([\s\S]*)$/);
+  if (!m?.[2]?.trim()) return { lead: t, rest: "" };
+  return { lead: m[1], rest: m[2].trim() };
 }
 
 function relative(iso: string): string {
@@ -314,8 +321,9 @@ function MentionsButton({
           ? `${n} mentions — load Trustpilot reviews`
           : `Open ${n} Trustpilot review${n === 1 ? "" : "s"}`
       }
-      className="inline-flex h-7 min-w-7 cursor-pointer items-center justify-center rounded-md border border-[var(--rs-border)] bg-[var(--rs-bg)] px-2 text-sm font-medium tabular-nums text-[var(--rs-fg)] transition-colors hover:border-[var(--rs-fg)]/40 hover:bg-[var(--rs-card)]"
+      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border border-[var(--rs-border)] bg-[var(--rs-bg)] px-2.5 text-sm font-medium tabular-nums text-[var(--rs-fg)] underline-offset-2 transition-colors hover:border-[var(--rs-accent)] hover:bg-[var(--rs-accent)]/10 hover:underline"
     >
+      <MessageSquare className="size-3.5 opacity-70" />
       {n}
     </button>
   );
@@ -588,7 +596,7 @@ function ThemeSection({
                   <li
                     key={`${kind}-${g.area}-${t.theme}`}
                     className={cn(
-                      "grid grid-cols-[minmax(0,1fr)_88px] items-start gap-4 px-5 py-4",
+                      "grid grid-cols-[minmax(0,1fr)_104px] items-start gap-4 px-5 py-4",
                       i > 0 && "border-t border-[var(--rs-border)]/40",
                     )}
                   >
@@ -666,6 +674,7 @@ function BrandVoice({
     }))
     .sort((a, b) => b.mentions - a.mentions);
   const painMax = Math.max(1, ...painByArea.map((p) => p.mentions));
+  const voiceLead = splitVoiceLead(voice.summary);
 
   return (
     <div className="flex flex-col gap-10">
@@ -689,7 +698,7 @@ function BrandVoice({
 
       {/* Stats */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_auto]">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(
             [
               [
@@ -707,16 +716,6 @@ function BrandVoice({
                 voice.replyRate != null
                   ? `${Math.round(voice.replyRate * 100)}%`
                   : "—",
-              ],
-              [
-                "Community",
-                voice.community.verdict === "players want it"
-                  ? "Wanted"
-                  : voice.community.verdict === "against"
-                    ? "Against"
-                    : voice.community.verdict === "indifferent"
-                      ? "Indifferent"
-                      : "No signal",
               ],
             ] as [string, string, string?][]
           ).map(([label, value, tone]) => (
@@ -746,26 +745,36 @@ function BrandVoice({
       {/* Verdict + pain */}
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-5 py-5">
-          <p className="text-[15px] leading-relaxed">{voice.summary}</p>
+          <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--rs-accent)]">
+            The read
+          </p>
+          <p className="mt-2 font-heading text-xl font-medium leading-snug tracking-tight">
+            {voiceLead.lead}
+          </p>
+          {voiceLead.rest ? (
+            <p className="mt-2 text-sm leading-relaxed text-[var(--rs-muted)]">
+              {voiceLead.rest}
+            </p>
+          ) : null}
           {voice.authenticityNote ? (
-            <p className="mt-3 text-sm text-[var(--rs-medium)]">
+            <p className="mt-3 text-xs leading-relaxed text-[var(--rs-muted)]">
               {voice.authenticityNote}
             </p>
           ) : null}
-          <p className="mt-4 text-xs text-[var(--rs-muted)]">
+          <a
+            href={voice.sourceUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm text-[var(--rs-fg)] underline-offset-2 hover:underline"
+          >
+            <MessageSquare className="size-3.5 opacity-70" />
             {voice.totalReviews != null
-              ? `${voice.totalReviews.toLocaleString()} reviews on `
-              : ""}
-            <a
-              href={voice.sourceUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="underline decoration-dotted hover:text-[var(--rs-fg)]"
-            >
-              Trustpilot
-            </a>
-            {" · "}read {relative(voice.fetchedAt)}
-          </p>
+              ? `${voice.totalReviews.toLocaleString()} reviews`
+              : "Trustpilot"}
+            <span className="text-xs text-[var(--rs-muted)]">
+              · {relative(voice.fetchedAt)}
+            </span>
+          </a>
         </div>
         <div className="rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-5 py-5">
           <h3 className="text-xs font-medium uppercase tracking-[0.06em] text-[var(--rs-muted)]">
@@ -900,7 +909,7 @@ function BrandVoice({
                   <li
                     key={t.theme}
                     className={cn(
-                      "grid grid-cols-[28px_minmax(0,1fr)_88px] items-start gap-3 py-3.5",
+                      "grid grid-cols-[28px_minmax(0,1fr)_104px] items-start gap-3 py-3.5",
                       i > 0 && "border-t border-[var(--rs-border)]/50",
                     )}
                   >
@@ -926,18 +935,6 @@ function BrandVoice({
                 ))}
             </ol>
           )}
-          <div className="mt-5 border-t border-[var(--rs-border)]/60 pt-4 text-sm leading-relaxed">
-            <span className="text-[var(--rs-muted)]">
-              Do they want community?{" "}
-            </span>
-            <span className="font-medium capitalize">
-              {voice.community.verdict}
-            </span>
-            <span className="text-[var(--rs-muted)]">
-              {" "}
-              · {voice.community.note}
-            </span>
-          </div>
         </div>
 
         <div className="rounded-xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-5 py-5">
@@ -1110,7 +1107,6 @@ export function PlayerVoiceTab({
                 <col style={{ width: 90 }} />
                 <col />
                 <col />
-                <col style={{ width: 140 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -1121,7 +1117,6 @@ export function PlayerVoiceTab({
                   <th className="rs-num">Replies</th>
                   <th>Top complaint</th>
                   <th>Most stuck on</th>
-                  <th>Community</th>
                 </tr>
               </thead>
               <tbody>
@@ -1173,9 +1168,6 @@ export function PlayerVoiceTab({
                         <Truncate
                           text={v?.stuck[0]?.theme ?? (v ? "None" : "—")}
                         />
-                      </td>
-                      <td className="whitespace-nowrap capitalize">
-                        {v ? v.community.verdict : "—"}
                       </td>
                     </tr>
                   );

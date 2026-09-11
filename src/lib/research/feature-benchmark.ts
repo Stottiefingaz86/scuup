@@ -10,8 +10,24 @@ import type {
   JourneyStageResult,
 } from "./types";
 import type { TeardownSources } from "./teardown-summary";
+import {
+  knownSignupLanding,
+  signupLandingLabel,
+} from "./post-signup";
 
 export type BenchmarkFrame = { src: string; label: string };
+
+const WINNA_BUY_CRYPTO_SHOT = "/research-evidence/winna-buy-crypto.png";
+
+function hasBuyCrypto(
+  run: JourneyRun | null,
+  brandName?: string,
+): boolean {
+  if (run?.features?.buyCrypto) return true;
+  if (hasFeature(run?.features, /buy crypto|on-ramp|banxa|moonpay/i))
+    return true;
+  return /winna/i.test(brandName ?? "");
+}
 
 function framesOf(
   stages: JourneyStageResult[] | null | undefined,
@@ -57,6 +73,7 @@ export function featureBenchmarkEvidence(
   area: string,
   sources: TeardownSources | null,
   run: JourneyRun | null,
+  brandName?: string,
 ): BenchmarkFrame[] {
   const scan = run?.features ?? null;
   switch (area) {
@@ -79,11 +96,19 @@ export function featureBenchmarkEvidence(
         ...scanFrames(scan, ["account"]),
       ];
     }
-    case "Deposit":
-      return framesOf((sources?.deposit ?? run)?.stages, [
+    case "Deposit": {
+      const frames = framesOf((sources?.deposit ?? run)?.stages, [
         "deposit",
         "deposit_confirmation",
       ]);
+      if (hasBuyCrypto(run, brandName)) {
+        return [
+          { src: WINNA_BUY_CRYPTO_SHOT, label: "Buy crypto" },
+          ...frames.filter((f) => f.src !== WINNA_BUY_CRYPTO_SHOT),
+        ];
+      }
+      return frames;
+    }
     case "Activation":
       return framesOf((sources?.activation ?? run)?.stages, [
         "casino_discovery",
@@ -172,6 +197,7 @@ export function featureBenchmarkCell(
   criteria: string,
   td: CompetitorTeardown | null,
   run: JourneyRun | null,
+  brandName?: string,
 ): string {
   const scan = run?.features ?? null;
   const reg = stage(run, "registration");
@@ -205,6 +231,34 @@ export function featureBenchmarkCell(
           : "—";
     case "Registration · Post-signup welcome touch":
       return td?.welcomeTouch ?? (run?.postSignup ? "None seen" : "—");
+    case "Registration · Lands on after signup": {
+      const known = knownSignupLanding(brandName ?? "");
+      const obs = run?.postSignup
+        ? {
+            ...run.postSignup,
+            landedOn: run.postSignup.landedOn ?? known?.landedOn,
+            clicksToWallet:
+              run.postSignup.clicksToWallet ?? known?.clicksToWallet ?? null,
+          }
+        : known
+          ? {
+              welcome: {
+                seen: false,
+                channel: null,
+                text: null,
+                sender: null,
+                personalized: false,
+                ctas: [],
+                afterSec: null,
+                dismissed: null,
+              },
+              landedOn: known.landedOn,
+              clicksToWallet: known.clicksToWallet,
+              screenshotUrls: [],
+            }
+          : null;
+      return signupLandingLabel(obs) ?? "—";
+    }
 
     // —— Verification ——
     case "Verification · When verification occurs": {
@@ -256,6 +310,11 @@ export function featureBenchmarkCell(
         return "Crypto behind a category";
       if (/bitcoin|btc/i.test(ev)) return "Bitcoin direct";
       return dep.friction ? "Unclear" : "Clear";
+    }
+    case "Deposit · Buy crypto (no wallet)": {
+      if (hasBuyCrypto(run, brandName)) return "Card → crypto";
+      if (dep?.endedAt || scan) return "Not seen";
+      return "—";
     }
     case "Deposit · Deposit reassurance": {
       const pd = run?.postDeposit;
@@ -379,8 +438,16 @@ export function featureBenchmarkCell(
             : "—";
 
     // —— UX ——
-    case "UX · Navigation clarity":
-      return scan ? `${scan.navItems.length} nav items` : "—";
+    case "UX · Main nav labels": {
+      if (!scan) return "—";
+      const labels = scan.navItems
+        .map((t) => t.replace(/\s+/g, " ").trim())
+        .filter((t) => t.length > 0 && t.length <= 22);
+      if (!labels.length) return "Not read";
+      const shown = labels.slice(0, 4);
+      const extra = labels.length - shown.length;
+      return extra > 0 ? `${shown.join(" · ")} +${extra}` : shown.join(" · ");
+    }
     case "UX · Perceived speed": {
       const landing = stage(run, "landing");
       return landing?.timeSec != null ? `Landing ${sec(landing.timeSec)}` : "—";

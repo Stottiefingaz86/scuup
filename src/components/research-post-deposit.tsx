@@ -27,7 +27,13 @@ function hostOf(url: string | null | undefined): string {
   }
 }
 
-export function DestPill({ d }: { d: PlayerDestination | null | undefined }) {
+export function DestPill({
+  d,
+  label,
+}: {
+  d: PlayerDestination | null | undefined;
+  label?: string;
+}) {
   const tone =
     d === "casino"
       ? "bg-emerald-500/15 text-emerald-300"
@@ -45,7 +51,7 @@ export function DestPill({ d }: { d: PlayerDestination | null | undefined }) {
         tone,
       )}
     >
-      {destinationLabel(d)}
+      {label ?? destinationLabel(d)}
     </span>
   );
 }

@@ -139,6 +139,7 @@ import {
   pageLooksLikeOpenChat,
   pageLooksLikeWelcomePopup,
   welcomeTouchLabel,
+  emptyPostSignup,
 } from "./post-signup";
 
 export type TeardownStage =
@@ -1349,6 +1350,9 @@ async function checkWelcomeTouch(
       afterSec,
       dismissed: null,
     },
+    landedOn: job.postSignup?.landedOn ?? null,
+    landingUrl: job.postSignup?.landingUrl ?? null,
+    clicksToWallet: job.postSignup?.clicksToWallet ?? null,
     screenshotUrls: job.postSignup?.screenshotUrls ?? [],
   };
   tracker.push(`Welcome touch: ${welcomeTouchLabel(job.postSignup)}`);
@@ -1366,7 +1370,8 @@ async function armWelcomeWatch(
   if (job.signupConfirmedAt) return;
   job.signupConfirmedAt = Date.now();
   job.postSignup = {
-    welcome: {
+    ...(job.postSignup ?? emptyPostSignup()),
+    welcome: job.postSignup?.welcome ?? {
       seen: false,
       channel: null,
       text: null,
@@ -1376,7 +1381,6 @@ async function armWelcomeWatch(
       afterSec: null,
       dismissed: null,
     },
-    screenshotUrls: [],
   };
   tracker.idleWatcher = (p) =>
     checkWelcomeTouch(job, tracker, p as AgentPage, vars).then(() => {});
@@ -1700,6 +1704,36 @@ async function reopenRegistration(
         ? page.url().split("?")[0] || page.url()
         : "https://rainbet.com"),
     job,
+  );
+}
+
+async function recordSignupLanding(
+  job: ResearchTeardownJob,
+  page: AgentPage,
+  tracker: JourneyStageTracker,
+  inCashier: boolean,
+) {
+  const url = String(await page.evaluate("location.href").catch(() => ""));
+  const landedOn = inCashier
+    ? "cashier"
+    : classifyDestination(url) ?? classifyScreen({ url });
+  const prev = job.postSignup ?? emptyPostSignup();
+  job.postSignup = {
+    ...prev,
+    landedOn: landedOn ?? prev.landedOn ?? null,
+    landingUrl: url || prev.landingUrl || null,
+    clicksToWallet: inCashier
+      ? 0
+      : landedOn === "cashier"
+        ? 0
+        : (prev.clicksToWallet ?? null),
+  };
+  tracker.push(
+    `After signup landed on ${job.postSignup.landedOn ?? "unknown"}${
+      job.postSignup.clicksToWallet == null
+        ? ""
+        : ` · ${job.postSignup.clicksToWallet} click${job.postSignup.clicksToWallet === 1 ? "" : "s"} to wallet`
+    }`,
   );
 }
 
@@ -2424,6 +2458,7 @@ async function runSignupFlow(
   // Registration — deposit starts after that landing is captured.
   const inCashier = await landedInCashier(page);
   if (inCashier) await stashCashierHandoff(job, page, tracker);
+  await recordSignupLanding(job, page, tracker, inCashier);
 
   const loggedInNow = await checkAgentLoggedIn(stagehand);
   if (loggedInNow || submittedOk) {

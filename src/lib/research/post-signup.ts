@@ -435,8 +435,43 @@ export function emptyPostSignup(): PostSignupObservation {
       dismissed: null,
     },
     landedOn: null,
+    landingUrl: null,
+    clicksToWallet: null,
     screenshotUrls: [],
   };
+}
+
+/** Known landings from the finished walks — used when the agent never stored one. */
+export function knownSignupLanding(
+  brandName: string,
+): Pick<PostSignupObservation, "landedOn" | "clicksToWallet"> | null {
+  if (/betonline/i.test(brandName)) {
+    return { landedOn: "cashier", clicksToWallet: 0 };
+  }
+  if (/winna/i.test(brandName)) {
+    return { landedOn: "casino", clicksToWallet: 1 };
+  }
+  return null;
+}
+
+export function signupLandingLabel(
+  obs: PostSignupObservation | null | undefined,
+): string | null {
+  if (!obs?.landedOn) return null;
+  const where =
+    obs.landedOn === "cashier"
+      ? "Deposit"
+      : obs.landedOn === "casino"
+        ? "Casino"
+        : obs.landedOn === "sportsbook"
+          ? "Sports"
+          : obs.landedOn === "lobby"
+            ? "Lobby"
+            : obs.landedOn;
+  if (obs.clicksToWallet == null) return where;
+  if (obs.clicksToWallet === 0) return `${where} · wallet is here`;
+  if (obs.clicksToWallet === 1) return `${where} · 1 click to wallet`;
+  return `${where} · ${obs.clicksToWallet} clicks to wallet`;
 }
 
 /** One-line for the feature matrix / evidence strings. */

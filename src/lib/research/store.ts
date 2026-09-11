@@ -10,9 +10,17 @@ import { emptyStagesFor } from "./journeys";
 import { defaultResearchPersona } from "./persona-address";
 import { teardownFromRun } from "./teardown-summary";
 import { reconcilePostDeposit } from "./post-deposit";
+import { emptyPostSignup, knownSignupLanding } from "./post-signup";
 import { researchSignupEmail } from "./signup-email";
 import { extractUsernameFromEmails } from "./account-username";
-import { bodyLooksLikeBrand, senderLooksLikeBrand } from "./email-brand";
+import {
+  bodyLooksLikeBrand,
+  brandWatchSlugs,
+  isForeignResearchAlias,
+  plusTagMatchesProjectBrand,
+  senderLooksLikeBrand,
+} from "./email-brand";
+import { dedupeWatchEmails, isLoginAlertEmail } from "./email-format";
 import { autoMarketForBrands } from "../brand-markets";
 import { isProductionDeployPublic } from "@/lib/prod-locks";
 import type {
@@ -131,8 +139,13 @@ function load(): ResearchProject[] {
         if (r.postDeposit) r.postDeposit = reconcilePostDeposit(r.postDeposit);
         const brand =
           p.brands.find((b) => b.id === r.brandId)?.name ?? "";
-        if (r.postSignup && /betonline/i.test(brand) && !r.postSignup.landedOn) {
-          r.postSignup = { ...r.postSignup, landedOn: "sportsbook" };
+        const known = knownSignupLanding(brand);
+        if (known) {
+          r.postSignup = {
+            ...(r.postSignup ?? emptyPostSignup()),
+            landedOn: known.landedOn,
+            clicksToWallet: known.clicksToWallet,
+          };
         }
       }
     }
@@ -478,7 +491,19 @@ export function mergeResearchEmails(
   if (!emails.length) return;
   const project = getResearchProject(projectId);
   if (!project) return;
-  const scoped = scopeEmailsToProject(project, emails);
+  let scoped = scopeEmailsToProject(project, emails);
+  const seen = new Set(scoped.map((e) => e.id));
+  for (const e of emails) {
+    if (seen.has(e.id) || isLoginAlertEmail(e)) continue;
+    const brand = project.brands.find(
+      (b) =>
+        senderLooksLikeBrand(e.from, b.url) ||
+        plusTagMatchesProjectBrand(`${e.to ?? ""}\n${e.subject}`, b),
+    );
+    if (!brand) continue;
+    scoped.push({ ...e, brandId: brand.id });
+    seen.add(e.id);
+  }
   if (!scoped.length) return;
 
   const byId = new Map(project.emails.map((e) => [e.id, e]));
@@ -521,7 +546,7 @@ export function mergeResearchEmails(
     }
   }
   updateResearchProject(projectId, {
-    emails: [...byId.values()].sort((a, b) =>
+    emails: dedupeWatchEmails([...byId.values()]).sort((a, b) =>
       b.receivedAt.localeCompare(a.receivedAt),
     ),
   });
@@ -561,68 +586,89 @@ export function scopeEmailsToProject(
   const aliases = project.brands
     .map((b) => b.accountEmail?.trim().toLowerCase())
     .filter((a): a is string => Boolean(a));
-  if (!aliases.length) return [];
 
   const sinceMs = Date.parse(project.createdAt) || 0;
-  const slackMs = 60_000;
+  const watchMs = (project.emailWatchDays || 14) * 86_400_000;
+  const extraSlugs = project.brands.flatMap((b) => brandWatchSlugs(b));
 
   return emails.flatMap((m) => {
     const receivedMs = Date.parse(m.receivedAt) || 0;
-    if (sinceMs && receivedMs && receivedMs < sinceMs - slackMs) return [];
+    if (sinceMs && receivedMs && receivedMs < sinceMs - watchMs) return [];
+    if (isLoginAlertEmail(m)) return [];
 
-    const brandId = matchEmailToProjectBrand(project, m, aliases);
+    const brandId = matchEmailToProjectBrand(project, m, aliases, extraSlugs);
     if (!brandId) return [];
     return [{ ...m, brandId }];
   });
+}
+
+/** Re-attribute stored mail for the timeline — never hide CRM that still matches a brand. */
+export function emailsForDisplay(project: ResearchProject): EmailWatchItem[] {
+  const remapped = scopeEmailsToProject(project, project.emails);
+  const seen = new Set(remapped.map((e) => e.id));
+  const extra: EmailWatchItem[] = [];
+  for (const e of project.emails) {
+    if (seen.has(e.id) || isLoginAlertEmail(e)) continue;
+    const brand = project.brands.find(
+      (b) =>
+        senderLooksLikeBrand(e.from, b.url) ||
+        plusTagMatchesProjectBrand(`${e.to ?? ""}\n${e.subject}`, b),
+    );
+    extra.push({
+      ...e,
+      brandId: brand?.id ?? (isProjectBrandId(project, e.brandId) ? e.brandId : "unassigned"),
+    });
+    seen.add(e.id);
+  }
+  return dedupeWatchEmails([...remapped, ...extra]);
 }
 
 function matchEmailToProjectBrand(
   project: ResearchProject,
   email: EmailWatchItem,
   aliases: string[],
+  extraSlugs: string[],
 ): string | null {
   const to = (email.to ?? "").toLowerCase();
   const hay =
     `${to}\n${email.from}\n${email.subject}\n${email.summary}\n${email.body ?? ""}`.toLowerCase();
 
+  // From: support@winna.com is Winna — even when To is a later +rswinna mint.
   for (const b of project.brands) {
-    const alias = b.accountEmail?.trim().toLowerCase();
-    if (!alias) continue;
-    // Prefer To: header — subject/body alone is how old Winna mail leaked in.
-    if (to.includes(alias)) return b.id;
-  }
-  for (const b of project.brands) {
-    const alias = b.accountEmail?.trim().toLowerCase();
-    if (!alias) continue;
-    if (hay.includes(alias)) return b.id;
+    if (!senderLooksLikeBrand(email.from, b.url)) continue;
+    if (
+      isForeignResearchAlias(to, aliases, extraSlugs) &&
+      !plusTagMatchesProjectBrand(to, b) &&
+      !plusTagMatchesProjectBrand(hay, b)
+    ) {
+      continue;
+    }
+    return b.id;
   }
 
-  // ESP often strips +tags. From: winna.com / "Welcome to Winna" still counts
-  // when To is the shared inbox and not a sibling +rs alias.
-  const otherRs = /\+rs[a-z0-9]+@/i.test(to);
-  if (!otherRs || aliases.some((a) => to.includes(a))) {
-    for (const b of project.brands) {
-      if (senderLooksLikeBrand(email.from, b.url)) return b.id;
-    }
-    for (const b of project.brands) {
-      if (bodyLooksLikeBrand(hay, b)) return b.id;
+  for (const b of project.brands) {
+    const alias = b.accountEmail?.trim().toLowerCase();
+    if (alias && (to.includes(alias) || hay.includes(alias))) return b.id;
+  }
+
+  for (const b of project.brands) {
+    if (plusTagMatchesProjectBrand(to, b) || plusTagMatchesProjectBrand(hay, b)) {
+      return b.id;
     }
   }
 
-  // Already attributed to a brand on this project (agent path) — keep only if
-  // the alias still matches or To is empty (agent-captured during this run).
+  for (const b of project.brands) {
+    if (bodyLooksLikeBrand(hay, b) && !isForeignResearchAlias(to, aliases, extraSlugs)) {
+      return b.id;
+    }
+  }
+
   if (isProjectBrandId(project, email.brandId)) {
     const brand = project.brands.find((b) => b.id === email.brandId);
-    const alias = brand?.accountEmail?.trim().toLowerCase() ?? "";
-    if (!to || (alias && (to.includes(alias) || hay.includes(alias)))) {
-      return email.brandId;
-    }
-    if (brand && senderLooksLikeBrand(email.from, brand.url)) {
-      return email.brandId;
-    }
+    if (brand && senderLooksLikeBrand(email.from, brand.url)) return email.brandId;
+    if (!to) return email.brandId;
   }
 
-  void aliases;
   return null;
 }
 
@@ -641,7 +687,9 @@ export function pruneProjectEmails(projectId: string): void {
     if (same) return;
   }
   updateResearchProject(projectId, {
-    emails: kept.sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)),
+    emails: dedupeWatchEmails(kept).sort((a, b) =>
+      b.receivedAt.localeCompare(a.receivedAt),
+    ),
   });
 }
 
@@ -1021,7 +1069,8 @@ export function deductUnfairConfirmWait(
         (conf.screenshotUrls ?? []).includes(BETONLINE_SUCCESS_SHOT) &&
         run.postDeposit?.guidedTo === "sportsbook" &&
         run.postDeposit?.popup.ctaTarget === "sportsbook" &&
-        run.postSignup?.landedOn === "sportsbook"
+        run.postSignup?.landedOn === "cashier" &&
+        run.postSignup?.clicksToWallet === 0
       : !/11\.61|start playing/i.test(conf.evidence ?? ""));
   if (alreadyFair) return false;
 
@@ -1110,10 +1159,14 @@ export function deductUnfairConfirmWait(
         }
       : run.postDeposit;
 
-  const postSignup =
-    betonline && run.postSignup
-      ? { ...run.postSignup, landedOn: run.postSignup.landedOn ?? "sportsbook" }
-      : run.postSignup;
+  const knownLand = knownSignupLanding(brand);
+  const postSignup = knownLand
+    ? {
+        ...(run.postSignup ?? emptyPostSignup()),
+        landedOn: knownLand.landedOn,
+        clicksToWallet: knownLand.clicksToWallet,
+      }
+    : run.postSignup;
 
   patchResearchRun(projectId, runId, {
     stages,
@@ -1149,6 +1202,18 @@ export function applyFairDepositClocks(projectId: string): void {
         .find((r) => r.brandId === brand.id && !r.archived) ??
       [...project.runs].reverse().find((r) => r.brandId === brand.id);
     if (run) deductUnfairConfirmWait(projectId, run.id);
+    const latest =
+      getResearchProject(projectId)?.runs.find((r) => r.id === run?.id) ?? run;
+    const known = knownSignupLanding(brand.name);
+    if (latest && known) {
+      patchResearchRun(projectId, latest.id, {
+        postSignup: {
+          ...(latest.postSignup ?? emptyPostSignup()),
+          landedOn: known.landedOn,
+          clicksToWallet: known.clicksToWallet,
+        },
+      });
+    }
   }
 }
 

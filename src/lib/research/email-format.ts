@@ -1,5 +1,144 @@
 /** Client-safe email display helpers (no Node/IMAP imports). */
 
+import type { EmailWatchItem } from "./types";
+
+const LOGIN_ALERT_RE =
+  /account login detected|new login detected|confirm your login|login detected from a new device|new device (that )?(logged|signed) in|signed in from a new|unrecognised (sign[- ]?in|login|device)|unrecognized (sign[- ]?in|login|device)|we (noticed|detected) a (new )?(login|sign[- ]?in)|new login to your account|login from a new (device|browser|location)/i;
+
+/** Security noise — not CRM. Hide from the research inbox. */
+export function isLoginAlertEmail(e: {
+  subject?: string | null;
+  summary?: string | null;
+  body?: string | null;
+}): boolean {
+  return LOGIN_ALERT_RE.test(
+    `${e.subject ?? ""}\n${e.summary ?? ""}\n${e.body ?? ""}`,
+  );
+}
+
+function normalizeSubject(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s*[-–#:]\s*\d{4,}\s*$/, "")
+    .trim();
+}
+
+function emailRichness(e: EmailWatchItem): number {
+  return (
+    (e.html?.length ?? 0) +
+    (e.body?.length ?? 0) +
+    (e.screenshotUrls?.length ?? 0) * 200
+  );
+}
+
+function isContestOrCrmSubject(subject: string): boolean {
+  return /contest|races?|survivor|seasonal|nfl spread/i.test(subject);
+}
+
+function isVerifyEmail(e: {
+  category?: string | null;
+  subject?: string | null;
+}): boolean {
+  const subject = e.subject ?? "";
+  if (WELCOME_RE.test(subject) || isContestOrCrmSubject(subject)) return false;
+  if (
+    /confirm your email|verif(?:y|ication)|activat(?:e|ion) (?:your )?email/i.test(
+      subject,
+    )
+  ) {
+    return true;
+  }
+  return e.category === "verify";
+}
+
+function isWelcomeStoryEmail(e: {
+  category?: string | null;
+  subject?: string | null;
+}): boolean {
+  const subject = e.subject ?? "";
+  if (isDepositConfirmEmail(e) || isContestOrCrmSubject(subject)) return false;
+  if (WELCOME_RE.test(subject)) return true;
+  if (isVerifyEmail(e)) return false;
+  return e.category === "welcome";
+}
+
+function emailDedupeKey(e: EmailWatchItem): string {
+  // One of each onboarding beat per brand — later aliases / resends collapse.
+  if (isDepositConfirmEmail(e)) return `${e.brandId}|deposit_confirm`;
+  if (isWelcomeStoryEmail(e)) return `${e.brandId}|welcome`;
+  if (isVerifyEmail(e)) return `${e.brandId}|verify`;
+  if (/vip program/i.test(e.subject ?? "")) return `${e.brandId}|vip_program`;
+  if (e.category === "vip") {
+    return `${e.brandId}|vip|${normalizeSubject(e.subject)}`;
+  }
+  const day = (e.receivedAt || "").slice(0, 10);
+  return `${e.brandId}|${normalizeSubject(e.subject)}|${day}`;
+}
+
+/** Oldest first — new inbox mail always lands on the right. */
+export function sortEmailsForTimeline(
+  emails: EmailWatchItem[],
+): EmailWatchItem[] {
+  return [...emails].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+}
+
+export function emailTimelineLabel(e: EmailWatchItem): string {
+  if (isWelcomeStoryEmail(e)) return "Welcome";
+  if (isVerifyEmail(e)) return "Confirm";
+  if (isDepositConfirmEmail(e)) return "Deposit success";
+  const labels: Record<EmailWatchItem["category"], string> = {
+    verify: "Confirm",
+    welcome: "Welcome",
+    deposit_nudge: "Deposit",
+    bonus: "Bonus",
+    vip: "VIP",
+    reactivation: "Comeback",
+    other: "Other",
+  };
+  return labels[e.category] ?? "Other";
+}
+
+function mergeWatchEmail(a: EmailWatchItem, b: EmailWatchItem): EmailWatchItem {
+  const keep =
+    emailRichness(a) !== emailRichness(b)
+      ? emailRichness(a) > emailRichness(b)
+        ? a
+        : b
+      : a.receivedAt <= b.receivedAt
+        ? a
+        : b;
+  const drop = keep === a ? b : a;
+  const earlier =
+    a.receivedAt <= b.receivedAt ? a.receivedAt : b.receivedAt;
+  return {
+    ...keep,
+    receivedAt: earlier,
+    html: keep.html || drop.html,
+    body: keep.body || drop.body,
+    screenshotUrls: [
+      ...new Set([
+        ...(keep.screenshotUrls ?? []),
+        ...(drop.screenshotUrls ?? []),
+      ]),
+    ],
+  };
+}
+
+/** Same brand + subject + calendar day → one row. One deposit confirm per brand. */
+export function dedupeWatchEmails(emails: EmailWatchItem[]): EmailWatchItem[] {
+  const buckets = new Map<string, EmailWatchItem>();
+  for (const e of emails) {
+    if (isLoginAlertEmail(e)) continue;
+    const key = emailDedupeKey(e);
+    const prev = buckets.get(key);
+    buckets.set(key, prev ? mergeWatchEmail(prev, e) : e);
+  }
+  return [...buckets.values()].sort((a, b) =>
+    a.receivedAt.localeCompare(b.receivedAt),
+  );
+}
+
 export function formatEmailReceivedAt(iso: string): {
   relative: string;
   absolute: string;

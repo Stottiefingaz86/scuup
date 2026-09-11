@@ -16,6 +16,7 @@ import {
   getResearchProject,
   markBrandAccountReady,
   markInboxSwept,
+  emailsForDisplay,
   mergeResearchEmails,
   pruneProjectEmails,
   patchResearchRun,
@@ -37,15 +38,17 @@ import {
 } from "@/lib/research/journeys";
 import { ResearchJourneyTimeline } from "@/components/research-journey-timeline";
 import { ResearchBrandRoster } from "@/components/research-brand-roster";
-import {
-  ResearchEmailCard,
-  ResearchEmailThumb,
-} from "@/components/research-email-card";
+import { ResearchEmailThumb } from "@/components/research-email-card";
+import { ResearchEmailTimeline } from "@/components/research-email-timeline";
 import {
   PostDepositCard,
   PostDepositComparison,
 } from "@/components/research-post-deposit";
 import { PostSignupCard } from "@/components/research-post-signup";
+import {
+  emptyPostSignup,
+  knownSignupLanding,
+} from "@/lib/research/post-signup";
 import {
   EvidenceThumbs,
   stageFrames,
@@ -84,6 +87,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
+  dedupeWatchEmails,
   formatEmailReceivedAt,
   isDepositConfirmEmail,
   pickWelcomeEmail,
@@ -102,7 +106,7 @@ import {
   randomUsAddress,
 } from "@/lib/research/persona-address";
 import { resolveResearchSignupEmail } from "@/lib/research/signup-email";
-import { brandHost } from "@/lib/research/email-brand";
+import { brandHost, brandNameSlug } from "@/lib/research/email-brand";
 import type {
   AcquisitionSource,
   JourneyKind,
@@ -344,9 +348,18 @@ function researchInboxListUrl(
     .map((b) => b.accountEmail?.trim())
     .filter((a): a is string => Boolean(a))
     .join(",");
-  const from = project.brands
-    .map((b) => brandHost(b.url))
-    .filter(Boolean)
+  const from = [
+    ...new Set(
+      project.brands.flatMap((b) => {
+        const host = brandHost(b.url);
+        if (!host) return [];
+        return [host, `email.${host}`, `mail.${host}`];
+      }),
+    ),
+  ].join(",");
+  const slugs = project.brands
+    .map((b) => brandNameSlug(b.name))
+    .filter((s) => s.length >= 3)
     .join(",");
   const qs = new URLSearchParams({
     list: "1",
@@ -355,6 +368,7 @@ function researchInboxListUrl(
   });
   if (aliases) qs.set("aliases", aliases);
   if (from) qs.set("from", from);
+  if (slugs) qs.set("slugs", slugs);
   return `/api/research/inbox?${qs.toString()}`;
 }
 
@@ -577,7 +591,7 @@ function ResearchProjectPageInner() {
     void (async () => {
       try {
         const res = await fetch(researchInboxListUrl(project, email, hours), {
-          signal: AbortSignal.timeout(12_000),
+          signal: AbortSignal.timeout(50_000),
         });
         const data = await res.json();
         if (cancelled || !data.configured) return;
@@ -2230,9 +2244,12 @@ function ResearchProjectPageInner() {
                 </div>
               ) : null}
 
-              {latestRun.postSignup ? (
+              {latestRun.postSignup ||
+              knownSignupLanding(
+                project.brands.find((b) => b.id === activeBrandId)?.name ?? "",
+              ) ? (
                 <PostSignupCard
-                  obs={latestRun.postSignup}
+                  obs={latestRun.postSignup ?? emptyPostSignup()}
                   brandName={
                     project.brands.find((b) => b.id === activeBrandId)?.name ??
                     "this brand"
@@ -2981,27 +2998,37 @@ function EmailWatchPanel({
     setBusy(true);
     setStatus(null);
     try {
-      const res = await fetch(researchInboxListUrl(project, email));
+      const res = await fetch(researchInboxListUrl(project, email), {
+        signal: AbortSignal.timeout(95_000),
+      });
       const data = await res.json();
       if (!data.configured) {
         setStatus("IMAP not configured");
         return;
       }
+      if (!res.ok || data.error) {
+        setStatus(
+          typeof data.error === "string" ? data.error : "Inbox sync failed",
+        );
+        return;
+      }
       const items = (data.messages ??
         []) as import("@/lib/research/types").EmailWatchItem[];
-      const before = project.emails.length;
-      if (items.length) {
-        mergeResearchEmails(project.id, items);
-        syncBrandAccountsFromEmails(project.id);
-      }
+      mergeResearchEmails(project.id, items);
+      syncBrandAccountsFromEmails(project.id);
       markInboxSwept(project.id);
-      const after =
-        getResearchProject(project.id)?.emails.length ?? project.emails.length;
+      setFilter("all");
+      const live = getResearchProject(project.id) ?? project;
+      const shown = emailsForDisplay(live);
+      const before = project.emails.length;
+      const after = live.emails.length;
       const added = Math.max(0, after - before);
       setStatus(
-        added > 0
-          ? `Synced ${added} message(s) for this project's aliases`
-          : "No matching messages for this project's aliases",
+        items.length === 0
+          ? "Inbox had no mail for these brands in the window"
+          : shown.length === 0
+            ? `Pulled ${items.length} — none landed on the timeline`
+            : `Pulled ${items.length} · ${shown.length} on the timeline${added ? ` (+${added})` : ""}`,
       );
     } catch (e) {
       setStatus(e instanceof Error ? e.message : "sync failed");
@@ -3010,11 +3037,23 @@ function EmailWatchPanel({
     }
   }
 
-  const emails = [...project.emails]
-    .filter((e) => (filter === "all" ? true : e.brandId === filter))
-    .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt));
+  const unique = emailsForDisplay(project);
+  const leftover = unique.filter(
+    (e) => !project.brands.some((b) => b.id === e.brandId),
+  );
+  const emails = unique.filter((e) =>
+    filter === "all"
+      ? true
+      : filter === "unassigned"
+        ? leftover.some((x) => x.id === e.id)
+        : e.brandId === filter,
+  );
 
   const filterBrand = project.brands.find((b) => b.id === filter);
+  const countFor = (brandId?: string) =>
+    brandId
+      ? unique.filter((e) => e.brandId === brandId).length
+      : unique.length;
 
   return (
     <section className="flex flex-col gap-4 text-sm">
@@ -3023,10 +3062,8 @@ function EmailWatchPanel({
           Emails
         </h2>
         <p className="mt-1 text-[var(--rs-muted)]">
-          Every message from welcome onward for {days} days — {email}{" "}
-          (+aliases), including VIP, bonus, and login mail. Checked once a
-          day, then the inbox connection is closed. Use Sync inbox to pull
-          now.
+          {days} days after signup — welcome, bonus, VIP. Login alerts are
+          dropped. Sync to pull now.
         </p>
       </div>
 
@@ -3040,10 +3077,10 @@ function EmailWatchPanel({
               : "border-[var(--rs-border)] text-[var(--rs-muted)]"
           }`}
         >
-          All ({project.emails.length})
+          All ({countFor()})
         </button>
         {project.brands.map((b) => {
-          const n = project.emails.filter((e) => e.brandId === b.id).length;
+          const n = countFor(b.id);
           return (
             <button
               key={b.id}
@@ -3062,6 +3099,19 @@ function EmailWatchPanel({
             </button>
           );
         })}
+        {leftover.length ? (
+          <button
+            type="button"
+            onClick={() => setFilter("unassigned")}
+            className={`shrink-0 cursor-pointer rounded-full border px-3 py-1.5 text-xs ${
+              filter === "unassigned"
+                ? "border-[var(--rs-accent)] bg-[var(--rs-accent)]/10 text-[var(--rs-fg)]"
+                : "border-[var(--rs-border)] text-[var(--rs-muted)]"
+            }`}
+          >
+            Unassigned ({leftover.length})
+          </button>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -3082,19 +3132,39 @@ function EmailWatchPanel({
         <div className="rounded-xl border border-dashed border-[var(--rs-border)] p-8 text-center text-[var(--rs-muted)]">
           {filter === "all"
             ? "No emails yet — run a fresh capture."
-            : `No emails for ${filterBrand?.name ?? "this brand"} yet.`}
+            : `No emails for ${filter === "unassigned" ? "unassigned" : filterBrand?.name ?? "this brand"} yet.`}
+        </div>
+      ) : filter === "all" ? (
+        <div className="flex flex-col gap-10">
+          {project.brands.map((b) => {
+            const mine = unique.filter((e) => e.brandId === b.id);
+            if (!mine.length) return null;
+            return (
+              <div key={b.id} className="flex flex-col gap-3">
+                <h3 className="font-heading text-base font-medium">
+                  {b.name}
+                  <span className="ml-2 text-xs font-normal tabular-nums text-[var(--rs-muted)]">
+                    {mine.length}
+                  </span>
+                </h3>
+                <ResearchEmailTimeline emails={mine} brandName={() => ""} />
+              </div>
+            );
+          })}
+          {leftover.length ? (
+            <div className="flex flex-col gap-3">
+              <h3 className="font-heading text-base font-medium">
+                Unassigned
+                <span className="ml-2 text-xs font-normal tabular-nums text-[var(--rs-muted)]">
+                  {leftover.length}
+                </span>
+              </h3>
+              <ResearchEmailTimeline emails={leftover} brandName={brandName} />
+            </div>
+          ) : null}
         </div>
       ) : (
-        <ul className="flex flex-col gap-3">
-          {emails.map((e) => (
-            <li key={e.id}>
-              <ResearchEmailCard
-                email={e}
-                brandLabel={filter === "all" ? brandName(e.brandId) : null}
-              />
-            </li>
-          ))}
-        </ul>
+        <ResearchEmailTimeline emails={emails} brandName={() => ""} />
       )}
     </section>
   );
@@ -3597,6 +3667,7 @@ function BenchmarkTab({
                               row.criteria,
                               teardownOf(b.id),
                               run,
+                              b.name,
                             );
                       const frames =
                         value === "—" || value === "No"
@@ -3605,6 +3676,7 @@ function BenchmarkTab({
                               row.area,
                               sourcesOf(b.id),
                               run,
+                              b.name,
                             );
                       return (
                         <td key={b.id} className="rs-feature">

@@ -17,7 +17,7 @@ const CATEGORY_STYLE: Record<
   { label: string; className: string }
 > = {
   verify: {
-    label: "Verify",
+    label: "Confirm",
     className: "bg-sky-500/15 text-sky-300",
   },
   welcome: {

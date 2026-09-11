@@ -308,6 +308,9 @@ export interface PostSignupObservation {
   welcome: WelcomeTouch;
   /** Screen they put the player on after submit. */
   landedOn?: PlayerDestination | null;
+  landingUrl?: string | null;
+  /** Extra clicks from that screen to open wallet / cashier. 0 = already there. */
+  clicksToWallet?: number | null;
   screenshotUrls: string[];
 }
 
@@ -412,6 +415,8 @@ export interface BrandFeatureScan {
     casinoToSports: string | null;
   };
   login: { twoFactor: boolean; biometrics: boolean; social: boolean };
+  /** Card / on-ramp so a player can fund without an existing wallet. */
+  buyCrypto?: boolean;
   features: FeatureSignal[];
   screenshotUrls: string[];
   /** Same shots tagged by the area they show — lets a benchmark cell open

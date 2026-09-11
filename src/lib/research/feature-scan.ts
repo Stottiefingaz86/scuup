@@ -369,6 +369,11 @@ const REGEX_SIGNALS: {
     category: "Login",
     re: /\b(sign in with (google|apple|facebook|telegram|steam)|continue with (google|apple)|metamask|walletconnect|connect wallet)\b/i,
   },
+  {
+    name: "Buy crypto",
+    category: "Other",
+    re: /\b(buy crypto|banxa|moonpay|simplex)\b/i,
+  },
 ];
 
 function scanText(

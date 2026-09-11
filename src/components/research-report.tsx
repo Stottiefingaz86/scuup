@@ -252,9 +252,39 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
         </section>
       ) : null}
 
+      {brief.gaps.length ? (
+        <section className="flex flex-col gap-4">
+          <SectionKicker n="03" label="The gap" />
+          <h3 className="font-heading text-2xl font-medium tracking-tight">
+            Features they have. You don’t.
+          </h3>
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {brief.gaps.map((g) => (
+              <li
+                key={g.feature}
+                className="flex gap-3 rounded-2xl border border-[var(--rs-border)] bg-[var(--rs-card)] p-3.5"
+              >
+                {g.shot ? <MiniShot src={g.shot.src} label={g.feature} /> : null}
+                <div className="min-w-0">
+                  <p className="font-heading text-[15px] font-medium">
+                    {g.feature}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-[var(--rs-muted)]">
+                    {g.note}
+                  </p>
+                  <p className="mt-2 text-[11px] uppercase tracking-wide text-[var(--rs-accent)]">
+                    Seen at {g.whoHas.join(" · ")}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {brief.asks.length ? (
         <section className="flex flex-col gap-4">
-          <SectionKicker n="03" label="Trustpilot — not the walk" />
+          <SectionKicker n="04" label="Trustpilot — not the walk" />
           <h3 className="font-heading text-2xl font-medium tracking-tight">
             What players ask for
           </h3>
@@ -277,36 +307,6 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
                   {a.brands.length} brand{a.brands.length === 1 ? "" : "s"} ·{" "}
                   {a.mentions} mention{a.mentions === 1 ? "" : "s"}
                 </p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-
-      {brief.gaps.length ? (
-        <section className="flex flex-col gap-4">
-          <SectionKicker n="04" label="The gap" />
-          <h3 className="font-heading text-2xl font-medium tracking-tight">
-            Features they have. You don’t.
-          </h3>
-          <ul className="grid gap-3 sm:grid-cols-2">
-            {brief.gaps.map((g) => (
-              <li
-                key={g.feature}
-                className="flex gap-3 rounded-2xl border border-[var(--rs-border)] bg-[var(--rs-card)] p-3.5"
-              >
-                {g.shot ? <MiniShot src={g.shot.src} label={g.feature} /> : null}
-                <div className="min-w-0">
-                  <p className="font-heading text-[15px] font-medium">
-                    {g.feature}
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-[var(--rs-muted)]">
-                    {g.note}
-                  </p>
-                  <p className="mt-2 text-[11px] uppercase tracking-wide text-[var(--rs-accent)]">
-                    Seen at {g.whoHas.join(" · ")}
-                  </p>
-                </div>
               </li>
             ))}
           </ul>
@@ -341,25 +341,58 @@ export function ResearchReportView({ project: raw }: { project: ResearchProject 
         </section>
       ) : null}
 
-      <section className="flex flex-col gap-4">
-        <SectionKicker n="06" label="Do this next" />
-        <h3 className="font-heading text-2xl font-medium tracking-tight">
-          Three moves
-        </h3>
-        <ol className="flex flex-col gap-2">
-          {brief.nextMoves.map((move, i) => (
-            <li
-              key={move}
-              className="flex gap-3 rounded-2xl border border-[var(--rs-border)] px-4 py-3"
-            >
-              <span className="font-heading text-sm text-[var(--rs-accent)]">
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <p className="text-sm leading-relaxed">{move}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {brief.reveal ? (
+        <section className="flex flex-col gap-8 border-t border-[var(--rs-border)] pt-12">
+          <SectionKicker n="06" label={brief.reveal.kicker} />
+          <h3 className="font-heading text-4xl font-medium tracking-tight text-balance sm:text-5xl">
+            {brief.reveal.headline}
+          </h3>
+          <p className="max-w-2xl text-lg leading-relaxed text-[var(--rs-fg)]">
+            {brief.reveal.lede}
+          </p>
+          <ol className="flex flex-col gap-5">
+            {brief.reveal.moves.map((m) => (
+              <li
+                key={m.n}
+                className="rounded-2xl border border-[var(--rs-border)] bg-[var(--rs-card)] px-6 py-6"
+              >
+                <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-[var(--rs-accent)]">
+                  {m.n}
+                </p>
+                <h4 className="mt-2 font-heading text-2xl font-medium tracking-tight">
+                  {m.title}
+                </h4>
+                <p className="mt-2 text-[15px] leading-relaxed text-[var(--rs-muted)]">
+                  {m.body}
+                </p>
+              </li>
+            ))}
+          </ol>
+          <p className="max-w-2xl font-heading text-xl font-medium leading-snug tracking-tight">
+            {brief.reveal.closer}
+          </p>
+        </section>
+      ) : brief.nextMoves.length ? (
+        <section className="flex flex-col gap-4">
+          <SectionKicker n="06" label="Do this next" />
+          <h3 className="font-heading text-2xl font-medium tracking-tight">
+            Three moves
+          </h3>
+          <ol className="flex flex-col gap-2">
+            {brief.nextMoves.map((move, i) => (
+              <li
+                key={move}
+                className="flex gap-3 rounded-2xl border border-[var(--rs-border)] px-4 py-3"
+              >
+                <span className="font-heading text-sm text-[var(--rs-accent)]">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <p className="text-sm leading-relaxed">{move}</p>
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
     </article>
   );
 }
