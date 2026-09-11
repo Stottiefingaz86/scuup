@@ -143,15 +143,18 @@ export function categorizeEmail(
   }
   // A deposit receipt wins over welcome copy — confirmation mail often
   // restates "welcome" in the body and used to vanish from the card.
-  if (DEPOSIT_CONFIRM_RE.test(subject) || (depositConfirm && !WELCOME_SUBJECT_RE.test(subject))) {
+  if (DEPOSIT_CONFIRM_RE.test(subject)) {
     return "deposit_nudge";
   }
-  if (WELCOME_SUBJECT_RE.test(subject)) return "welcome";
   if (/contest|races?|survivor|seasonal/i.test(subject)) {
     return /bonus|free spins?|promo|offer|cashback/i.test(hay)
       ? "bonus"
       : "other";
   }
+  if (depositConfirm && !WELCOME_SUBJECT_RE.test(subject)) {
+    return "deposit_nudge";
+  }
+  if (WELCOME_SUBJECT_RE.test(subject)) return "welcome";
   if (
     /make (?:your )?first deposit/.test(hay)
   ) {

@@ -38,9 +38,13 @@ export function resolveResearchSignupEmail(opts: {
   brandName: string;
   brandAccountEmail?: string | null;
   personaEmail?: string | null;
+  /** Ignore a saved alias — mint a new +rs tag (failed / unused signups). */
+  fresh?: boolean;
 }): string {
-  const saved = opts.brandAccountEmail?.trim().toLowerCase();
-  if (saved) return saved;
+  if (!opts.fresh) {
+    const saved = opts.brandAccountEmail?.trim().toLowerCase();
+    if (saved) return saved;
+  }
 
   const persona = opts.personaEmail?.trim().toLowerCase();
   if (persona && !isResearchInboxAddress(persona)) return persona;

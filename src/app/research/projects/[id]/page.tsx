@@ -953,6 +953,7 @@ function ResearchProjectPageInner() {
       brandName: brand.name,
       brandAccountEmail: brand.accountEmail,
       personaEmail: project.persona?.email,
+      fresh: !brandHasTestAccount(project, brand.id),
     });
     saveBrandAccountEmail(project.id, brand.id, accountEmail);
     lockBrandCredentials(project, brand.id);
@@ -1159,10 +1160,19 @@ function ResearchProjectPageInner() {
     });
 
     try {
+      const startAt =
+        fundsLanded || skipToPlay || redoPlay
+          ? "play"
+          : resumeWatch
+            ? "deposit_confirmation"
+            : resumeExisting
+              ? "deposit"
+              : "registration";
       const accountEmail = resolveResearchSignupEmail({
         brandName: brand.name,
         brandAccountEmail: brand.accountEmail,
         personaEmail: project.persona?.email,
+        fresh: startAt === "registration",
       });
       if (accountEmail && accountEmail !== brand.accountEmail) {
         saveBrandAccountEmail(project.id, brand.id, accountEmail);
@@ -1181,13 +1191,7 @@ function ResearchProjectPageInner() {
           kind,
           persona: project.persona,
           throughStage,
-          startAt: fundsLanded || skipToPlay || redoPlay
-            ? "play"
-            : resumeWatch
-              ? "deposit_confirmation"
-              : resumeExisting
-                ? "deposit"
-                : "registration",
+          startAt,
           resumeWatch,
           forceAhead: resumeWatch ? opts?.forceAhead === true : false,
           replayPlay: redoPlay,
@@ -1610,6 +1614,7 @@ function ResearchProjectPageInner() {
         brandName: freshBrand.name,
         brandAccountEmail: freshBrand.accountEmail,
         personaEmail: latest.persona?.email,
+        fresh: true,
       });
       saveBrandAccountEmail(latest.id, freshBrand.id, accountEmail);
       lockBrandCredentials(latest, freshBrand.id);

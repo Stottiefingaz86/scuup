@@ -20,7 +20,13 @@ import {
   plusTagMatchesProjectBrand,
   senderLooksLikeBrand,
 } from "./email-brand";
-import { dedupeWatchEmails, isLoginAlertEmail } from "./email-format";
+import {
+  dedupeWatchEmails,
+  isLoginAlertEmail,
+  isRacesEmail,
+  isRetentionCrmEmail,
+  isVipProgramEmail,
+} from "./email-format";
 import { autoMarketForBrands } from "../brand-markets";
 import { isProductionDeployPublic } from "@/lib/prod-locks";
 import type {
@@ -575,6 +581,113 @@ function isProjectBrandId(project: ResearchProject, brandId: string): boolean {
   return project.brands.some((b) => b.id === brandId);
 }
 
+function plusRsTag(hay: string): string | null {
+  return hay.toLowerCase().match(/\+rs([a-z0-9]+)(?:@|$)/)?.[1] ?? null;
+}
+
+function greetedUsername(text: string): string | null {
+  const m = /\bhi[,]?\s+([a-z0-9._-]{4,24})\b/i.exec(text);
+  if (!m?.[1] || /there|friend|player|user|team/i.test(m[1])) return null;
+  return m[1].toLowerCase();
+}
+
+/** When this brand's real account started getting mail (not older +rs mints). */
+function brandAccountAnchorMs(
+  project: ResearchProject,
+  brand: ResearchBrand,
+): number | null {
+  const alias = brand.accountEmail?.trim().toLowerCase() ?? "";
+  const user = (
+    brand.accountUsername?.trim() ||
+    extractUsernameFromEmails(
+      project.emails.filter((e) => e.brandId === brand.id),
+    ) ||
+    ""
+  ).toLowerCase();
+  let earliest: number | null = null;
+  const consider = (iso: string | null | undefined) => {
+    const t = iso ? Date.parse(iso) : NaN;
+    if (!Number.isFinite(t)) return;
+    earliest = earliest == null ? t : Math.min(earliest, t);
+  };
+  for (const e of project.emails) {
+    const to = (e.to ?? "").toLowerCase();
+    const hay =
+      `${to}\n${e.subject}\n${e.summary}\n${e.body ?? ""}`.toLowerCase();
+    const greeted = greetedUsername(hay);
+    const hit =
+      (alias && (to.includes(alias) || hay.includes(alias))) ||
+      (user.length >= 4 && hay.includes(user)) ||
+      (greeted && user && greeted === user) ||
+      (greeted && alias && plusRsTag(alias) === plusRsTag(to));
+    if (hit) consider(e.receivedAt);
+  }
+  const run = [...project.runs]
+    .filter((r) => r.brandId === brand.id && !r.archived)
+    .at(-1);
+  consider(run?.startedAt ?? null);
+  consider(
+    run?.stages.find((s) => s.stageId === "registration")?.startedAt ?? null,
+  );
+  return earliest;
+}
+
+function mailBelongsToBrandAccount(
+  project: ResearchProject,
+  brand: ResearchBrand,
+  email: EmailWatchItem,
+): boolean {
+  const alias = brand.accountEmail?.trim().toLowerCase() ?? "";
+  const to = (email.to ?? "").toLowerCase();
+  const hay =
+    `${to}\n${email.subject}\n${email.summary}\n${email.body ?? ""}`.toLowerCase();
+  const user = (
+    brand.accountUsername?.trim() ||
+    extractUsernameFromEmails(
+      project.emails.filter((e) => e.brandId === brand.id),
+    ) ||
+    ""
+  ).toLowerCase();
+  if (alias && (to.includes(alias) || hay.includes(alias))) return true;
+  if (user.length >= 4 && hay.includes(user)) return true;
+  const greeted = greetedUsername(hay);
+  if (greeted && user && greeted === user) return true;
+
+  // VIP / races from this operator stay on the brand even when To: is a
+  // sibling +rs mint. Timeline sort puts them after confirm/welcome/deposit.
+  if (
+    isRetentionCrmEmail(email) &&
+    (senderLooksLikeBrand(email.from, brand.url) ||
+      plusTagMatchesProjectBrand(to, brand) ||
+      plusTagMatchesProjectBrand(hay, brand))
+  ) {
+    const received = Date.parse(email.receivedAt) || 0;
+    const since = Date.parse(project.createdAt) || 0;
+    const watchMs = (project.emailWatchDays || 14) * 86_400_000;
+    if (!since || !received || received >= since - watchMs) return true;
+  }
+
+  const storedTag = plusRsTag(alias);
+  const incomingTag = plusRsTag(to);
+  if (storedTag && incomingTag && incomingTag === storedTag) return true;
+
+  const received = Date.parse(email.receivedAt) || 0;
+  const anchor = brandAccountAnchorMs(project, brand);
+  const afterAccount =
+    !anchor || (received > 0 && received >= anchor - 2 * 3_600_000);
+
+  // Other +rs nonce or sender-only CRM: keep only after this account exists
+  // (BetOnline contests) — drop older Winna VIP to failed signups.
+  if (storedTag && incomingTag && incomingTag !== storedTag) {
+    return afterAccount && plusTagMatchesProjectBrand(to, brand);
+  }
+  if (!incomingTag && senderLooksLikeBrand(email.from, brand.url)) {
+    return afterAccount;
+  }
+  if (!alias) return true;
+  return false;
+}
+
 /**
  * Only keep mail that belongs to this project's current +aliases and arrived
  * after the project was created. Never pull sibling-brand / prior-run inbox noise.
@@ -598,29 +711,66 @@ export function scopeEmailsToProject(
 
     const brandId = matchEmailToProjectBrand(project, m, aliases, extraSlugs);
     if (!brandId) return [];
+    const brand = project.brands.find((b) => b.id === brandId);
+    if (brand && !mailBelongsToBrandAccount(project, brand, m)) return [];
     return [{ ...m, brandId }];
   });
 }
 
-/** Re-attribute stored mail for the timeline — never hide CRM that still matches a brand. */
+/** Re-attribute stored mail for the timeline — one account per brand. */
 export function emailsForDisplay(project: ResearchProject): EmailWatchItem[] {
-  const remapped = scopeEmailsToProject(project, project.emails);
-  const seen = new Set(remapped.map((e) => e.id));
-  const extra: EmailWatchItem[] = [];
-  for (const e of project.emails) {
-    if (seen.has(e.id) || isLoginAlertEmail(e)) continue;
-    const brand = project.brands.find(
-      (b) =>
-        senderLooksLikeBrand(e.from, b.url) ||
-        plusTagMatchesProjectBrand(`${e.to ?? ""}\n${e.subject}`, b),
-    );
-    extra.push({
-      ...e,
-      brandId: brand?.id ?? (isProjectBrandId(project, e.brandId) ? e.brandId : "unassigned"),
-    });
-    seen.add(e.id);
+  return capRetentionCrm(
+    project,
+    dedupeWatchEmails(scopeEmailsToProject(project, project.emails)),
+  );
+}
+
+/**
+ * Sibling +rs mints get the same VIP / races blast. One VIP Program
+ * card (this account, else newest) and one Races — after confirm /
+ * welcome / deposit.
+ */
+function capRetentionCrm(
+  project: ResearchProject,
+  emails: EmailWatchItem[],
+): EmailWatchItem[] {
+  const out: EmailWatchItem[] = [];
+  const vips = new Map<string, EmailWatchItem[]>();
+  const races = new Map<string, EmailWatchItem[]>();
+  for (const e of emails) {
+    if (isVipProgramEmail(e)) {
+      const list = vips.get(e.brandId) ?? [];
+      list.push(e);
+      vips.set(e.brandId, list);
+      continue;
+    }
+    if (isRacesEmail(e)) {
+      const list = races.get(e.brandId) ?? [];
+      list.push(e);
+      races.set(e.brandId, list);
+      continue;
+    }
+    out.push(e);
   }
-  return dedupeWatchEmails([...remapped, ...extra]);
+  for (const brand of project.brands) {
+    const alias = brand.accountEmail?.trim().toLowerCase() ?? "";
+    const brandVips = (vips.get(brand.id) ?? []).sort((a, b) =>
+      a.receivedAt.localeCompare(b.receivedAt),
+    );
+    const vip =
+      brandVips.findLast((e) => (e.to ?? "").toLowerCase().includes(alias)) ??
+      brandVips.at(-1);
+    if (vip) out.push(vip);
+
+    const brandRaces = (races.get(brand.id) ?? []).sort((a, b) =>
+      a.receivedAt.localeCompare(b.receivedAt),
+    );
+    const race =
+      brandRaces.find((e) => (e.to ?? "").toLowerCase().includes(alias)) ??
+      brandRaces[0];
+    if (race) out.push(race);
+  }
+  return out;
 }
 
 function matchEmailToProjectBrand(

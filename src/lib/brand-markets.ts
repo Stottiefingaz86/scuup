@@ -99,7 +99,9 @@ export const CURATED_BRAND_MARKETS: CuratedBrandMarkets[] = [
   },
   {
     // Winna-class crypto — same geo pattern as Rainbet; Canada often works.
-    hosts: ["winna.com", "winna.io", "winna.bet"],
+    // whale.io is the same signup shell; a US/Global project market
+    // egresses US and the form returns "Something went wrong".
+    hosts: ["winna.com", "winna.io", "winna.bet", "whale.io", "whale.bet"],
     blocked: [
       ...EU_REGULATED_BLOCKED,
       ...US_ALL,

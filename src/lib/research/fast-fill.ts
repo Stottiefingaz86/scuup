@@ -55,8 +55,16 @@ function isMarketingMeta(meta) {
   );
 }
 function isRequiredConsentMeta(meta) {
-  return /terms|condition|privacy|age|\\b18\\b|\\b21\\b|agree|acknowledge|accept the|i confirm|i am over|over the age|responsible|consent/.test(
+  return /terms|condition|privacy|age|\\b18\\b|\\b21\\b|agree|acknowledge|accept the|i confirm|i am over|over the age|years old|responsible|consent/.test(
     meta
+  );
+}
+/** Winna: "I confirm that I am 18 years old and I have read the Terms of Service" */
+function isConsentRowText(t) {
+  const s = String(t || "").replace(/\\s+/g, " ").toLowerCase();
+  if (s.length < 12 || s.length > 420) return false;
+  return /i confirm that i am 18|i am 18 years old|i have read the terms|terms of service|over the age of\\s*18|acknowledge that i am|agree to the terms|i am over\\s*18|terms and conditions/.test(
+    s
   );
 }
 function ownText(el) {
@@ -162,7 +170,7 @@ function tickCheckboxEl(el) {
     // Click the INPUT only — never the wrapping label. Labels often wrap
     // "Terms and Conditions" <a> links; clicking the label navigates away
     // and closes the signup modal.
-    try { el.click(); } catch {}
+    try { realClick(el); } catch {}
     if (!el.checked) {
       el.checked = true;
       el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -174,7 +182,7 @@ function tickCheckboxEl(el) {
   if (el.getAttribute("aria-checked") === "true") return false;
   if (el.closest && el.closest("a[href]")) return false;
   try {
-    el.click();
+    realClick(el);
   } catch {}
   const pressed = el.getAttribute("aria-checked");
   if (pressed !== "true") {
@@ -807,7 +815,7 @@ export async function fastTickRequiredCheckboxes(
         if (/close|dismiss|cancel|×|✕/.test(lab)) continue;
         if (/close|dismiss|cancel/.test((c.className || "").toString().toLowerCase())) continue;
         const r = c.getBoundingClientRect();
-        if (r.width < 10 || r.height < 10 || r.width > 48 || r.height > 48) continue;
+        if (r.width < 8 || r.height < 8 || r.width > 56 || r.height > 56) continue;
         // Already checked — don't click again (would uncheck / confuse the UI).
         if (c instanceof HTMLInputElement && c.type === "checkbox" && c.checked) {
           already = true;
@@ -818,7 +826,16 @@ export async function fastTickRequiredCheckboxes(
           return false;
         }
         try {
-          c.click();
+          realClick(c);
+          if (c instanceof HTMLInputElement && c.type === "checkbox") {
+            if (!c.checked) {
+              c.checked = true;
+              c.dispatchEvent(new Event("input", { bubbles: true }));
+              c.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          } else if (c.getAttribute && c.getAttribute("aria-checked") !== "true") {
+            c.setAttribute("aria-checked", "true");
+          }
           return true;
         } catch {}
       }
@@ -861,14 +878,7 @@ export async function fastTickRequiredCheckboxes(
       ].filter((n) => n instanceof HTMLElement && visible(n));
       for (const n of candidates) {
         const t = (n.textContent || "").replace(/\\s+/g, " ").trim();
-        if (t.length < 20 || t.length > 260) continue;
-        if (
-          !/over the age of\\s*18|acknowledge that i am|agree to the terms and conditions|i am over\\s*18|terms and conditions/i.test(
-            t
-          )
-        ) {
-          continue;
-        }
+        if (!isConsentRowText(t)) continue;
         // Prefer the checkbox square, never the Terms <a> / whole label.
         if (clickSmallBox(n) || clickSmallBox(n.parentElement)) {
           ticked += 1;

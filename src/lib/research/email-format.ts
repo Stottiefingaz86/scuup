@@ -36,6 +36,34 @@ function isContestOrCrmSubject(subject: string): boolean {
   return /contest|races?|survivor|seasonal|nfl spread/i.test(subject);
 }
 
+/** “The Winna VIP Program: Explained” and other VIP CRM. */
+export function isVipProgramEmail(e: {
+  category?: string | null;
+  subject?: string | null;
+}): boolean {
+  const subject = e.subject ?? "";
+  if (isRacesEmail(e)) return false;
+  if (/vip/i.test(subject)) return true;
+  return e.category === "vip";
+}
+
+/** “Win your share of $500,000 in Winna Races” */
+export function isRacesEmail(e: { subject?: string | null }): boolean {
+  return /races?|prize pool|500,?000/i.test(e.subject ?? "");
+}
+
+/** VIP / races / contests — keep even when To: is a sibling +rs mint. */
+export function isRetentionCrmEmail(e: {
+  category?: string | null;
+  subject?: string | null;
+}): boolean {
+  return (
+    isVipProgramEmail(e) ||
+    isRacesEmail(e) ||
+    isContestOrCrmSubject(e.subject ?? "")
+  );
+}
+
 function isVerifyEmail(e: {
   category?: string | null;
   subject?: string | null;
@@ -64,29 +92,45 @@ function isWelcomeStoryEmail(e: {
 }
 
 function emailDedupeKey(e: EmailWatchItem): string {
-  // One of each onboarding beat per brand — later aliases / resends collapse.
+  // Same receipt resent with a new txn id → one row.
   if (isDepositConfirmEmail(e)) return `${e.brandId}|deposit_confirm`;
-  if (isWelcomeStoryEmail(e)) return `${e.brandId}|welcome`;
-  if (isVerifyEmail(e)) return `${e.brandId}|verify`;
-  if (/vip program/i.test(e.subject ?? "")) return `${e.brandId}|vip_program`;
-  if (e.category === "vip") {
-    return `${e.brandId}|vip|${normalizeSubject(e.subject)}`;
+  // Same VIP Program blast to sibling +rs mints → one card.
+  if (isVipProgramEmail(e)) {
+    return `${e.brandId}|${normalizeSubject(e.subject)}`;
   }
   const day = (e.receivedAt || "").slice(0, 10);
   return `${e.brandId}|${normalizeSubject(e.subject)}|${day}`;
 }
 
-/** Oldest first — new inbox mail always lands on the right. */
+/**
+ * Account mail first (confirm → welcome → deposit), then races, then VIP.
+ * Chronology inside each bucket. A 2-day-old VIP never jumps in front.
+ */
+function timelineBucket(e: EmailWatchItem): number {
+  if (isVerifyEmail(e)) return 0;
+  if (isWelcomeStoryEmail(e)) return 1;
+  if (isDepositConfirmEmail(e)) return 2;
+  if (isRacesEmail(e)) return 3;
+  if (isVipProgramEmail(e)) return 4;
+  return 5;
+}
+
 export function sortEmailsForTimeline(
   emails: EmailWatchItem[],
 ): EmailWatchItem[] {
-  return [...emails].sort((a, b) => a.receivedAt.localeCompare(b.receivedAt));
+  return [...emails].sort((a, b) => {
+    const d = timelineBucket(a) - timelineBucket(b);
+    if (d) return d;
+    return a.receivedAt.localeCompare(b.receivedAt);
+  });
 }
 
 export function emailTimelineLabel(e: EmailWatchItem): string {
   if (isWelcomeStoryEmail(e)) return "Welcome";
   if (isVerifyEmail(e)) return "Confirm";
   if (isDepositConfirmEmail(e)) return "Deposit success";
+  if (isRacesEmail(e)) return "Races";
+  if (isVipProgramEmail(e)) return "VIP";
   const labels: Record<EmailWatchItem["category"], string> = {
     verify: "Confirm",
     welcome: "Welcome",
@@ -111,9 +155,13 @@ function mergeWatchEmail(a: EmailWatchItem, b: EmailWatchItem): EmailWatchItem {
   const drop = keep === a ? b : a;
   const earlier =
     a.receivedAt <= b.receivedAt ? a.receivedAt : b.receivedAt;
+  const later =
+    a.receivedAt >= b.receivedAt ? a.receivedAt : b.receivedAt;
   return {
     ...keep,
-    receivedAt: earlier,
+    // VIP is the same blast resent — keep the later send so the 2-day-old
+    // sibling mint does not replace this account's copy.
+    receivedAt: isVipProgramEmail(keep) ? later : earlier,
     html: keep.html || drop.html,
     body: keep.body || drop.body,
     screenshotUrls: [
@@ -210,6 +258,8 @@ export function isDepositConfirmEmail(e: {
   body?: string | null;
 }): boolean {
   const subject = e.subject ?? "";
+  // Races / contests mention “deposit” in the body — they are not receipts.
+  if (isRacesEmail(e) || isContestOrCrmSubject(subject)) return false;
   if (DEPOSIT_CONFIRM_RE.test(subject)) return true;
   if (e.category !== "deposit_nudge") return false;
   if (WELCOME_RE.test(subject) && !DEPOSIT_CONFIRM_RE.test(subject)) return false;

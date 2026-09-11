@@ -1126,7 +1126,7 @@ async function handleRegistrationCheckboxes(
     hasUncheckedConsent = Boolean(
       await page.evaluate(`(() => {
         const t = (document.body?.innerText || "").slice(0, 8000);
-        if (!/over the age of\\s*18|acknowledge that i am|agree to the terms and conditions/i.test(t)) {
+        if (!/over the age of\\s*18|acknowledge that i am|agree to the terms|i confirm that i am 18|i am 18 years old|i have read the terms|terms of service/i.test(t)) {
           return false;
         }
         // If a consent checkbox is already on, skip the agent.
@@ -1152,7 +1152,7 @@ async function handleRegistrationCheckboxes(
 
   if (hasUncheckedConsent && stagehand) {
     const act = await stagehand.act(
-      "If there is an unchecked square checkbox next to 'I acknowledge that I am over the age of 18' or Terms and Conditions, click ONLY that empty square so it becomes checked. NEVER click the Terms, Privacy, or Help text/links. NEVER click Create Account. NEVER click Close, X, or outside the dialog. If the checkbox is already checked or missing, do nothing at all.",
+      "If there is an unchecked square checkbox next to age or terms copy — 'I confirm that I am 18 years old and I have read the Terms of Service', 'I acknowledge that I am over the age of 18', or Terms and Conditions — click ONLY that empty square so it becomes checked. NEVER click the Terms, Privacy, Promo Code, or Help text/links. NEVER click Create Account. NEVER click Close, X, or outside the dialog. If the checkbox is already checked or missing, do nothing at all.",
     );
     if (act.success) {
       tracker.addStep("registration", 1);
@@ -1464,6 +1464,12 @@ async function loggedOutHeaderVisible(page: AgentPage): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function looksLikeTransientSignupFailure(text: string): boolean {
+  return /something went wrong|please try again later|try again later or contact/i.test(
+    text,
+  );
 }
 
 function looksLikeExistingAccountCopy(text: string): boolean {
@@ -2023,8 +2029,28 @@ async function runSignupFlow(
     job.signupEmail = nextEmail;
     job.signupUsername = next.username || job.signupUsername;
     tracker.push(
-      `Existing account hit — retrying as ${nextEmail} (${next.firstName} ${next.lastName})`,
+      `Retrying signup as ${nextEmail} (${next.firstName} ${next.lastName})`,
     );
+  };
+  const clearSignupEmailField = async () => {
+    await page.evaluate(`(() => {
+      for (const el of document.querySelectorAll("input")) {
+        const type = (el.getAttribute("type") || el.type || "").toLowerCase();
+        const meta = (
+          (el.getAttribute("name") || "") +
+          " " +
+          (el.getAttribute("id") || "") +
+          " " +
+          (el.getAttribute("autocomplete") || "") +
+          " " +
+          (el.getAttribute("placeholder") || "")
+        ).toLowerCase();
+        if (type !== "email" && !/e-?mail/.test(meta)) continue;
+        el.value = "";
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    })()`).catch(() => {});
   };
   const takeIssueBanner = async (): Promise<boolean> => {
     if (!(await accountCreationIssueVisible(page))) return false;
@@ -2041,6 +2067,7 @@ async function runSignupFlow(
       );
       await dismissExistingAccountModal(page);
       remintSignupIdentity();
+      await clearSignupEmailField();
       await tracker.wait(page, 400, "registration");
       return false;
     }
@@ -2321,6 +2348,18 @@ async function runSignupFlow(
     );
     errorHits += await countVisibleErrors(page);
     await pushRegShot();
+    const pageText = String(
+      await page.evaluate("document.body?.innerText || ''").catch(() => ""),
+    );
+    if (looksLikeTransientSignupFailure(pageText) && identityRotates < 2) {
+      identityRotates += 1;
+      remintSignupIdentity();
+      await clearSignupEmailField();
+      const swap = await fillRegistrationStep(stagehand, page, vars);
+      if (swap.filled > 0) tracker.addStep("registration", swap.filled);
+      await handleRegistrationCheckboxes(page, tracker, stagehand);
+      continue;
+    }
 
     if (await recoverFromHelpOrLegalPage(page, input.brandUrl)) {
       tracker.push("Submit opened help/terms — recovered without full reload");
