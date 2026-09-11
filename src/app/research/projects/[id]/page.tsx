@@ -2443,7 +2443,6 @@ function ResearchProjectPageInner() {
           project={project}
           email={project.persona?.email || DEFAULT_TEST_EMAIL}
           days={project.emailWatchDays}
-          selectedBrandId={activeBrandId}
           onSelectBrand={setBrandId}
         />
       ) : null}
@@ -2682,22 +2681,16 @@ function EmailWatchPanel({
   project,
   email,
   days,
-  selectedBrandId,
   onSelectBrand,
 }: {
   project: import("@/lib/research/types").ResearchProject;
   email: string;
   days: number;
-  selectedBrandId: string;
   onSelectBrand: (brandId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
-  const [filter, setFilter] = useState<string>(selectedBrandId || "all");
-
-  useEffect(() => {
-    if (selectedBrandId) setFilter(selectedBrandId);
-  }, [selectedBrandId]);
+  const [filter, setFilter] = useState<string>("all");
 
   // Manual sync only — never auto-pull the shared inbox into a fresh project.
   const brandName = (id: string) =>
