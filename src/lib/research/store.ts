@@ -625,7 +625,7 @@ function brandAccountAnchorMs(
   const run = [...project.runs]
     .filter((r) => r.brandId === brand.id && !r.archived)
     .at(-1);
-  consider(run?.startedAt ?? null);
+  consider(run?.dateTested ?? null);
   consider(
     run?.stages.find((s) => s.stageId === "registration")?.startedAt ?? null,
   );
