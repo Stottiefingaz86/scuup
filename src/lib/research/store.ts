@@ -27,9 +27,7 @@ import {
 import {
   dedupeWatchEmails,
   isLoginAlertEmail,
-  isRacesEmail,
   isRetentionCrmEmail,
-  isVipProgramEmail,
 } from "./email-format";
 import { autoMarketForBrands } from "../brand-markets";
 import { isProductionDeployPublic } from "@/lib/prod-locks";
@@ -810,58 +808,7 @@ export function scopeEmailsToProject(
 
 /** Re-attribute stored mail for the timeline — one account per brand. */
 export function emailsForDisplay(project: ResearchProject): EmailWatchItem[] {
-  return capRetentionCrm(
-    project,
-    dedupeWatchEmails(scopeEmailsToProject(project, project.emails)),
-  );
-}
-
-/**
- * Sibling +rs mints get the same VIP / races blast. One VIP Program
- * card (this account, else newest) and one Races — after confirm /
- * welcome / deposit.
- */
-function capRetentionCrm(
-  project: ResearchProject,
-  emails: EmailWatchItem[],
-): EmailWatchItem[] {
-  const out: EmailWatchItem[] = [];
-  const vips = new Map<string, EmailWatchItem[]>();
-  const races = new Map<string, EmailWatchItem[]>();
-  for (const e of emails) {
-    if (isVipProgramEmail(e)) {
-      const list = vips.get(e.brandId) ?? [];
-      list.push(e);
-      vips.set(e.brandId, list);
-      continue;
-    }
-    if (isRacesEmail(e)) {
-      const list = races.get(e.brandId) ?? [];
-      list.push(e);
-      races.set(e.brandId, list);
-      continue;
-    }
-    out.push(e);
-  }
-  for (const brand of project.brands) {
-    const alias = brand.accountEmail?.trim().toLowerCase() ?? "";
-    const brandVips = (vips.get(brand.id) ?? []).sort((a, b) =>
-      a.receivedAt.localeCompare(b.receivedAt),
-    );
-    const vip =
-      brandVips.findLast((e) => (e.to ?? "").toLowerCase().includes(alias)) ??
-      brandVips.at(-1);
-    if (vip) out.push(vip);
-
-    const brandRaces = (races.get(brand.id) ?? []).sort((a, b) =>
-      a.receivedAt.localeCompare(b.receivedAt),
-    );
-    const race =
-      brandRaces.find((e) => (e.to ?? "").toLowerCase().includes(alias)) ??
-      brandRaces[0];
-    if (race) out.push(race);
-  }
-  return out;
+  return dedupeWatchEmails(scopeEmailsToProject(project, project.emails));
 }
 
 function matchEmailToProjectBrand(

@@ -146,7 +146,7 @@ export function categorizeEmail(
   if (DEPOSIT_CONFIRM_RE.test(subject)) {
     return "deposit_nudge";
   }
-  if (/contest|races?|survivor|seasonal/i.test(subject)) {
+  if (/contest|\braces\b|survivor|seasonal/i.test(subject)) {
     return /bonus|free spins?|promo|offer|cashback/i.test(hay)
       ? "bonus"
       : "other";
@@ -162,7 +162,7 @@ export function categorizeEmail(
   }
   if (
     /welcome|thanks for (?:joining|signing)|get started/.test(hay) &&
-    !/contest|races?|survivor|seasonal/i.test(subject)
+    !/\b(contest|races|survivor|seasonal)\b/i.test(subject)
   ) {
     return "welcome";
   }

@@ -33,34 +33,35 @@ function emailRichness(e: EmailWatchItem): number {
 }
 
 function isContestOrCrmSubject(subject: string): boolean {
-  return /contest|races?|survivor|seasonal|nfl spread/i.test(subject);
+  return /contest|\braces\b|survivor|seasonal|nfl spread/i.test(subject);
 }
 
-/** “The Winna VIP Program: Explained” and other VIP CRM. */
+/** “The Winna VIP Program: Explained” — not every promo that mentions VIP. */
 export function isVipProgramEmail(e: {
   category?: string | null;
   subject?: string | null;
 }): boolean {
   const subject = e.subject ?? "";
   if (isRacesEmail(e)) return false;
-  if (/vip/i.test(subject)) return true;
-  return e.category === "vip";
+  return /vip\s*program/i.test(subject);
 }
 
 /** “Win your share of $500,000 in Winna Races” */
 export function isRacesEmail(e: { subject?: string | null }): boolean {
-  return /races?|prize pool|500,?000/i.test(e.subject ?? "");
+  return /\braces\b|prize pool|500,?000/i.test(e.subject ?? "");
 }
 
-/** VIP / races / contests — keep even when To: is a sibling +rs mint. */
+/** VIP / races / contests / later CRM blasts — keep even when To: is a sibling +rs mint. */
 export function isRetentionCrmEmail(e: {
   category?: string | null;
   subject?: string | null;
 }): boolean {
+  const subject = e.subject ?? "";
   return (
     isVipProgramEmail(e) ||
     isRacesEmail(e) ||
-    isContestOrCrmSubject(e.subject ?? "")
+    isContestOrCrmSubject(subject) ||
+    /rakeback|vip bonus|\bsponsor\b/i.test(subject)
   );
 }
 

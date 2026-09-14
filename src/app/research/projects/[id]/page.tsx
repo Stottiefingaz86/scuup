@@ -2691,8 +2691,8 @@ function EmailWatchPanel({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("all");
+  const syncOnce = useRef(false);
 
-  // Manual sync only — never auto-pull the shared inbox into a fresh project.
   const brandName = (id: string) =>
     project.brands.find((b) => b.id === id)?.name ??
     (id === "unassigned" ? "Unassigned" : id);
@@ -2739,6 +2739,21 @@ function EmailWatchPanel({
       setBusy(false);
     }
   }
+
+  // CRM cadence is daily. Pull when this tab opens if the last sweep is
+  // older than 15 minutes — overnight promos should not wait for the
+  // project-wide daily sweep.
+  useEffect(() => {
+    if (syncOnce.current) return;
+    if (project.emails.length === 0) return;
+    const last = project.lastInboxSweepAt
+      ? Date.parse(project.lastInboxSweepAt)
+      : 0;
+    if (last && Date.now() - last < 15 * 60 * 1000) return;
+    syncOnce.current = true;
+    void syncInbox();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.id]);
 
   const unique = emailsForDisplay(project);
   const leftover = unique.filter(
