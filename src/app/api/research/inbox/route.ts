@@ -92,10 +92,22 @@ export async function GET(request: NextRequest) {
   const since = new Date(Date.now() - hours * 3600_000);
 
   if (!peek && !list) {
+    const user = process.env.GMAIL_IMAP_USER ?? null;
+    const defaultTo = DEFAULT_TEST_EMAIL;
+    const mismatch =
+      user &&
+      defaultTo &&
+      user.split("@")[0]?.toLowerCase() !==
+        defaultTo.split("@")[0]?.split("+")[0]?.toLowerCase();
     return NextResponse.json({
       configured: true,
-      user: process.env.GMAIL_IMAP_USER ?? null,
-      defaultTo: DEFAULT_TEST_EMAIL,
+      user,
+      defaultTo,
+      ...(mismatch
+        ? {
+            warning: `IMAP is logged in as ${user} but Research mail goes to ${defaultTo}. Sync will return empty until GMAIL_IMAP_USER matches.`,
+          }
+        : {}),
     });
   }
 
@@ -126,6 +138,14 @@ export async function GET(request: NextRequest) {
         to,
         since: since.toISOString(),
         messages: toWatchItems(raw),
+        ...(process.env.GMAIL_IMAP_USER &&
+        to.split("@")[0]?.split("+")[0]?.toLowerCase() !==
+          process.env.GMAIL_IMAP_USER.split("@")[0]?.toLowerCase() &&
+        raw.length === 0
+          ? {
+              warning: `IMAP is ${process.env.GMAIL_IMAP_USER} but sync asked for ${to}. Fix GMAIL_IMAP_USER on Vercel.`,
+            }
+          : {}),
       });
     } catch (e) {
       return NextResponse.json(

@@ -2717,6 +2717,10 @@ function EmailWatchPanel({
       }
       const items = (data.messages ??
         []) as import("@/lib/research/types").EmailWatchItem[];
+      if (items.length === 0 && typeof data.warning === "string") {
+        setStatus(data.warning);
+        return;
+      }
       mergeResearchEmails(project.id, items);
       syncBrandAccountsFromEmails(project.id);
       markInboxSwept(project.id);

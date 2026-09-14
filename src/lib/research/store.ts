@@ -211,6 +211,10 @@ function runCount(projects: ResearchProject[]): number {
   return projects.reduce((n, p) => n + (p.runs?.length ?? 0), 0);
 }
 
+function emailCount(projects: ResearchProject[]): number {
+  return projects.reduce((n, p) => n + (p.emails?.length ?? 0), 0);
+}
+
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 let readyToPush = false;
 
@@ -235,13 +239,22 @@ function save(projects: ResearchProject[]) {
 
 let hydrated = false;
 
-/** Apply the server workspace. Never let an empty local seed hide real runs. */
+/** Apply the server workspace. Never let an empty local seed hide real runs
+ * or a thinner inbox hide CRM the server already has. */
 export function adoptRemoteProjects(remote: ResearchProject[]): void {
   if (typeof window === "undefined") return;
   const local = getSnapshot();
-  if (runCount(remote) > 0 && runCount(remote) >= runCount(local)) {
+  const remoteRuns = runCount(remote);
+  const localRuns = runCount(local);
+  const takeRemote =
+    remoteRuns > 0 &&
+    (remoteRuns > localRuns ||
+      (remoteRuns === localRuns &&
+        emailCount(remote) >= emailCount(local)));
+  if (takeRemote) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(remote));
+      cache = remote;
     } catch {
       cache = remote;
       emit();

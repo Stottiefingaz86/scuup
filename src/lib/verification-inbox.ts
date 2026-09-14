@@ -27,6 +27,19 @@ export function inboxConfigured(): boolean {
   );
 }
 
+/** True when IMAP login mailbox matches the research persona inbox. */
+export function inboxMatchesResearchDefault(toAddress?: string | null): boolean {
+  const user = (process.env.GMAIL_IMAP_USER ?? "").trim().toLowerCase();
+  const want = (toAddress ?? process.env.DEFAULT_TEST_EMAIL ?? "scuup678@gmail.com")
+    .trim()
+    .toLowerCase()
+    .split("+")[0];
+  if (!user || !want) return true;
+  const userLocal = user.split("@")[0] ?? "";
+  const wantLocal = want.split("@")[0] ?? "";
+  return user === want || userLocal === wantLocal;
+}
+
 const OTP_RE = /\b(\d{6})\b/;
 const OTP_LOOSE_RE = /\b(\d{4,8})\b/;
 const LINK_RE = /https?:\/\/[^\s<>"')\]]+/g;
