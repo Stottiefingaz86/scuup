@@ -32,6 +32,7 @@ import {
   EMPTY_COMMENTARY,
   hasFullCopy,
 } from "@/lib/grace/reports";
+import { titleFilterLabel } from "@/lib/grace/keywords";
 import { monthLabel, type GraceReview, type GraceScrape } from "@/lib/grace/types";
 import {
   BrandIcon,
@@ -50,6 +51,7 @@ import {
 import type { ReportBrand } from "./grace-report";
 import { Highlight, SourceBadge } from "./grace-reviews";
 import { hasStars } from "@/lib/grace/types";
+import { RollingText } from "./rolling-text";
 import { TagCloud } from "./tag-cloud";
 import { ScorePair, TpStars } from "./tp-stars";
 
@@ -512,6 +514,7 @@ export function PresentStage({
   pokerScore,
   pokerCount,
   pokerCaption,
+  productLabel = "Poker",
   layout,
   onLayout,
   onSummary,
@@ -543,6 +546,7 @@ export function PresentStage({
   pokerScore: number | null;
   pokerCount: number;
   pokerCaption?: string;
+  productLabel?: string;
   layout: PresentPage[];
   onLayout: (next: PresentPage[]) => void;
   onSummary: (next: SavedReportSummary) => void;
@@ -556,8 +560,10 @@ export function PresentStage({
   const [drag, setDrag] = useState<{ pageId: string; widgetId: string } | null>(null);
   const brand = scrape.displayName;
   const filterOn = filterLabel !== "All reviews";
+  const titleFilter = titleFilterLabel(filterLabel);
+  const filterPhrase = titleFilter || (filterLabel === "All groups" ? "any selected tag" : filterLabel);
   const matchingLine = filterOn
-    ? `${stats.count} of ${windowTotal} ${windowLabel} reviews match ${filterLabel}.`
+    ? `${stats.count} of ${windowTotal} ${windowLabel} reviews match ${filterPhrase}.`
     : `${windowTotal} ${windowLabel} reviews.`;
   const period = (() => {
     const src = hasFullCopy(summary) ? summary.period : [];
@@ -573,7 +579,7 @@ export function PresentStage({
   const watch = hasFullCopy(summary) ? summary.watch : [];
   const changed = hasFullCopy(summary) ? summary.changed : [];
   const competitor = hasFullCopy(summary) && summary.competitor.length ? summary.competitor : vsCopy;
-  const titleFallback = ["Trustpilot —", shortName, filterLabel === "All reviews" ? "" : filterLabel]
+  const titleFallback = ["Trustpilot —", shortName, titleFilter]
     .filter(Boolean)
     .join(" ");
   const featuredIds = featured.map((r) => r.id);
@@ -612,7 +618,7 @@ export function PresentStage({
     .sort((a, b) => b.negative - a.negative)
     .slice(0, 3);
   const setLabel = filterOn
-    ? `the ${stats.count} ${windowLabel} reviews matching ${filterLabel}`
+    ? `the ${stats.count} ${windowLabel} reviews matching ${filterPhrase}`
     : `the ${stats.count} ${windowLabel} reviews`;
   const live = points.filter((p) => p.count > 0);
   const lastPt = live.at(-1);
@@ -644,7 +650,7 @@ export function PresentStage({
       return (
         commentary.competitors ||
         vsCopy[0] ||
-        `Official TrustScore vs poker score for each pulled brand. Matching is the ${windowLabel} ${filterLabel} slice.`
+        `Official TrustScore vs ${productLabel.toLowerCase()} score for each pulled brand. Matching is the ${windowLabel} ${filterPhrase} slice.`
       );
     }
     if (type === "keywords") {
@@ -771,7 +777,9 @@ export function PresentStage({
           <tr className="border-b border-[#eef0f2] text-[10px] uppercase tracking-wide text-[#8a9198]">
             <th className="px-3 py-2 font-medium">Company</th>
             {wide ? <th className="px-3 py-2 font-medium">TrustScore</th> : null}
-            <th className="px-3 py-2 font-medium">Poker</th>
+            <th className="px-3 py-2 font-medium">
+              <RollingText value={productLabel} />
+            </th>
             {wide ? <th className="px-3 py-2 font-medium">Reviews</th> : null}
             <th className="px-3 py-2 font-medium">Matching</th>
             <th className="px-3 py-2 font-medium">Stars</th>
@@ -843,6 +851,7 @@ export function PresentStage({
               pokerScore={pokerScore}
               pokerCount={pokerCount}
               pokerCaption={pokerCaption}
+              productLabel={productLabel}
               size={14}
               compact
             />
@@ -1132,7 +1141,7 @@ export function PresentStage({
                     !headlineOverclaims(summary.headline, windowLabel)
                       ? summary.headline.trim()
                       : filterOn
-                        ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterLabel}`
+                        ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterPhrase}`
                         : `${windowLabel} summary`
                   }
                   period={period}

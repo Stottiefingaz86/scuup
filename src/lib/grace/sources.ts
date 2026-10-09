@@ -14,10 +14,10 @@ import type { GraceReview, GraceSource } from "./types";
 
 function twoPlusTwoUrls(tokens: string[]): string[] {
   const brand = brandPlain(tokens);
-  const q = encodeURIComponent(`${brand} poker`);
+  const q = encodeURIComponent(brand);
   return [
     `https://forumserver.twoplustwo.com/search.php?do=process&query=${q}&showposts=1`,
-    `https://forumserver.twoplustwo.com/search.php?do=process&query=${encodeURIComponent(brand)}&showposts=0`,
+    `https://forumserver.twoplustwo.com/search.php?do=process&query=${q}&showposts=0`,
     `https://forumserver.twoplustwo.com/28/discussion-poker-sites/`,
   ];
 }

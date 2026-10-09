@@ -546,6 +546,22 @@ export function presentationForNewReport(opts?: {
   return defaultPresentation(opts);
 }
 
+const GENERATED_TITLE =
+  /How .+ is doing|What they talk about|What customers said|vs competitors|What to do next|How the month moved/i;
+
+/** Refresh auto-generated slide titles when the brand, filter, or window changes. */
+export function retitlePresentation(
+  pages: PresentPage[],
+  opts?: { brand?: string; filter?: string; window?: string },
+): PresentPage[] {
+  if (!pages.length) return defaultPresentation(opts);
+  const fresh = defaultPresentation(opts);
+  return pages.map((p, i) => {
+    if (p.title.trim() && !GENERATED_TITLE.test(p.title)) return p;
+    return { ...p, title: fresh[i]?.title ?? p.title };
+  });
+}
+
 export function briefingFromDraft(opts: {
   period: string[];
   mix: string;

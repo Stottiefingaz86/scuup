@@ -1,5 +1,7 @@
 "use client";
 
+import { RollingText } from "./rolling-text";
+
 /** Official Trustpilot star-box colours. */
 export const TP_STAR: Record<0 | 1 | 2 | 3 | 4 | 5, string> = {
   0: "#dcdce6",
@@ -74,13 +76,14 @@ export function TpScore({
   );
 }
 
-/** Official Trustpilot score vs poker in the selected month. */
+/** Official Trustpilot score vs the active product slice. */
 export function ScorePair({
   officialScore,
   officialCount,
   pokerScore,
   pokerCount,
   pokerCaption,
+  productLabel = "Poker",
   size = 18,
   compact = false,
   onOfficial,
@@ -91,6 +94,7 @@ export function ScorePair({
   pokerScore: number | null;
   pokerCount: number;
   pokerCaption?: string;
+  productLabel?: string;
   size?: number;
   compact?: boolean;
   onOfficial?: () => void;
@@ -100,7 +104,7 @@ export function ScorePair({
     officialCount != null
       ? `Trustpilot · all time · ${officialCount.toLocaleString()} reviews`
       : "Trustpilot · all time";
-  const pokerSub = pokerCaption ?? `${pokerCount.toLocaleString()} poker reviews this month`;
+  const pokerSub = pokerCaption ?? `${pokerCount.toLocaleString()} ${productLabel.toLowerCase()} reviews this month`;
   return (
     <div className={`gr-scoreboard${compact ? " gr-scoreboard-compact" : ""}`}>
       <div className="gr-score-card">
@@ -118,7 +122,9 @@ export function ScorePair({
         )}
       </div>
       <div className="gr-score-card">
-        <div className="gr-score-kicker">Poker</div>
+        <div className="gr-score-kicker">
+          <RollingText value={productLabel} />
+        </div>
         <div className="gr-score-row">
           <span className="gr-score-num">{pokerScore != null ? pokerScore.toFixed(1) : "—"}</span>
           {pokerScore != null ? <TpStars rating={pokerScore} size={size} /> : null}

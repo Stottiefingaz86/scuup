@@ -117,11 +117,14 @@
   background: #fff;
   color: #3d4349;
   cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
 .grace-root .gr-icon-btn:hover {
   border-color: #c9ced4;
   color: #191919;
+  background: #f7f8fa;
+  transform: translateY(-1px);
 }
 
 @media (max-width: 900px) {
@@ -172,6 +175,74 @@
   height: 2px;
   margin-top: 14px;
   background: #ff3722;
+}
+
+.grace-root .gr-roll {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  height: 1.2em;
+  vertical-align: -0.08em;
+  max-width: 100%;
+  transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.grace-root .gr-roll[data-roll="off"] {
+  overflow: visible;
+}
+
+.grace-root .gr-roll-sizer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.grace-root .gr-roll[data-empty="true"] {
+  width: 0 !important;
+}
+
+.grace-root .gr-roll-track {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(0);
+}
+
+.grace-root .gr-roll[data-roll="on"] .gr-roll-track {
+  transform: translateY(-50%);
+  transition: transform 560ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.grace-root .gr-roll-word {
+  display: block;
+  height: 1.2em;
+  line-height: 1.2;
+  padding-right: 0.18em;
+  white-space: nowrap;
+}
+
+.grace-root .gr-score-kicker .gr-roll {
+  height: 1.35em;
+  vertical-align: -0.15em;
+}
+
+.grace-root .gr-score-kicker .gr-roll-word,
+.grace-root .gr-score-kicker .gr-roll-sizer {
+  height: 1.35em;
+  line-height: 1.35;
+  padding-right: 0.28em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grace-root .gr-roll,
+  .grace-root .gr-roll-track {
+    transition: none;
+  }
+  .grace-root .gr-roll[data-roll="on"] .gr-roll-track {
+    transform: none;
+  }
 }
 
 .grace-root .gr-copy {
@@ -235,17 +306,29 @@
   line-height: 1;
   color: #4b5560;
   cursor: pointer;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
 }
 
 .grace-root .gr-chip:hover {
   border-color: #c9ced4;
   color: #191919;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(25, 25, 25, 0.06);
 }
 
 .grace-root .gr-chip[data-on="true"] {
   background: #00b67a;
   border-color: #00b67a;
   color: #fff;
+}
+
+.grace-root .gr-chip[data-on="true"]:hover {
+  box-shadow: 0 4px 12px rgba(0, 182, 122, 0.28);
 }
 
 .grace-root .gr-chip[data-count]::after {
@@ -266,6 +349,19 @@
   color: #4b5560;
   font-size: 11px;
   line-height: 1;
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.grace-root .gr-tag:hover {
+  border-color: #c9ced4;
+  color: #191919;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(25, 25, 25, 0.06);
 }
 
 .grace-root button.gr-tag,
@@ -278,6 +374,10 @@
   background: #00b67a;
   border-color: #00b67a;
   color: #fff;
+}
+
+.grace-root .gr-tag[data-on="true"]:hover {
+  box-shadow: 0 4px 12px rgba(0, 182, 122, 0.28);
 }
 
 .grace-root .gr-tag-hit {
@@ -311,6 +411,7 @@
   background: transparent;
   color: #8a9198;
   cursor: pointer;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms ease;
 }
 
 .grace-root .gr-tag-x:hover {
@@ -341,6 +442,13 @@
   font-weight: 600;
   cursor: pointer;
   border: 0;
+  transition: background-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, opacity 180ms ease;
+}
+
+.grace-root .gr-btn:hover:not(:disabled) {
+  background: #00a46e;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 182, 122, 0.28);
 }
 
 .grace-root .gr-btn:disabled {
@@ -661,6 +769,13 @@
   background: #f7f8fa;
   border: 1px solid #eef0f2;
   border-radius: 14px;
+  transition: transform 220ms ease, box-shadow 220ms ease, border-color 220ms ease;
+}
+
+.grace-root .gr-score-card:hover {
+  transform: translateY(-2px);
+  border-color: #e3e6ea;
+  box-shadow: 0 10px 28px rgba(25, 25, 25, 0.06);
 }
 
 .grace-root .gr-score-kicker {
@@ -861,11 +976,14 @@
   color: #6c737a;
   font-size: 12px;
   cursor: pointer;
+  transition: border-color 180ms ease, color 180ms ease, background-color 180ms ease, transform 180ms ease;
 }
 
 .grace-root .gr-source-add:hover {
   border-color: #b8bec6;
   color: #191919;
+  background: #fff;
+  transform: translateY(-1px);
 }
 
 .grace-root .gr-source-form {
@@ -1522,6 +1640,12 @@ html.grace-exporting .grace-root {
 }
 
 @media print {
+  .grace-root .gr-roll-track {
+    transform: none !important;
+  }
+  .grace-root .gr-roll-word + .gr-roll-word {
+    display: none;
+  }
   .grace-root,
   .grace-root .gr-shell[data-mode="report"] .gr-main {
     background: #fff !important;

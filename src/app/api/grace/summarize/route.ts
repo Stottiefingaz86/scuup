@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     const rivalBlock = (body.competitors ?? [])
       .map(
         (c) =>
-          `${c.name}: TrustScore ${c.trust ?? "n/a"}, poker score ${c.pokerScore ?? "n/a"} (${c.pokerCount ?? 0} poker reviews), ${c.count} matching this month, sentiment ${c.sentiment}`,
+          `${c.name}: TrustScore ${c.trust ?? "n/a"}, ${body.filterLabel && body.filterLabel !== "All reviews" ? body.filterLabel : "product"} score ${c.pokerScore ?? "n/a"} (${c.pokerCount ?? 0} matching reviews), ${c.count} matching this period, sentiment ${c.sentiment}`,
       )
       .join("\n");
 
@@ -144,8 +144,8 @@ HARD FACTS — do not contradict these:
 - ${body.window} has ${monthTotal} review${monthTotal === 1 ? "" : "s"} in the pull${filtered ? `, and exactly ${monthCount} match the "${body.filterLabel}" filter` : ""}.
 - The briefing is about the ${filtered ? `${monthCount} matching` : monthTotal} review${(filtered ? monthCount : monthTotal) === 1 ? "" : "s"}. Do not write as if all ${monthTotal} month reviews are ${body.filterLabel}.
 - If a number is not 1, never write "one review", "a single review", or "only 1 review".
-- Official Trustpilot TrustScore for the whole brand: ${body.trustScore ?? "n/a"}. That mixes poker and every other product.
-- Standalone poker score (mean of starred poker reviews in ${body.window}): ${body.pokerScore ?? "n/a"} from ${body.pokerCount ?? 0} poker reviews. Do not treat the TrustScore as the poker score.
+- Official Trustpilot TrustScore for the whole brand: ${body.trustScore ?? "n/a"}. That mixes every product.
+- Standalone ${body.filterLabel && body.filterLabel !== "All reviews" ? body.filterLabel : "product"} score (mean of starred matching reviews in ${body.window}): ${body.pokerScore ?? "n/a"} from ${body.pokerCount ?? 0} reviews. Do not treat the TrustScore as this product score. Do not call it a poker score unless the filter is Poker.
 - Average rating of the matching set: ${body.stats.avgRating}/5.
 - Star mix of the matching set: ${body.stats.positivePct}% positive (4-5 stars), ${body.stats.neutralPct}% neutral (3 stars), ${body.stats.negativePct}% negative (1-2 stars).
 - Do not cite the sentiment score (${body.stats.sentiment}). Say how many reviews are 1-2 star, 3 star, or 4-5 star instead.

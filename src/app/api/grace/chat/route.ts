@@ -71,7 +71,7 @@ HARD FACTS — never contradict:
 - Filter: ${facts.filter ?? "All reviews"}
 - ${filtered ? `Exactly ${matching} of ${monthTotal} ${facts.month ?? "this month"} reviews match "${facts.filter}". The briefing is about those ${matching}, not all ${monthTotal}.` : `${matching} reviews in ${facts.month ?? "this month"}.`}
 - Official TrustScore (whole brand, all products): ${facts.officialScore ?? "n/a"}
-- Poker score (poker reviews in ${facts.month}): ${facts.pokerScore ?? "n/a"} from ${facts.pokerCount ?? 0} poker reviews
+- ${facts.filter && facts.filter !== "All reviews" ? facts.filter : "Product"} score (matching reviews in ${facts.month}): ${facts.pokerScore ?? "n/a"} from ${facts.pokerCount ?? 0} reviews. Do not call it a poker score unless the filter is Poker.
 - Matching-set average: ${facts.avgRating ?? "n/a"}/5
 - Do not cite the sentiment score (${facts.sentiment ?? "n/a"}). Say how many reviews are 1-2 star or 4-5 star.
 - Topics: ${(facts.topics ?? []).join("; ") || "none"}

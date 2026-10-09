@@ -9,13 +9,16 @@ import { redditSubreddit } from "./types";
 
 const TOKEN_URL = "https://www.reddit.com/api/v1/access_token";
 const API = "https://oauth.reddit.com";
-const POKER_SUBS = [
+const BRAND_SUBS = [
+  "gambling",
+  "onlinegambling",
+  "sportsbook",
+  "sportsbetting",
   "poker",
   "onlinepoker",
   "Poker_Sportsbooks",
-  "sportsbook",
-  "gambling",
-  "onlinegambling",
+  "slots",
+  "casino",
 ];
 
 interface TokenCache {
@@ -44,11 +47,11 @@ function brandQuery(tokens: string[]): string {
   const quoted = [...new Set(tokens.map((t) => t.trim()).filter((t) => t.length >= 3))]
     .slice(0, 5)
     .map((t) => `"${t.replace(/"/g, "")}"`);
-  return quoted.join(" OR ") || "poker";
+  return quoted.join(" OR ") || tokens[0] || "brand";
 }
 
 export function brandPlain(tokens: string[]): string {
-  return tokens.find((t) => t.length >= 3)?.replace(/"/g, "") || "poker";
+  return tokens.find((t) => t.length >= 3)?.replace(/"/g, "") || tokens[0] || "brand";
 }
 
 export function asReview(row: {
@@ -86,11 +89,11 @@ export function asReview(row: {
 
 export function redditSearchUrls(tokens: string[]): string[] {
   const brand = brandPlain(tokens);
-  const q = `${brand} poker`;
+  const quoted = `"${brand}"`;
   return [
-    `https://www.reddit.com/search/?q=${encodeURIComponent(q)}&type=link&sort=new&t=year`,
-    `https://www.reddit.com/search/?q=${encodeURIComponent(q)}&type=comment&sort=new&t=year`,
-    ...POKER_SUBS.map(
+    `https://www.reddit.com/search/?q=${encodeURIComponent(quoted)}&type=link&sort=new&t=year`,
+    `https://www.reddit.com/search/?q=${encodeURIComponent(quoted)}&type=comment&sort=new&t=year`,
+    ...BRAND_SUBS.map(
       (sub) =>
         `https://www.reddit.com/r/${sub}/search/?q=${encodeURIComponent(brand)}&restrict_sr=1&sort=new&t=year`,
     ),
@@ -210,11 +213,9 @@ async function pullViaApi(opts: {
   cutoff: number;
 }): Promise<{ reviews: GraceReview[]; searched: string[]; pagesRead: number }> {
   const brand = brandQuery(opts.tokens);
-  const poker = "poker OR holdem OR omaha OR rakeback OR \"cash game\"";
-  const wide = `(${brand}) (${poker})`;
   const reviews: GraceReview[] = [];
   const seen = new Set<string>();
-  const searched = [wide];
+  const searched = [brand];
   let pagesRead = 0;
 
   const absorb = (children: RedditChild[]) => {
@@ -226,13 +227,13 @@ async function pullViaApi(opts: {
     }
   };
 
-  const posts = await listing("/search", { q: wide, sort: "new", t: "year", type: "link" });
+  const posts = await listing("/search", { q: brand, sort: "new", t: "year", type: "link" });
   pagesRead += posts.pagesRead;
   absorb(posts.children);
-  const comments = await listing("/search", { q: wide, sort: "new", t: "year", type: "comment" });
+  const comments = await listing("/search", { q: brand, sort: "new", t: "year", type: "comment" });
   pagesRead += comments.pagesRead;
   absorb(comments.children);
-  for (const sub of POKER_SUBS) {
+  for (const sub of BRAND_SUBS) {
     const local = await listing(`/r/${sub}/search`, {
       q: brand,
       sort: "new",
@@ -264,13 +265,11 @@ interface HtmlHit {
 
 function redditJsonSearchUrls(tokens: string[]): string[] {
   const brand = brandPlain(tokens);
-  const poker = `${brand} poker`;
   const q = (value: string) => encodeURIComponent(value);
   return [
-    `https://www.reddit.com/search.json?q=${q(poker)}&sort=new&t=year&type=link&limit=100&raw_json=1`,
-    `https://www.reddit.com/search.json?q=${q(poker)}&sort=new&t=year&type=comment&limit=100&raw_json=1`,
+    `https://www.reddit.com/search.json?q=${q(brand)}&sort=new&t=year&type=link&limit=100&raw_json=1`,
     `https://www.reddit.com/search.json?q=${q(brand)}&sort=new&t=year&type=comment&limit=100&raw_json=1`,
-    ...POKER_SUBS.map(
+    ...BRAND_SUBS.map(
       (sub) =>
         `https://www.reddit.com/r/${sub}/search.json?q=${q(brand)}&restrict_sr=1&sort=new&t=year&limit=100&raw_json=1`,
     ),
@@ -335,7 +334,7 @@ async function scrapeRedditSearch(opts: {
   cutoff: number;
 }): Promise<{ reviews: GraceReview[]; searched: string[]; pagesRead: number }> {
   const brand = brandPlain(opts.tokens);
-  const searched = [`${brand} poker`, ...POKER_SUBS.map((s) => `r/${s}`)];
+  const searched = [brand, ...BRAND_SUBS.map((s) => `r/${s}`)];
   const session = await createSession(undefined, undefined, "US");
   const browser = await chromium.connectOverCDP(session.connectUrl);
   try {

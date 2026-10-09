@@ -111,6 +111,12 @@ export function isAllGroupsFilter(keywords: string[], groups: KeywordGroup[]): b
   return all.length > 0 && isAllInGroup(keywords, { id: ALL_GROUPS_ID, name: "All groups", keywords: all });
 }
 
+/** Empty when the filter is every tag or no tags — titles should not name a group. */
+export function titleFilterLabel(label: string): string {
+  if (!label || label === "All reviews" || label === "All groups") return "";
+  return label;
+}
+
 export function groupFilterLabel(keywords: string[], groups: KeywordGroup[]): string {
   if (!keywords.length) return "All reviews";
   if (isAllGroupsFilter(keywords, groups)) return "All groups";

@@ -60,6 +60,7 @@ import {
   defaultPresentation,
   persistPresentationTemplate,
   presentationForNewReport,
+  retitlePresentation,
   newPage,
   defaultReportName,
   hasFullCopy,
@@ -79,6 +80,7 @@ import {
   allGroupKeywords,
   defaultKeywordGroups,
   groupFilterLabel,
+  titleFilterLabel,
   isAllGroupsFilter,
   isAllInGroup,
   normalizeKeywordGroups,
@@ -119,6 +121,7 @@ import { GraceChat } from "./grace-chat";
 import { Toaster } from "sonner";
 import { GRACE_TOASTER_ID, graceToast, playPullDoneChime, unlockPullChime } from "@/lib/grace/notify";
 import { ReviewModal } from "./review-modal";
+import { RollingText } from "./rolling-text";
 import { TagCloud } from "./tag-cloud";
 import { ScorePair, TpStars } from "./tp-stars";
 import type { GraceReview } from "@/lib/grace/types";
@@ -841,6 +844,19 @@ export function GraceApp() {
     () => groupFilterLabel(activeKeywords, keywordGroups),
     [activeKeywords, keywordGroups],
   );
+  const titleFilter = titleFilterLabel(filterLabel);
+  const productLabel = pokerLens
+    ? "Poker"
+    : titleFilter
+      ? titleFilter.includes(" +")
+        ? (keywordGroups.find((g) => g.id === activeGroupId)?.name ?? titleFilter)
+        : titleFilter
+      : filterLabel === "All groups"
+        ? "Matching"
+        : "Poker";
+  const productMonth = pokerLens ? pokerMonth : filtered;
+  const productScore = pokerLens ? pokerScore : standaloneScore(productMonth);
+  const productCount = productMonth.filter(hasStars).length;
 
   const narrative = useMemo(() => {
     if (!scrape) return null;
@@ -894,6 +910,7 @@ export function GraceApp() {
       });
       const f = b.self ? raw.filter((r) => !excluded.has(r.id)) : raw;
       const poker = reviewsInMonth(b.self ? cohort.filter((r) => !excluded.has(r.id)) : cohort, window_);
+      const product = pokerLens ? poker : f;
       const brandAll = b.self ? b.scrape.reviews.filter((r) => !excluded.has(r.id)) : b.scrape.reviews;
       return {
         ...b,
@@ -902,9 +919,9 @@ export function GraceApp() {
         all: reviewStats(reviewsInMonth(b.scrape.reviews, window_)),
         brandScore: b.scrape.trustScore,
         brandCount: brandAll.length,
-        pokerScore: standaloneScore(poker),
-        pokerCount: poker.filter(hasStars).length,
-        pokerReviews: poker,
+        pokerScore: standaloneScore(product),
+        pokerCount: product.filter(hasStars).length,
+        pokerReviews: product,
         groups: topicGroupScores(f),
         points: timeline(f, granularity, range.start, range.end),
       };
@@ -929,11 +946,26 @@ export function GraceApp() {
   /* ---- actions ---- */
   const toggleKeyword = (k: string) =>
     setKeywords((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
-  const selectGroupKeywords = (group: KeywordGroup) => setKeywords([...group.keywords]);
-  const selectAllGroups = () => setKeywords(allGroupKeywords(keywordGroups));
+  const staleBriefing = () => {
+    setSummary(null);
+    setBriefingStale(true);
+  };
+  const selectGroupKeywords = (group: KeywordGroup) => {
+    setKeywords([...group.keywords]);
+    staleBriefing();
+  };
+  const activateGroup = (group: KeywordGroup) => {
+    setActiveGroupId(group.id);
+    selectGroupKeywords(group);
+  };
+  const selectAllGroups = () => {
+    setKeywords(allGroupKeywords(keywordGroups));
+    staleBriefing();
+  };
   const clearKeywords = () => {
     setKeywords([]);
     setQuery("");
+    staleBriefing();
   };
   const addCustomKeyword = () => {
     const k = newKeyword.trim();
@@ -1056,8 +1088,8 @@ export function GraceApp() {
           filterLabel,
           keywords: activeKeywords,
           trustScore: scrape.trustScore,
-          pokerScore,
-          pokerCount: pokerMonth.filter(hasStars).length,
+          pokerScore: productScore,
+          pokerCount: productCount,
           monthTotal: windowTotal,
           stats: {
             count: stats.count,
@@ -1127,7 +1159,7 @@ export function GraceApp() {
         ? layout
         : presentationForNewReport({
             brand: shortName,
-            filter: filterLabel,
+            filter: titleFilter || "All reviews",
             window: windowLabel,
           });
     setLayout(nextLayout);
@@ -1141,7 +1173,7 @@ export function GraceApp() {
       reportName.trim() ||
       defaultReportName({
         brand: scrape.displayName,
-        filter: filterLabel,
+        filter: titleFilter || "All reviews",
         window: monthLabel(window_),
       });
     const nextReport: SavedReport = {
@@ -1373,9 +1405,9 @@ export function GraceApp() {
   };
 
   const windowLabel = monthLabel(window_);
-  const redditPokerMonth = pokerMonth.filter((r) => reviewSource(r) === "reddit").length;
-  const pokerCaption = `${pokerMonth.filter(hasStars).length.toLocaleString()} poker reviews · ${windowLabel}${
-    redditPokerMonth ? ` · ${redditPokerMonth.toLocaleString()} Reddit` : ""
+  const redditProductMonth = productMonth.filter((r) => reviewSource(r) === "reddit").length;
+  const productCaption = `${productCount.toLocaleString()} ${productLabel.toLowerCase()} reviews · ${windowLabel}${
+    redditProductMonth ? ` · ${redditProductMonth.toLocaleString()} Reddit` : ""
   }`;
   const filterOn = filterLabel !== "All reviews";
   const briefHead = filterOn
@@ -1434,10 +1466,49 @@ export function GraceApp() {
     [compareBrands],
   );
   const shortName = scrape?.displayName.replace(/\.ag$/i, "").replace(/\s+/g, " ") ?? "";
+  const lastFilterLabel = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrated) return;
+    setLayout((prev) => {
+      if (!prev.length) return prev;
+      const next = retitlePresentation(prev, {
+        brand: shortName,
+        filter: titleFilter || "All reviews",
+        window: windowLabel,
+      });
+      return next.some((p, i) => p.title !== prev[i]?.title) ? next : prev;
+    });
+  }, [hydrated, shortName, filterLabel, windowLabel]);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (lastFilterLabel.current == null) {
+      lastFilterLabel.current = filterLabel;
+      return;
+    }
+    if (lastFilterLabel.current === filterLabel) return;
+    const from = lastFilterLabel.current;
+    lastFilterLabel.current = filterLabel;
+    if (!from || from === "All reviews") return;
+    const into = titleFilterLabel(filterLabel);
+    setReportName((name) => {
+      if (!name.includes(from)) return name;
+      return name
+        .split(from)
+        .join(into)
+        .replace(/\s{2,}/g, " ")
+        .replace(/·\s*·/g, "·")
+        .replace(/^\s*·\s*|\s*·\s*$/g, "")
+        .trim() || name;
+    });
+  }, [hydrated, filterLabel]);
   const extraPool = useMemo(
     () =>
       liveReviews.filter((r) => reviewSource(r) !== "trustpilot" && !excluded.has(r.id)),
     [liveReviews, excluded],
+  );
+  const extraInWindow = useMemo(
+    () => reviewsInMonth(extraPool, window_),
+    [extraPool, window_],
   );
   const extraReviews = useMemo(
     () =>
@@ -1445,10 +1516,8 @@ export function GraceApp() {
         keywords: activeKeywords,
         query,
         month: window_,
-        pokerIds: pokerLens ? pokerIds : undefined,
-        allPoker: pokerLens && allPoker,
       }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
-    [extraPool, activeKeywords, query, window_, pokerLens, pokerIds, allPoker],
+    [extraPool, activeKeywords, query, window_],
   );
   const extraBySource = useMemo(() => {
     const reddit = extraReviews.filter((r) => reviewSource(r) === "reddit");
@@ -1780,7 +1849,9 @@ export function GraceApp() {
                     <p className="gr-kw-title">Keywords</p>
                     {!filtersOpen ? (
                       <p className="truncate text-[12px] text-[#8a9198]">
-                        {activeKeywords.length ? filterLabel : "No filter — all reviews"}
+                        {activeKeywords.length
+                          ? titleFilter || "All tags"
+                          : "No filter — all reviews"}
                       </p>
                     ) : null}
                   </div>
@@ -1814,13 +1885,16 @@ export function GraceApp() {
                         className="gr-tag"
                         data-plain=""
                         data-on={String(activeGroupId === ALL_GROUPS_ID)}
-                        onClick={() => setActiveGroupId(ALL_GROUPS_ID)}
+                        onClick={() => {
+                          setActiveGroupId(ALL_GROUPS_ID);
+                          selectAllGroups();
+                        }}
                       >
                         All groups
                       </button>
                       {keywordGroups.map((g) => (
                         <span key={g.id} className="gr-tag" data-on={String(activeGroupId === g.id)}>
-                          <button type="button" className="gr-tag-hit" onClick={() => setActiveGroupId(g.id)}>
+                          <button type="button" className="gr-tag-hit" onClick={() => activateGroup(g)}>
                             {g.name}
                           </button>
                           <button
@@ -2022,9 +2096,10 @@ export function GraceApp() {
             compareBrands={compareBrands}
             sliderBrands={sliderBrands}
             seriesBrands={seriesBrands}
-            pokerScore={pokerScore}
-            pokerCount={pokerMonth.filter(hasStars).length}
-            pokerCaption={pokerCaption}
+            pokerScore={productScore}
+            pokerCount={productCount}
+            pokerCaption={productCaption}
+            productLabel={productLabel}
             layout={layout}
             onLayout={persistLayout}
             onSummary={persistSummary}
@@ -2046,7 +2121,8 @@ export function GraceApp() {
           ) : null}
           <section className="gr-slide">
             <h1 className="gr-title">
-              Trustpilot — {shortName} {filterLabel === "All reviews" ? "" : filterLabel}
+              Trustpilot — {shortName}{" "}
+              <RollingText value={titleFilter} />
             </h1>
             <div className="gr-title-rule" />
 
@@ -2054,12 +2130,13 @@ export function GraceApp() {
               <ScorePair
                 officialScore={scrape.trustScore}
                 officialCount={scrape.totalReviews}
-                pokerScore={pokerScore}
-                pokerCount={pokerMonth.filter(hasStars).length}
-                pokerCaption={pokerCaption}
+                pokerScore={productScore}
+                pokerCount={productCount}
+                pokerCaption={productCaption}
+                productLabel={productLabel}
                 size={20}
                 onOfficial={() => showReviews(`${shortName} · all captured`, brandReviews)}
-                onPoker={() => showReviews(`${shortName} · poker · ${windowLabel}`, pokerMonth)}
+                onPoker={() => showReviews(`${shortName} · ${productLabel.toLowerCase()} · ${windowLabel}`, productMonth)}
               />
             </div>
             <p className="mt-3 text-[13px] text-[#6c737a]">
@@ -2318,12 +2395,16 @@ export function GraceApp() {
               {busy && extraPool.length === 0
                 ? "Collecting Reddit and Two Plus Two mentions…"
                 : extraReviews.length
-                  ? `${extraReviews.length.toLocaleString()} ${windowLabel} mentions${
-                      filterOn ? ` match ${filterLabel}` : ""
-                    }.`
-                  : extraPool.length
-                    ? `No ${windowLabel} mentions${filterOn ? ` match ${filterLabel}` : ""}. ${extraPool.length.toLocaleString()} in this pull from other months.`
-                    : "Pull reviews to collect Reddit and Two Plus Two. Added URLs land here too."}
+                  ? filterOn && extraInWindow.length > extraReviews.length
+                    ? `${extraReviews.length.toLocaleString()} match ${filterLabel} · ${extraInWindow.length.toLocaleString()} ${shortName} mentions this window.`
+                    : `${extraReviews.length.toLocaleString()} ${windowLabel} mentions${
+                        filterOn ? ` match ${filterLabel}` : ""
+                      }.`
+                  : extraInWindow.length
+                    ? `No ${windowLabel} mentions${filterOn ? ` match ${filterLabel}` : ""}. ${extraInWindow.length.toLocaleString()} ${shortName} mentions this window.`
+                    : extraPool.length
+                      ? `No ${windowLabel} mentions${filterOn ? ` match ${filterLabel}` : ""}. ${extraPool.length.toLocaleString()} in this pull from other months.`
+                      : "Pull reviews to collect Reddit and Two Plus Two. Added URLs land here too."}
             </p>
             {extraReviews.length ? (
               <div className="mt-5 flex flex-wrap gap-2 text-[12px] text-[#6c737a]">
@@ -2374,9 +2455,11 @@ export function GraceApp() {
           <section className="gr-slide">
             {filterOn ? (
               <>
-                <h1 className="gr-title">Matching {filterLabel}</h1>
+                <h1 className="gr-title">
+                  Matching <RollingText value={titleFilter || "reviews"} />
+                </h1>
                 <p className="mt-3 text-[13px] text-[#6c737a]">
-                  {stats.count} of {windowTotal} {windowLabel} reviews match {filterLabel}.
+                  {stats.count} of {windowTotal} {windowLabel} reviews match {titleFilter || "any selected tag"}.
                   This list is only those {stats.count} — not every {shortName} review.
                 </p>
                 <div className="gr-title-rule" />
@@ -2611,7 +2694,9 @@ export function GraceApp() {
                         <tr className="border-b border-[#eef0f2] text-[11px] uppercase tracking-wide text-[#8a9198]">
                           <th className="px-4 py-3 font-medium">Company</th>
                           <th className="px-4 py-3 font-medium">TrustScore</th>
-                          <th className="px-4 py-3 font-medium">Poker</th>
+                          <th className="px-4 py-3 font-medium">
+                            <RollingText value={productLabel} />
+                          </th>
                           <th className="px-4 py-3 font-medium">Reviews</th>
                           <th className="px-4 py-3 font-medium">Matching</th>
                           <th className="px-4 py-3 font-medium">Star mix</th>
@@ -2639,7 +2724,7 @@ export function GraceApp() {
                               <button
                                 type="button"
                                 className="inline-flex items-center gap-2"
-                                onClick={() => showReviews(`${b.scrape.displayName} · poker · ${windowLabel}`, b.pokerReviews)}
+                                onClick={() => showReviews(`${b.scrape.displayName} · ${productLabel.toLowerCase()} · ${windowLabel}`, b.pokerReviews)}
                               >
                                 <span className="tabular-nums font-semibold">
                                   {b.pokerScore != null ? b.pokerScore.toFixed(1) : "—"}
@@ -2738,8 +2823,8 @@ export function GraceApp() {
             avgRating: stats.avgRating,
             sentiment: stats.sentiment,
             officialScore: scrape.trustScore,
-            pokerScore,
-            pokerCount: pokerMonth.filter(hasStars).length,
+            pokerScore: productScore,
+            pokerCount: productCount,
             topics: topicRows.slice(0, 8).map(
               (t) => `${t.topic}: ${t.total} (${t.positive}+ / ${t.negative}-)`,
             ),
