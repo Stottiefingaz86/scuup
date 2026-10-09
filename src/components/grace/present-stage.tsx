@@ -7,6 +7,7 @@ import {
   isCountRestatement,
   isHollowPraise,
   isJargonLine,
+  reviewMatches,
   type CloudWord,
   type ReviewStats,
   type TimelinePoint,
@@ -516,6 +517,7 @@ export function PresentStage({
   onSummary,
   onFeatured,
   onExclude,
+  onReviews,
   priors,
   compareWithId,
   onCompare,
@@ -546,6 +548,7 @@ export function PresentStage({
   onSummary: (next: SavedReportSummary) => void;
   onFeatured: (ids: string[]) => void;
   onExclude?: (review: GraceReview) => void;
+  onReviews?: (title: string, reviews: GraceReview[], highlight?: string[]) => void;
   priors: SavedReport[];
   compareWithId: string | null;
   onCompare: (id: string | null) => void;
@@ -1067,7 +1070,16 @@ export function PresentStage({
       <div className="gr-stage-col">
         <h3 className="mb-1 text-[12px] font-semibold">Tag cloud</h3>
         <div className="min-h-0 flex-1 overflow-hidden">
-          <TagCloud words={cloud} />
+          <TagCloud
+            words={cloud}
+            onPick={(w) =>
+              onReviews?.(
+                `${w} · ${windowLabel}`,
+                filtered.filter((r) => reviewMatches(r, [w])),
+                [w],
+              )
+            }
+          />
         </div>
       </div>
     );

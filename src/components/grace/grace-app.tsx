@@ -301,7 +301,7 @@ export function GraceApp() {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [activeReportId, setActiveReportId] = useState<string | null>(null);
   const [reportName, setReportName] = useState("");
-  const [modal, setModal] = useState<{ title: string; reviews: GraceReview[] } | null>(null);
+  const [modal, setModal] = useState<{ title: string; reviews: GraceReview[]; highlight?: string[] } | null>(null);
   const [compareWithId, setCompareWithId] = useState<string | null>(null);
   const [mode, setMode] = useState<"bench" | "report">("bench");
   const [sideOpen, setSideOpen] = useState(true);
@@ -1464,10 +1464,11 @@ export function GraceApp() {
     }
   };
 
-  const showReviews = (title: string, list: GraceReview[]) => {
+  const showReviews = (title: string, list: GraceReview[], highlight?: string[]) => {
     setModal({
       title,
       reviews: [...list].sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+      highlight,
     });
   };
 
@@ -2029,6 +2030,7 @@ export function GraceApp() {
             onSummary={persistSummary}
             onFeatured={persistFeatured}
             onExclude={excludeReview}
+            onReviews={showReviews}
             priors={priors}
             compareWithId={compareWithId}
             onCompare={(id) => {
@@ -2297,8 +2299,13 @@ export function GraceApp() {
               <h3>Tag cloud</h3>
               <TagCloud
                 words={cloud}
-                active={query.trim().toLowerCase() || undefined}
-                onPick={(w) => setQuery((q) => (q.trim().toLowerCase() === w ? "" : w))}
+                onPick={(w) =>
+                  showReviews(
+                    `${w} · ${windowLabel}`,
+                    filtered.filter((r) => reviewMatches(r, [w])),
+                    [w],
+                  )
+                }
               />
             </div>
           </section>
@@ -2713,7 +2720,7 @@ export function GraceApp() {
         <ReviewModal
           title={modal.title}
           reviews={modal.reviews.filter((r) => !excluded.has(r.id))}
-          keywords={highlightKeys}
+          keywords={modal.highlight ?? highlightKeys}
           pinnedIds={featuredIds}
           onPin={pinReview}
           onExclude={excludeReview}
