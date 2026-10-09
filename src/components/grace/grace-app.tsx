@@ -22,6 +22,11 @@ import {
   POKER_KEYWORDS,
   brandTokensFor,
   competitorNarrative,
+  copyContradictsCounts,
+  headlineOverclaims,
+  isCountRestatement,
+  isHollowPraise,
+  isJargonLine,
   filterReviews,
   granularityFor,
   mergeScrapes,
@@ -95,6 +100,7 @@ import {
 } from "./grace-charts";
 import { AddWidgetMenu, PresentStage } from "./present-stage";
 import { ReviewList } from "./grace-reviews";
+import { GraceChat } from "./grace-chat";
 import { ReviewModal } from "./review-modal";
 import { TagCloud } from "./tag-cloud";
 import { ScorePair, TpStars } from "./tp-stars";
@@ -1190,13 +1196,32 @@ export function GraceApp() {
     : `${windowTotal} ${windowLabel} reviews.`;
   const periodLines = (() => {
     const live = narrative?.bullets ?? [];
-    const src = hasFullCopy(summary) && !filterOn ? summary.period : hasFullCopy(summary) ? summary.period : live;
-    if (!filterOn) return src.length ? src : live;
-    const rest = src.filter((line) => !/\d+\s+of\s+\d+/.test(line) && !/had \d+ review/.test(line));
-    return [matchingLine, ...rest].slice(0, 5);
+    const src = hasFullCopy(summary) ? summary.period : live;
+    const cleaned = (src.length ? src : live).filter(
+      (line) =>
+        !isCountRestatement(line, stats.count, windowTotal) &&
+        !copyContradictsCounts(line, stats.count, windowTotal) &&
+        !isJargonLine(line),
+    );
+    if (filterOn) return cleaned.slice(0, 4);
+    return (cleaned.length ? cleaned : [matchingLine]).slice(0, 5);
   })();
-  const posCopy = hasFullCopy(summary) ? summary.positive : (narrative?.positive ?? "");
-  const negCopy = hasFullCopy(summary) ? summary.negative : (narrative?.negative ?? "");
+  const headlineCopy = summary?.headline?.trim() ?? "";
+  const headlineOk = Boolean(
+    headlineCopy &&
+      !copyContradictsCounts(headlineCopy, stats.count, windowTotal) &&
+      !headlineOverclaims(headlineCopy, windowLabel),
+  );
+  const rawPos =
+    hasFullCopy(summary) && !copyContradictsCounts(summary.positive, stats.count, windowTotal)
+      ? summary.positive
+      : (narrative?.positive ?? "");
+  const rawNeg =
+    hasFullCopy(summary) && !copyContradictsCounts(summary.negative, stats.count, windowTotal)
+      ? summary.negative
+      : (narrative?.negative ?? "");
+  const posCopy = isHollowPraise(rawPos) ? "" : rawPos;
+  const negCopy = rawNeg.trim();
   const rewriteFacts = {
     month: windowLabel,
     reviewCount: stats.count,
@@ -1812,7 +1837,7 @@ export function GraceApp() {
                 <div className="mt-6">
                   <DashRewrite
                     label="Summary"
-                    text={summary?.headline?.trim() || `${windowLabel} summary`}
+                    text={headlineOk ? headlineCopy : `${windowLabel} summary`}
                     field="headline"
                     brand={scrape.displayName}
                     facts={rewriteFacts}
@@ -1831,8 +1856,8 @@ export function GraceApp() {
                     }
                   />
                   <h2 className="gr-brief-head">{briefHead}</h2>
-                  {filterOn && summary?.headline?.trim() ? (
-                    <p className="mb-3 text-[15px] font-medium leading-snug text-[#191919]">{summary.headline}</p>
+                  {filterOn && headlineOk ? (
+                    <p className="mb-3 text-[15px] font-medium leading-snug text-[#191919]">{headlineCopy}</p>
                   ) : null}
                   <DashRewrite
                     text={periodLines.join("\n")}
@@ -1862,7 +1887,10 @@ export function GraceApp() {
                     ))}
                   </div>
                 </div>
+                {posCopy || negCopy ? (
                 <div className="mt-6 space-y-3">
+                  {posCopy ? (
+                    <>
                   <DashRewrite
                     label="Positive reviews"
                     text={posCopy}
@@ -1884,6 +1912,10 @@ export function GraceApp() {
                     }
                   />
                   <p className="gr-copy">{posCopy}</p>
+                    </>
+                  ) : null}
+                  {negCopy ? (
+                    <>
                   <DashRewrite
                     label="Negative reviews"
                     text={negCopy}
@@ -1905,7 +1937,10 @@ export function GraceApp() {
                     }
                   />
                   <p className="gr-copy">{negCopy}</p>
+                    </>
+                  ) : null}
                 </div>
+                ) : null}
               </div>
 
               <div className="flex flex-col gap-5">
@@ -2224,6 +2259,45 @@ export function GraceApp() {
           onPin={pinReview}
           onExclude={excludeReview}
           onClose={() => setModal(null)}
+        />
+      ) : null}
+      {scrape ? (
+        <GraceChat
+          brand={scrape.displayName}
+          facts={{
+            month: windowLabel,
+            filter: filterLabel,
+            matchingCount: stats.count,
+            monthTotal: windowTotal,
+            avgRating: stats.avgRating,
+            sentiment: stats.sentiment,
+            officialScore: scrape.trustScore,
+            pokerScore,
+            pokerCount: poker12.length,
+            topics: topicRows.slice(0, 8).map(
+              (t) => `${t.topic}: ${t.total} (${t.positive}+ / ${t.negative}-)`,
+            ),
+            current: {
+              headline: headlineOk ? headlineCopy : briefHead,
+              period: periodLines,
+              positive: posCopy,
+              negative: negCopy,
+              mix: summary?.mix ?? "",
+            },
+          }}
+          onApply={(patch) => {
+            persistSummary({
+              ...(summary ??
+                briefingFromDraft({
+                  period: periodLines,
+                  mix: "",
+                  positive: posCopy,
+                  negative: negCopy,
+                  competitor: [],
+                })),
+              ...patch,
+            });
+          }}
         />
       ) : null}
       </div>

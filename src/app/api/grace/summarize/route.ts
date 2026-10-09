@@ -146,8 +146,11 @@ HARD FACTS — do not contradict these:
 - If a number is not 1, never write "one review", "a single review", or "only 1 review".
 - Official Trustpilot TrustScore for the whole brand: ${body.trustScore ?? "n/a"}. That mixes poker and every other product.
 - Standalone poker score (mean of poker reviews in the last-12-months pull): ${body.pokerScore ?? "n/a"} from ${body.pokerCount ?? 0} poker reviews. Do not treat the TrustScore as the poker score.
-- Average rating of the matching set: ${body.stats.avgRating}/5. Sentiment ${body.stats.sentiment} (positive share minus negative share).
-- Mix of the matching set: Positive ${body.stats.positivePct}%, Neutral ${body.stats.neutralPct}%, Negative ${body.stats.negativePct}%.
+- Average rating of the matching set: ${body.stats.avgRating}/5.
+- Star mix of the matching set: ${body.stats.positivePct}% positive (4-5 stars), ${body.stats.neutralPct}% neutral (3 stars), ${body.stats.negativePct}% negative (1-2 stars).
+- Do not cite the sentiment score (${body.stats.sentiment}). Say how many reviews are 1-2 star, 3 star, or 4-5 star instead.
+- Never write "fewer", "more", "sharper", "stayed", "continued", or "worse" unless the same sentence names the other month and that month's matching count.
+- If ${monthCount} is 5 or under, write only about those reviews. Do not turn them into a market trend.
 Week-level or quoted reviews below are samples. They are not the month total.
 
 THIS MONTH
@@ -165,11 +168,11 @@ ${reviewBlock || "(none)"}
 ${prevBlock}
 
 Return JSON:
-- headline: one line for the cover (not a title case slogan).
-- period: 3 to 5 short lines on how this month is doing. The first line MUST state ${filtered ? `${monthCount} of ${monthTotal} ${body.window} reviews match ${body.filterLabel}` : `exactly ${monthCount} reviews`}. If a previous month exists, compare matching counts, not the unfiltered month.
+- headline: one sentence on what the matching reviews said. Not a slogan. If there are 1 to 5 matching reviews, name the complaint or praise from those reviews.
+- period: 2 to 3 short lines. Do not repeat "${monthCount} of ${monthTotal} match ${body.filterLabel}" — the page title already has that. Prefer star ratings and themes. Example: "All 3 are 1-star. They talk about rigging and tournament handling." If you compare to last month, write both matching counts in the same sentence.
 - mix: one line "Overall: Positive – X%  |  Neutral – Y%  |  Negative – Z%" using the given percentages.
-- positive: 1 to 2 sentences on what they praise, named themes.
-- negative: 1 to 2 sentences on the main concern (fairness, payouts, support, etc.).
+- positive: 1 to 2 sentences on what they praise. If there are no 4-5 star matching reviews, return an empty string. Do not write "there is no positive feedback".
+- negative: 1 to 2 sentences on the main concern (fairness, payouts, support, etc.). Empty string if there are no 1-2 star matching reviews.
 - watch: up to 5 issues that have risen or keep recurring. Each one sentence.
 - changed: vs the previous report only — what moved, new issues, anything that got worse. Empty array if none.
 - competitor: 3 to 6 short lines for the competitors slide (TrustScore lead, website/UX/trust themes). Empty if no competitor data.

@@ -695,6 +695,62 @@ export function highlightSegments(text: string, keywords: string[]): TextSegment
   return out;
 }
 
+/** True when copy treats the unfiltered month total as the matching set. */
+export function copyContradictsCounts(text: string, matching: number, monthTotal: number): boolean {
+  if (!text || matching === monthTotal) return false;
+  const hasTotal = new RegExp(`\\b${monthTotal}\\b`).test(text);
+  const hasMatchOfTotal = new RegExp(`${matching}\\s+of\\s+${monthTotal}`).test(text);
+  return hasTotal && !hasMatchOfTotal;
+}
+
+/** True when the model wrote "there is no praise" instead of real copy. */
+export function isHollowPraise(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  return /no positive|not enough positive|there is no positive|no review praised|nothing to praise|no praise in/i.test(t);
+}
+
+/** True when a period line only restates the header count. */
+export function isCountRestatement(line: string, matching: number, monthTotal: number): boolean {
+  const t = line.trim();
+  if (!t) return true;
+  if (new RegExp(`^${matching}\\s+of\\s+${monthTotal}\\b`).test(t)) return true;
+  if (new RegExp(`had ${matching} of ${monthTotal}\\b`).test(t)) return true;
+  if (new RegExp(`${matching}\\s+of\\s+${monthTotal}\\s+\\S.*\\bmatch`).test(t)) return true;
+  return false;
+}
+
+const MONTH_NAMES = [
+  "january",
+  "february",
+  "march",
+  "april",
+  "may",
+  "june",
+  "july",
+  "august",
+  "september",
+  "october",
+  "november",
+  "december",
+];
+
+function mentionsOtherMonth(text: string, windowLabel: string): boolean {
+  const current = windowLabel.split(/\s+/)[0]?.toLowerCase() ?? "";
+  return MONTH_NAMES.some((m) => m !== current && new RegExp(`\\b${m}\\b`, "i").test(text));
+}
+
+/** True when a headline claims a trend without naming the other month. */
+export function headlineOverclaims(text: string, windowLabel: string): boolean {
+  if (!/\b(fewer|more|sharper|stayed|continued|worse)\b/i.test(text)) return false;
+  return !mentionsOtherMonth(text, windowLabel);
+}
+
+/** Sentiment-score lines read as jargon next to the star mix. */
+export function isJargonLine(line: string): boolean {
+  return /sentiment is|sentiment score/i.test(line);
+}
+
 /** Short quotes for the report: the sentence containing a keyword hit. */
 export function quoteFor(review: GraceReview, keywords: string[], max = 220): string {
   const body = review.text || review.title;
@@ -715,45 +771,24 @@ export function reportNarrative(opts: {
   topics: TopicRow[];
   points: TimelinePoint[];
 }): { bullets: string[]; positive: string; negative: string } {
-  const { filterLabel, windowLabel, stats, topics, points } = opts;
+  const { filterLabel, windowLabel, stats, topics } = opts;
   const monthTotal = opts.monthTotal ?? stats.count;
-  const live = points.filter((p) => p.count > 0);
-  const last = live.at(-1);
-  const prev = live.at(-2);
-  const sentDelta =
-    last && prev && prev.count
-      ? last.sentiment - prev.sentiment
-      : null;
-  const countDelta = last && prev ? last.count - prev.count : null;
+  const filtered = filterLabel !== "All reviews" && monthTotal !== stats.count;
   const bullets: string[] = [];
-  bullets.push(
-    filterLabel !== "All reviews" && monthTotal !== stats.count
-      ? `${windowLabel} had ${stats.count} of ${monthTotal} reviews matching ${filterLabel}.`
-      : `${windowLabel} had ${stats.count} review${stats.count === 1 ? "" : "s"}.`,
-  );
-  if (last && last.count !== stats.count) {
-    bullets.push(`The latest week (${last.label}) had ${last.count} of those.`);
-  }
-  const sent = stats.sentiment;
-  bullets.push(
-    `${filterLabel} sentiment score was ${sent > 0 ? `+${sent}` : sent}${
-      sentDelta != null
-        ? `, a ${Math.abs(sentDelta)} ${sentDelta >= 0 ? "increase" : "decrease"} compared to the previous period`
-        : ""
-    }.`,
-  );
-  if (countDelta != null) {
+  if (stats.negative === stats.count && stats.count > 0) {
+    bullets.push(`All ${stats.count} matching review${stats.count === 1 ? " is" : "s are"} negative. Average ${stats.avgRating}/5.`);
+  } else if (stats.positive === stats.count && stats.count > 0) {
+    bullets.push(`All ${stats.count} matching review${stats.count === 1 ? " is" : "s are"} positive. Average ${stats.avgRating}/5.`);
+  } else {
     bullets.push(
-      `${filterLabel} reviews — ${last!.count} review${last!.count === 1 ? "" : "s"}, ${
-        countDelta === 0 ? "unchanged" : `${Math.abs(countDelta)} ${countDelta > 0 ? "more" : "fewer"}`
-      } compared to the previous period.`,
+      `${stats.negative} negative, ${stats.neutral} neutral, ${stats.positive} positive. Average ${stats.avgRating}/5.`,
     );
   }
-  bullets.push(
-    `Overall: Positive – ${stats.positivePct.toFixed(1)}%  |  Neutral – ${
-      stats.count ? ((stats.neutral / stats.count) * 100).toFixed(1) : "0.0"
-    }%  |  Negative – ${stats.negativePct.toFixed(1)}%`,
-  );
+  if (!filtered) {
+    bullets.unshift(
+      `${windowLabel} had ${stats.count} review${stats.count === 1 ? "" : "s"}.`,
+    );
+  }
 
   const pos = topics.filter((t) => t.positive > 0).sort((a, b) => b.positive - a.positive).slice(0, 4);
   const neg = topics.filter((t) => t.negative > 0).sort((a, b) => b.negative - a.negative).slice(0, 4);
@@ -763,12 +798,8 @@ export function reportNarrative(opts: {
       : null;
   return {
     bullets,
-    positive: list(pos)
-      ? `Players value ${list(pos)}.`
-      : "Not enough positive reviews in this filter to summarise praise.",
-    negative: list(neg)
-      ? `The main concerns are ${list(neg)}.`
-      : "Not enough negative reviews in this filter to summarise complaints.",
+    positive: list(pos) ? `Players mention ${list(pos)}.` : "",
+    negative: list(neg) ? `They complain about ${list(neg)}.` : "",
   };
 }
 

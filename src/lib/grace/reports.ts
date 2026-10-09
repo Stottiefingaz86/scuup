@@ -157,14 +157,29 @@ export function defaultPresentation(opts?: {
   const who = [brand, filter].filter(Boolean).join(" ");
   const how = who ? `How ${who} is doing${win ? ` · ${win}` : ""}` : "How we're doing";
   return [
-    newPage([{ id: "w_briefing", type: "briefing", size: "l" }], how),
     newPage(
-      [{ id: "w_topics", type: "topics", size: "l" }],
-      who ? `What they talk about · ${who}` : "What they talk about",
+      [
+        { id: "w_briefing", type: "briefing", size: "m" },
+        { id: "w_keywords", type: "keywords", size: "m" },
+      ],
+      how,
+      "col",
     ),
     newPage(
-      [{ id: "w_timeline", type: "timeline", size: "l" }],
+      [
+        { id: "w_stars", type: "stars", size: "m" },
+        { id: "w_topics", type: "topics", size: "m" },
+      ],
+      who ? `What they talk about · ${who}` : "What they talk about",
+      "col",
+    ),
+    newPage(
+      [
+        { id: "w_timeline", type: "timeline", size: "m" },
+        { id: "w_trends", type: "trends", size: "m" },
+      ],
       win ? `How the month moved · ${win}` : "How the month moved",
+      "col",
     ),
     newPage(
       [{ id: "w_comments", type: "comments", size: "l" }],

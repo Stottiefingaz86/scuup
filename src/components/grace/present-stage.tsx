@@ -2,7 +2,16 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, GripVertical, Loader2, Plus, RefreshCw, Trash2 } from "lucide-react";
-import type { CloudWord, ReviewStats, TimelinePoint, TopicRow } from "@/lib/grace/analysis";
+import {
+  headlineOverclaims,
+  isCountRestatement,
+  isHollowPraise,
+  isJargonLine,
+  type CloudWord,
+  type ReviewStats,
+  type TimelinePoint,
+  type TopicRow,
+} from "@/lib/grace/analysis";
 import {
   PRESENT_WIDGETS,
   addWidgetToPage,
@@ -547,12 +556,14 @@ export function PresentStage({
     : `${windowTotal} ${windowLabel} reviews.`;
   const period = (() => {
     const src = hasFullCopy(summary) ? summary.period : [];
-    if (!filterOn) return src;
-    const rest = src.filter((line) => !/\d+\s+of\s+\d+/.test(line));
-    return [matchingLine, ...rest].slice(0, 5);
+    const cleaned = src.filter(
+      (line) => !isCountRestatement(line, stats.count, windowTotal) && !isJargonLine(line),
+    );
+    if (filterOn) return cleaned.slice(0, 4);
+    return (cleaned.length ? cleaned : [matchingLine]).slice(0, 5);
   })();
   const mix = hasFullCopy(summary) ? summary.mix : "";
-  const positive = hasFullCopy(summary) ? summary.positive : "";
+  const positive = hasFullCopy(summary) && !isHollowPraise(summary.positive) ? summary.positive : "";
   const negative = hasFullCopy(summary) ? summary.negative : "";
   const watch = hasFullCopy(summary) ? summary.watch : [];
   const changed = hasFullCopy(summary) ? summary.changed : [];
@@ -1102,7 +1113,14 @@ export function PresentStage({
               <aside className="gr-slide-note">
                 <SlideNote
                   page={page}
-                  headline={summary?.headline?.trim() || `${windowLabel} summary`}
+                  headline={
+                    summary?.headline?.trim() &&
+                    !headlineOverclaims(summary.headline, windowLabel)
+                      ? summary.headline.trim()
+                      : filterOn
+                        ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterLabel}`
+                        : `${windowLabel} summary`
+                  }
                   period={period}
                   positive={positive}
                   negative={negative}
