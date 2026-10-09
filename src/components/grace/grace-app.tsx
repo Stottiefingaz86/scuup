@@ -8,6 +8,7 @@ import {
   ExternalLink,
   FileDown,
   Loader2,
+  Minus,
   PanelLeft,
   PanelLeftClose,
   Plus,
@@ -29,6 +30,7 @@ import {
   isJargonLine,
   filterReviews,
   granularityFor,
+  mergeReviews,
   mergeScrapes,
   reviewsInMonth,
   reportNarrative,
@@ -77,10 +79,12 @@ import { trustpilotSlugFromInput } from "@/lib/grace/slug";
 import {
   coerceMonth,
   defaultMonth,
+  hasStars,
   monthBounds,
   monthLabel,
   previousMonthKey,
   recentMonths,
+  reviewSource,
   type GraceScrape,
   type GraceWindow,
 } from "@/lib/grace/types";
@@ -154,6 +158,8 @@ function saveCache(cache: ScrapeCache) {
   }
 }
 
+type EnabledSource = "trustpilot" | "reddit" | "twoplustwo";
+
 interface PersistedState {
   current: string | null;
   window: GraceWindow;
@@ -161,7 +167,16 @@ interface PersistedState {
   customKeywords: string[];
   rivals: string[];
   competitorSet: string;
+  extraUrls?: string[];
+  enabledSources?: EnabledSource[];
 }
+
+const BUILTIN_SOURCES: { id: EnabledSource; label: string; host: string }[] = [
+  { id: "trustpilot", label: "Trustpilot", host: "trustpilot.com" },
+  { id: "reddit", label: "Reddit", host: "reddit.com" },
+  { id: "twoplustwo", label: "Two Plus Two", host: "twoplustwo.com" },
+];
+const DEFAULT_SOURCES: EnabledSource[] = ["trustpilot", "reddit", "twoplustwo"];
 
 const PALETTE = ["#00b67a", "#191919", "#54b8ff", "#ff8622", "#73cf11", "#8b5cf6", "#ffce00"];
 
@@ -249,6 +264,10 @@ export function GraceApp() {
 
   const [competitorSet, setCompetitorSet] = useState<string>("bol");
   const [rivals, setRivals] = useState<string[]>(COMPETITOR_SETS[0].rivals);
+  const [extraUrls, setExtraUrls] = useState<string[]>([]);
+  const [enabledSources, setEnabledSources] = useState<EnabledSource[]>(DEFAULT_SOURCES);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [newSource, setNewSource] = useState("");
   const [newRival, setNewRival] = useState("");
   const [rivalSearchOpen, setRivalSearchOpen] = useState(false);
   const rivalSearchRef = useRef<HTMLInputElement>(null);
@@ -290,6 +309,13 @@ export function GraceApp() {
         if (Array.isArray(s.customKeywords)) setCustomKeywords(s.customKeywords);
         if (Array.isArray(s.rivals) && s.rivals.length) setRivals(s.rivals);
         if (s.competitorSet) setCompetitorSet(s.competitorSet);
+        if (Array.isArray(s.extraUrls)) setExtraUrls(s.extraUrls.filter((u) => typeof u === "string"));
+        if (Array.isArray(s.enabledSources)) {
+          const next = s.enabledSources.filter((x): x is EnabledSource =>
+            x === "trustpilot" || x === "reddit" || x === "twoplustwo",
+          );
+          if (next.length) setEnabledSources(next);
+        }
       }
     } catch {
       /* ignore */
@@ -352,6 +378,8 @@ export function GraceApp() {
       customKeywords,
       rivals,
       competitorSet,
+      extraUrls,
+      enabledSources,
     };
     try {
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
@@ -363,7 +391,7 @@ export function GraceApp() {
     } catch {
       /* ignore */
     }
-  }, [hydrated, current, window_, keywords, customKeywords, rivals, competitorSet, sideOpen]);
+  }, [hydrated, current, window_, keywords, customKeywords, rivals, competitorSet, extraUrls, enabledSources, sideOpen]);
 
   useEffect(() => {
     const done = () => document.documentElement.classList.remove("grace-exporting");
@@ -459,24 +487,96 @@ export function GraceApp() {
         return;
       }
       const key = findCacheKey(cache, slug);
-      if (!force && key) {
-        setCurrent(key);
-        setSummary(null);
-        setMode("bench");
+      const cached = key ? cache[key] : null;
+      const wantTp = enabledSources.includes("trustpilot");
+      const wantReddit = enabledSources.includes("reddit");
+      const wantTwo = enabledSources.includes("twoplustwo");
+      const wantExtras = wantReddit || wantTwo || extraUrls.length > 0;
+      if (!wantTp && !wantExtras) {
+        setError("Add a source first.");
         return;
       }
-      setBusy(`Reading Trustpilot for ${slug} · last 24 months`);
+      const reading = [
+        wantTp && !(cached && !force) ? "Trustpilot" : null,
+        wantReddit ? "Reddit" : null,
+        wantTwo ? "Two Plus Two" : null,
+        extraUrls.length ? "added URLs" : null,
+      ].filter(Boolean);
+      setBusy(`Reading ${reading.join(", ") || "sources"} for ${slug}`);
       try {
-        const scrape = await scrapeOne(slug, window_);
-        putScrape(scrape);
-        const nextKey = cacheKey(scrape.slug);
+        const extras = wantExtras
+          ? fetch("/api/grace/sources", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                slug,
+                displayName: cached?.displayName ?? slug,
+                urls: extraUrls,
+                reddit: wantReddit,
+                twoplustwo: wantTwo,
+              }),
+            }).then(async (res) => {
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) throw new Error(data.error ?? "Extra sources failed");
+              return data as { reviews?: GraceReview[]; searched?: string[] };
+            })
+          : Promise.resolve({ reviews: [] as GraceReview[], searched: [] as string[] });
+        const scrape = wantTp
+          ? cached && !force
+            ? cached
+            : await scrapeOne(slug, window_)
+          : cached ?? {
+              slug,
+              displayName: slug,
+              sourceUrl: `https://www.trustpilot.com/review/${slug}`,
+              window: "24m",
+              since: new Date(Date.now() - 365 * 86_400_000).toISOString(),
+              fetchedAt: new Date().toISOString(),
+              trustScore: null,
+              totalReviews: null,
+              starDistribution: null,
+              windowTotal: null,
+              windowStars: null,
+              coverage: [],
+              searched: [],
+              reviews: [],
+              pagesRead: 0,
+              truncated: false,
+              horizonMonths: 24 as const,
+            };
+        if (cached && !force && key) {
+          setCurrent(key);
+        }
+        setBusy("Merging extra sources");
+        let next = scrape;
+        try {
+          const extra = await extras;
+          const incoming = extra.reviews ?? [];
+          const priorExtras = (cached?.reviews ?? []).filter((r) => reviewSource(r) !== "trustpilot");
+          const extrasToMerge = incoming.length ? incoming : priorExtras;
+          next = mergeReviews(scrape, extrasToMerge, extra.searched ?? []);
+          if (wantReddit && incoming.filter((r) => reviewSource(r) === "reddit").length === 0) {
+            setError(
+              priorExtras.some((r) => reviewSource(r) === "reddit")
+                ? "Reddit returned nothing this pull. Previous Reddit mentions were kept."
+                : "Reddit returned no posts this pull. Try again in a minute.",
+            );
+          }
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Reddit / Two Plus Two failed");
+          const priorExtras = (cached?.reviews ?? []).filter((r) => reviewSource(r) !== "trustpilot");
+          if (priorExtras.length) next = mergeReviews(scrape, priorExtras);
+        }
+        putScrape(next);
+        const nextKey = cacheKey(next.slug);
         setCurrent(nextKey);
         setSummary(null);
+        setBriefingStale(Boolean(next.reviews.some((r) => reviewSource(r) !== "trustpilot")));
         setMode("bench");
         if (!reportName.trim()) {
           setReportName(
             defaultReportName({
-              brand: scrape.displayName,
+              brand: next.displayName,
               window: monthLabel(window_),
             }),
           );
@@ -487,7 +587,7 @@ export function GraceApp() {
         setBusy(null);
       }
     },
-    [input, window_, cache, scrapeOne, putScrape, reportName],
+    [input, window_, cache, scrapeOne, putScrape, reportName, extraUrls, enabledSources],
   );
 
   const runRivals = useCallback(async () => {
@@ -516,6 +616,16 @@ export function GraceApp() {
 
   /* ---- derived ---- */
   const scrape = current ? cache[current] : null;
+  const liveReviews = useMemo(() => {
+    if (!scrape) return [];
+    return scrape.reviews.filter((r) => {
+      const src = reviewSource(r);
+      if (src === "reddit") return enabledSources.includes("reddit");
+      if (src === "twoplustwo") return enabledSources.includes("twoplustwo");
+      if (src === "trustpilot") return enabledSources.includes("trustpilot");
+      return true;
+    });
+  }, [scrape, enabledSources]);
 
   const [deepBusy, setDeepBusy] = useState(false);
   const deepPull = useCallback(async () => {
@@ -549,9 +659,9 @@ export function GraceApp() {
   const pokerReviews = useMemo(
     () =>
       scrape
-        ? pokerCohort(scrape.reviews, scrape.pokerById).filter((r) => !excluded.has(r.id))
+        ? pokerCohort(liveReviews, scrape.pokerById).filter((r) => !excluded.has(r.id))
         : [],
-    [scrape, excluded],
+    [scrape, liveReviews, excluded],
   );
   const pokerLens = isPokerLens(activeKeywords);
   const allPoker = isAllPokerFilter(activeKeywords);
@@ -559,23 +669,23 @@ export function GraceApp() {
   const poker12 = useMemo(() => reviewsSinceDays(pokerReviews, 365), [pokerReviews]);
   const pokerScore = standaloneScore(poker12);
   const brandReviews = useMemo(
-    () => (scrape ? scrape.reviews.filter((r) => !excluded.has(r.id)) : []),
-    [scrape, excluded],
+    () => liveReviews.filter((r) => !excluded.has(r.id)),
+    [liveReviews, excluded],
   );
   const pokerDropped = useMemo(() => {
     if (!scrape) return 0;
-    return scrape.reviews.filter(
+    return liveReviews.filter(
       (r) => pokerSignal(r) === "maybe" && scrape.pokerById?.[r.id] === false,
     ).length;
-  }, [scrape]);
+  }, [scrape, liveReviews]);
   const windowReviews = useMemo(
-    () => (scrape ? reviewsInMonth(scrape.reviews, window_).filter((r) => !excluded.has(r.id)) : []),
-    [scrape, window_, excluded],
+    () => reviewsInMonth(liveReviews, window_).filter((r) => !excluded.has(r.id)),
+    [liveReviews, window_, excluded],
   );
   const filtered = useMemo(
     () =>
       scrape
-        ? filterReviews(scrape.reviews, {
+        ? filterReviews(liveReviews, {
             keywords: activeKeywords,
             query,
             month: window_,
@@ -583,7 +693,7 @@ export function GraceApp() {
             allPoker: pokerLens && allPoker,
           }).filter((r) => !excluded.has(r.id))
         : [],
-    [scrape, activeKeywords, query, window_, excluded, pokerLens, allPoker, pokerIds],
+    [scrape, liveReviews, activeKeywords, query, window_, excluded, pokerLens, allPoker, pokerIds],
   );
   const baseline: ReviewStats = useMemo(() => reviewStats(windowReviews), [windowReviews]);
   const captured = windowReviews.length;
@@ -625,24 +735,26 @@ export function GraceApp() {
 
   const tabReviews = useMemo(() => {
     const sorted = [...windowReviews].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-    if (reviewTab === "positive") return sorted.filter((r) => r.rating >= 4);
-    if (reviewTab === "negative") return sorted.filter((r) => r.rating <= 2);
+    if (reviewTab === "positive") return sorted.filter((r) => hasStars(r) && r.rating >= 4);
+    if (reviewTab === "negative") return sorted.filter((r) => hasStars(r) && r.rating <= 2);
     return sorted;
   }, [windowReviews, reviewTab]);
   const matchingIds = useMemo(() => new Set(filtered.map((r) => r.id)), [filtered]);
   const matchToneCounts = useMemo(() => {
-    const positive = filtered.filter((r) => r.rating >= 4).length;
-    const negative = filtered.filter((r) => r.rating <= 2).length;
+    const positive = filtered.filter((r) => hasStars(r) && r.rating >= 4).length;
+    const negative = filtered.filter((r) => hasStars(r) && r.rating <= 2).length;
+    const neutral = filtered.filter((r) => hasStars(r) && r.rating > 2 && r.rating < 4).length;
     return {
       all: filtered.length,
       positive,
-      neutral: filtered.length - positive - negative,
+      neutral,
       negative,
     };
   }, [filtered]);
   const matchStarCounts = useMemo(() => {
     const stars: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
     for (const r of filtered) {
+      if (!hasStars(r)) continue;
       const n = Math.round(r.rating);
       if (n >= 1 && n <= 5) stars[n as 1 | 2 | 3 | 4 | 5] += 1;
     }
@@ -651,18 +763,18 @@ export function GraceApp() {
   const matchingList = useMemo(() => {
     return [...filtered]
       .filter((r) => {
-        if (matchStar && Math.round(r.rating) !== matchStar) return false;
-        if (matchTone === "positive") return r.rating >= 4;
-        if (matchTone === "negative") return r.rating <= 2;
-        if (matchTone === "neutral") return r.rating > 2 && r.rating < 4;
+        if (matchStar && (!hasStars(r) || Math.round(r.rating) !== matchStar)) return false;
+        if (matchTone === "positive") return hasStars(r) && r.rating >= 4;
+        if (matchTone === "negative") return hasStars(r) && r.rating <= 2;
+        if (matchTone === "neutral") return hasStars(r) && r.rating > 2 && r.rating < 4;
         return true;
       })
       .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
   }, [filtered, matchStar, matchTone]);
 
   const quotes = useMemo(() => {
-    const pos = filtered.filter((r) => r.rating >= 4).sort((a, b) => b.likes - a.likes || b.text.length - a.text.length).slice(0, 5);
-    const neg = filtered.filter((r) => r.rating <= 2).sort((a, b) => b.likes - a.likes || b.text.length - a.text.length).slice(0, 6);
+    const pos = filtered.filter((r) => hasStars(r) && r.rating >= 4).sort((a, b) => b.likes - a.likes || b.text.length - a.text.length).slice(0, 5);
+    const neg = filtered.filter((r) => hasStars(r) && r.rating <= 2).sort((a, b) => b.likes - a.likes || b.text.length - a.text.length).slice(0, 6);
     return { pos, neg };
   }, [filtered]);
 
@@ -1159,23 +1271,6 @@ export function GraceApp() {
     window.print();
   };
 
-  const exportCsv = () => {
-    if (!scrape) return;
-    const esc = (s: string) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-    const lines = [
-      ["date", "rating", "author", "country", "verified", "title", "text", "replied"].join(","),
-      ...filtered.map((r) =>
-        [r.date, r.rating, esc(r.author), r.country ?? "", r.verified ? "yes" : "no", esc(r.title), esc(r.text), r.reply ? "yes" : "no"].join(","),
-      ),
-    ];
-    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${scrape.slug}-${scrape.window}-reviews.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  };
-
   const windowLabel = monthLabel(window_);
   const pokerMonthCount = reviewsInMonth(poker12, window_).length;
   const pullMonths = (() => {
@@ -1183,10 +1278,12 @@ export function GraceApp() {
     if (!times.length) return 0;
     return Math.max(1, Math.round((Date.now() - Math.min(...times)) / (30.44 * 86_400_000)));
   })();
-  const pokerCaption =
+  const redditPoker12 = poker12.filter((r) => reviewSource(r) === "reddit").length;
+  const pokerCaption = `${
     pullMonths >= 10
-      ? `${poker12.length.toLocaleString()} poker reviews · last 12 months`
-      : `${poker12.length.toLocaleString()} poker reviews in this pull · ${pokerMonthCount} in ${windowLabel}`;
+      ? `${poker12.filter(hasStars).length.toLocaleString()} poker reviews · last 12 months`
+      : `${poker12.filter(hasStars).length.toLocaleString()} poker reviews in this pull · ${pokerMonthCount} in ${windowLabel}`
+  }${redditPoker12 ? ` · ${redditPoker12.toLocaleString()} Reddit` : ""}`;
   const filterOn = filterLabel !== "All reviews";
   const briefHead = filterOn
     ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterLabel}`
@@ -1230,9 +1327,6 @@ export function GraceApp() {
     filter: filterLabel,
   };
   const vocMonths = recentMonths(26);
-  const recent = Object.entries(cache)
-    .sort((a, b) => Date.parse(b[1].fetchedAt) - Date.parse(a[1].fetchedAt))
-    .filter(([, s], i, all) => all.findIndex((x) => x[1].slug === s.slug) === i);
   const vsCopy = useMemo(
     () =>
       competitorNarrative(
@@ -1247,6 +1341,35 @@ export function GraceApp() {
     [compareBrands],
   );
   const shortName = scrape?.displayName.replace(/\.ag$/i, "").replace(/\s+/g, " ") ?? "";
+  const extraPool = useMemo(
+    () =>
+      liveReviews.filter((r) => reviewSource(r) !== "trustpilot" && !excluded.has(r.id)),
+    [liveReviews, excluded],
+  );
+  const extraReviews = useMemo(
+    () =>
+      filterReviews(extraPool, {
+        keywords: activeKeywords,
+        query,
+        month: window_,
+        pokerIds: pokerLens ? pokerIds : undefined,
+        allPoker: pokerLens && allPoker,
+      }).sort((a, b) => Date.parse(b.date) - Date.parse(a.date)),
+    [extraPool, activeKeywords, query, window_, pokerLens, pokerIds, allPoker],
+  );
+  const extraBySource = useMemo(() => {
+    const reddit = extraReviews.filter((r) => reviewSource(r) === "reddit");
+    const two = extraReviews.filter((r) => reviewSource(r) === "twoplustwo");
+    const web = extraReviews.filter((r) => reviewSource(r) === "web");
+    return { reddit, two, web };
+  }, [extraReviews]);
+  const sourceHost = (url: string) => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      return url;
+    }
+  };
 
   const showReviews = (title: string, list: GraceReview[]) => {
     setModal({
@@ -1455,6 +1578,85 @@ export function GraceApp() {
               Pull reviews
             </button>
           </form>
+          <div className="gr-sources">
+            <span className="gr-sources-label">Sources</span>
+            {BUILTIN_SOURCES.filter((s) => enabledSources.includes(s.id)).map((s) => (
+              <span key={s.id} className="gr-source-pill" data-extra="">
+                <BrandIcon slug={s.host} name={s.label} size={14} />
+                {s.label}
+                <button
+                  type="button"
+                  aria-label={`Remove ${s.label}`}
+                  onClick={() => setEnabledSources((p) => p.filter((id) => id !== s.id))}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            {extraUrls.map((url) => (
+              <span key={url} className="gr-source-pill" data-extra="">
+                <BrandIcon slug={sourceHost(url)} name={sourceHost(url)} size={14} />
+                {sourceHost(url)}
+                <button
+                  type="button"
+                  aria-label={`Remove ${url}`}
+                  onClick={() => setExtraUrls((p) => p.filter((u) => u !== url))}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            ))}
+            {sourceOpen ? (
+              <div className="gr-source-menu">
+                {BUILTIN_SOURCES.filter((s) => !enabledSources.includes(s.id)).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    className="gr-chip"
+                    onClick={() => {
+                      setEnabledSources((p) => (p.includes(s.id) ? p : [...p, s.id]));
+                      setSourceOpen(false);
+                    }}
+                  >
+                    <BrandIcon slug={s.host} name={s.label} size={14} />
+                    {s.label}
+                  </button>
+                ))}
+                <form
+                  className="gr-source-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const raw = newSource.trim();
+                    try {
+                      const parsed = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+                      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("bad");
+                      setExtraUrls((p) => (p.includes(parsed.toString()) ? p : [...p, parsed.toString()]));
+                      setNewSource("");
+                      setSourceOpen(false);
+                    } catch {
+                      setError("Enter a full URL, like https://forum.example.com/thread");
+                    }
+                  }}
+                >
+                  <input
+                    value={newSource}
+                    onChange={(e) => setNewSource(e.target.value)}
+                    placeholder="Paste a public URL"
+                    className="gr-input h-8! w-56 text-[12px]!"
+                    autoFocus
+                  />
+                  <button type="submit" className="gr-chip">Add</button>
+                  <button type="button" className="gr-chip" onClick={() => setSourceOpen(false)}>
+                    Cancel
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <button type="button" className="gr-source-add" onClick={() => setSourceOpen(true)}>
+                <Plus className="size-3" /> Add source
+              </button>
+            )}
+          </div>
 
           {busy ? (
             <p className="flex items-center gap-2 text-[12px] text-[#6c737a]">
@@ -1469,227 +1671,110 @@ export function GraceApp() {
             </p>
           ) : null}
 
-          {recent.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {recent.map(([key, s]) => (
-                <span
-                  key={key}
-                  className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] ${
-                    key === current ? "border-[#00b67a] text-[#191919]" : "border-[#e3e6ea] text-[#6c737a]"
-                  }`}
-                >
-                  <button
-                    type="button"
-                    className="cursor-pointer"
-                    onClick={() => {
-                      setCurrent(key);
-                      setInput(s.slug);
-                      setSummary(null);
-                      setMode("bench");
-                    }}
-                  >
-                    {s.displayName}
-                  </button>
-                  <button type="button" onClick={() => dropScrape(key)} className="cursor-pointer opacity-50 hover:opacity-100">
-                    <X className="size-3" />
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : null}
-
           {scrape ? (
             <>
-              <div className="flex flex-wrap items-center gap-2">
-                <button type="button" className="gr-chip" data-on={String(filtersOpen)} onClick={() => setFiltersOpen((v) => !v)}>
-                  {filtersOpen ? "Hide keywords" : activeKeywords.length ? `${filterLabel} · ${activeKeywords.length} keywords` : "Keywords"}
-                </button>
-                <button type="button" onClick={selectAllPoker} className="gr-chip" data-on={String(allPoker)}>
-                  <Check className="size-3" /> All poker
-                </button>
-                <button type="button" onClick={clearKeywords} className="gr-chip">
-                  Clear
-                </button>
-                <button type="button" onClick={exportCsv} className="gr-chip">
-                  <Download className="size-3" /> CSV
-                </button>
-                <button type="button" onClick={() => void runMain(true)} disabled={!!busy} className="gr-chip">
-                  <RefreshCw className="size-3" /> Re-pull
-                </button>
-                <a href={scrape.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[12px] text-[#00b67a]">
-                  Open on Trustpilot <ExternalLink className="size-3" />
-                </a>
-              </div>
-              {filtersOpen ? (
-                <div className="flex flex-col gap-2 border-t border-[#f1f3f5] pt-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a9198]">Keywords</p>
-                  <p className="text-[12px] text-[#8a9198]">
-                    All poker keeps comments that are actually about poker. Words like turn, login, and promo are not enough on their own.
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {allPresetKeywords.map((k) => {
-                      const row = keywordRows.find((r) => r.topic === k);
-                      const custom = customKeywords.includes(k);
-                      return (
-                        <span key={k} className="inline-flex items-center">
-                          <button
-                            type="button"
-                            onClick={() => toggleKeyword(k)}
-                            className="gr-chip"
-                            data-on={String(activeKeywords.includes(k))}
-                            data-count={row ? ` ${row.total}` : undefined}
-                          >
-                            {k}
-                          </button>
-                          {custom ? (
-                            <button type="button" onClick={() => removeCustomKeyword(k)} className="-ml-1 cursor-pointer p-0.5 text-[#8a9198] hover:text-[#ff3722]">
-                              <X className="size-3" />
-                            </button>
-                          ) : null}
-                        </span>
-                      );
-                    })}
+              <div className="gr-kw">
+                <div className="gr-kw-head">
+                  <div className="min-w-0">
+                    <p className="gr-kw-title">Keywords</p>
+                    {!filtersOpen ? (
+                      <p className="truncate text-[12px] text-[#8a9198]">
+                        {activeKeywords.length ? filterLabel : "No filter — all reviews"}
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <div className="relative">
-                      <Plus className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8a9198]" />
-                      <input
-                        value={newKeyword}
-                        onChange={(e) => setNewKeyword(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            addCustomKeyword();
-                          }
-                        }}
-                        placeholder="Add a keyword"
-                        className="gr-input h-9! w-52 text-[12px]!"
-                      />
-                    </div>
-                    <div className="relative flex-1">
-                      <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8a9198]" />
-                      <input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Search inside filtered reviews"
-                        className="gr-input h-9! text-[12px]!"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-              <div className="flex flex-col gap-2.5 border-t border-[#f1f3f5] pt-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a9198]">Competitors</p>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {COMPETITOR_SETS.map((s) => (
-                      <button key={s.id} type="button" onClick={() => applyCompetitorSet(s.id)} className="gr-chip" data-on={String(competitorSet === s.id)}>
-                        {s.label}
-                      </button>
-                    ))}
-                    <button type="button" onClick={() => setCompetitorSet("custom")} className="gr-chip" data-on={String(competitorSet === "custom")}>
-                      Custom
-                    </button>
-                  </div>
-                </div>
-                {rivals.length ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {rivals.map((r) => {
-                      let slug = r;
-                      try {
-                        slug = trustpilotSlugFromInput(r);
-                      } catch {
-                        /* keep */
-                      }
-                      const have = Boolean(findCacheKey(cache, slug));
-                      const err = rivalErrors[r];
-                      const loading = rivalBusy === slug;
-                      return (
-                        <span
-                          key={r}
-                          className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[12px] ${
-                            have ? "border-[#00b67a]" : err ? "border-[#ff3722]" : "border-[#e3e6ea]"
-                          }`}
-                          title={err}
-                        >
-                          {loading ? <Loader2 className="size-3 animate-spin" /> : have ? <Check className="size-3 text-[#00b67a]" /> : null}
-                          <BrandIcon slug={slug} name={r} size={14} />
-                          {r}
-                          <button
-                            type="button"
-                            className="cursor-pointer opacity-50 hover:opacity-100"
-                            onClick={() => {
-                              setRivals((p) => p.filter((x) => x !== r));
-                              setCompetitorSet("custom");
-                            }}
-                          >
-                            <X className="size-3" />
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                <div className="flex flex-wrap items-center gap-2">
-                  {rivalSearchOpen ? (
-                    <div className="gr-rival-field">
-                      <Search className="size-3.5 shrink-0 text-[#8a9198]" />
-                      <input
-                        ref={rivalSearchRef}
-                        value={newRival}
-                        onChange={(e) => setNewRival(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape") {
-                            setNewRival("");
-                            setRivalSearchOpen(false);
-                          }
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            const v = newRival.trim();
-                            if (!v) return;
-                            setRivals((p) => (p.includes(v) ? p : [...p, v]));
-                            setCompetitorSet("custom");
-                            setNewRival("");
-                          }
-                        }}
-                        placeholder="competitor.com"
-                      />
-                      <button
-                        type="button"
-                        className="text-[#8a9198] hover:text-[#191919]"
-                        aria-label="Close"
-                        onClick={() => {
-                          setNewRival("");
-                          setRivalSearchOpen(false);
-                        }}
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                  ) : (
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
-                      className="gr-chip h-10! px-3! text-[12px]!"
-                      onClick={() => {
-                        setRivalSearchOpen(true);
-                        window.setTimeout(() => rivalSearchRef.current?.focus(), 20);
-                      }}
+                      onClick={() => void runMain(true)}
+                      disabled={!!busy}
+                      className="gr-chip"
                     >
-                      <Plus className="size-3.5" />
-                      Add competitors
+                      <RefreshCw className="size-3" /> Re-pull
                     </button>
-                  )}
-                  {rivalBusy ? (
-                    <button type="button" onClick={() => { abortRivals.current = true; }} className="gr-chip">
-                      Stop
+                    <button
+                      type="button"
+                      className="gr-icon-btn"
+                      aria-label={filtersOpen ? "Collapse keywords" : "Expand keywords"}
+                      onClick={() => setFiltersOpen((v) => !v)}
+                    >
+                      {filtersOpen ? <Minus className="size-3.5" /> : <Plus className="size-3.5" />}
                     </button>
-                  ) : rivals.length ? (
-                    <button type="button" onClick={() => void runRivals()} disabled={!!busy} className="gr-btn">
-                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                      Pull competitors
-                    </button>
-                  ) : null}
+                  </div>
                 </div>
+                {filtersOpen ? (
+                  <div className="mt-3 flex flex-col gap-2.5">
+                    <p className="text-[12px] text-[#8a9198]">
+                      All poker keeps comments that are actually about poker. Words like turn, login, and promo are not enough on their own.
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={selectAllPoker}
+                        className="gr-chip"
+                        data-on={String(allPoker)}
+                      >
+                        All poker
+                      </button>
+                      {activeKeywords.length ? (
+                        <button type="button" onClick={clearKeywords} className="gr-chip">
+                          Clear
+                        </button>
+                      ) : null}
+                      {allPresetKeywords.map((k) => {
+                        const row = keywordRows.find((r) => r.topic === k);
+                        const custom = customKeywords.includes(k);
+                        return (
+                          <span key={k} className="inline-flex items-center">
+                            <button
+                              type="button"
+                              onClick={() => toggleKeyword(k)}
+                              className="gr-chip"
+                              data-on={String(activeKeywords.includes(k))}
+                              data-count={row ? ` ${row.total}` : undefined}
+                            >
+                              {k}
+                            </button>
+                            {custom ? (
+                              <button type="button" onClick={() => removeCustomKeyword(k)} className="-ml-1 cursor-pointer p-0.5 text-[#8a9198] hover:text-[#ff3722]">
+                                <X className="size-3" />
+                              </button>
+                            ) : null}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <div className="relative">
+                        <Plus className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8a9198]" />
+                        <input
+                          value={newKeyword}
+                          onChange={(e) => setNewKeyword(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              addCustomKeyword();
+                            }
+                          }}
+                          placeholder="Add a keyword"
+                          className="gr-input h-9! w-52 text-[12px]!"
+                        />
+                      </div>
+                      <div className="relative flex-1">
+                        <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8a9198]" />
+                        <input
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Search inside filtered reviews"
+                          className="gr-input h-9! text-[12px]!"
+                        />
+                      </div>
+                      <a href={scrape.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center gap-1 text-[12px] text-[#00b67a]">
+                        Trustpilot <ExternalLink className="size-3" />
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
               </div>
               {partial ? (
                 <div className="flex flex-col gap-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-[12px] text-[#6b5b2a] sm:flex-row sm:items-center sm:justify-between">
@@ -1782,7 +1867,7 @@ export function GraceApp() {
                 officialScore={scrape.trustScore}
                 officialCount={scrape.totalReviews}
                 pokerScore={pokerScore}
-                pokerCount={poker12.length}
+                pokerCount={poker12.filter(hasStars).length}
                 pokerCaption={pokerCaption}
                 size={20}
                 onOfficial={() => showReviews(`${shortName} · all captured`, brandReviews)}
@@ -1794,6 +1879,23 @@ export function GraceApp() {
               <button type="button" className="gr-count font-normal" onClick={() => showReviews(`${shortName} · ${windowLabel}`, windowReviews)}>
                 {windowTotal.toLocaleString()} reviews
               </button>
+              {(["reddit", "twoplustwo", "web"] as const).map((src) => {
+                const list = windowReviews.filter((r) => reviewSource(r) === src);
+                if (!list.length) return null;
+                const label = src === "reddit" ? "Reddit" : src === "twoplustwo" ? "2+2" : "other sources";
+                return (
+                  <span key={src}>
+                    {" · "}
+                    <button
+                      type="button"
+                      className="gr-count font-normal"
+                      onClick={() => showReviews(`${shortName} · ${label} · ${windowLabel}`, list)}
+                    >
+                      {list.length.toLocaleString()} from {label}
+                    </button>
+                  </span>
+                );
+              })}
               {partial ? ` · ${captured.toLocaleString()} captured` : ""}
               {stats.count !== windowTotal ? (
                 <>
@@ -2015,6 +2117,67 @@ export function GraceApp() {
             </div>
           </section>
 
+          {enabledSources.includes("reddit") || enabledSources.includes("twoplustwo") || extraUrls.length ? (
+          <section className="gr-slide">
+            <h1 className="gr-title">Reddit &amp; forums</h1>
+            <div className="gr-title-rule" />
+            <p className="mt-4 text-[13px] text-[#6c737a]">
+              {busy && extraPool.length === 0
+                ? "Collecting Reddit and Two Plus Two mentions…"
+                : extraReviews.length
+                  ? `${extraReviews.length.toLocaleString()} ${windowLabel} mentions${
+                      filterOn ? ` match ${filterLabel}` : ""
+                    }.`
+                  : extraPool.length
+                    ? `No ${windowLabel} mentions${filterOn ? ` match ${filterLabel}` : ""}. ${extraPool.length.toLocaleString()} in this pull from other months.`
+                    : "Pull reviews to collect Reddit and Two Plus Two. Added URLs land here too."}
+            </p>
+            {extraReviews.length ? (
+              <div className="mt-5 flex flex-wrap gap-2 text-[12px] text-[#6c737a]">
+                {extraBySource.reddit.length ? (
+                  <button
+                    type="button"
+                    className="gr-chip"
+                    onClick={() => showReviews(`${shortName} · Reddit`, extraBySource.reddit)}
+                  >
+                    Reddit {extraBySource.reddit.length}
+                  </button>
+                ) : null}
+                {extraBySource.two.length ? (
+                  <button
+                    type="button"
+                    className="gr-chip"
+                    onClick={() => showReviews(`${shortName} · Two Plus Two`, extraBySource.two)}
+                  >
+                    Two Plus Two {extraBySource.two.length}
+                  </button>
+                ) : null}
+                {extraBySource.web.length ? (
+                  <button
+                    type="button"
+                    className="gr-chip"
+                    onClick={() => showReviews(`${shortName} · other sources`, extraBySource.web)}
+                  >
+                    Other {extraBySource.web.length}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {extraReviews.length ? (
+              <div className="mt-6">
+                <ReviewList
+                  key={`${current}|extras|${window_}|${activeKeywords.join(",")}|${query}`}
+                  reviews={extraReviews}
+                  keywords={highlightKeys}
+                  pinnedIds={featuredIds}
+                  onPin={pinReview}
+                  onExclude={excludeReview}
+                />
+              </div>
+            ) : null}
+          </section>
+          ) : null}
+
           <section className="gr-slide">
             {filterOn ? (
               <>
@@ -2129,6 +2292,116 @@ export function GraceApp() {
           <section className="gr-slide">
             <h1 className="gr-title">Trustpilot — {shortName} vs Competitors</h1>
             <div className="gr-title-rule" />
+            <div className="gr-no-print mt-6 flex flex-col gap-2.5">
+              <div className="flex flex-wrap items-center gap-1.5">
+                {COMPETITOR_SETS.map((s) => (
+                  <button key={s.id} type="button" onClick={() => applyCompetitorSet(s.id)} className="gr-chip" data-on={String(competitorSet === s.id)}>
+                    {s.label}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setCompetitorSet("custom")} className="gr-chip" data-on={String(competitorSet === "custom")}>
+                  Custom
+                </button>
+              </div>
+              {rivals.length ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {rivals.map((r) => {
+                    let slug = r;
+                    try {
+                      slug = trustpilotSlugFromInput(r);
+                    } catch {
+                      /* keep */
+                    }
+                    const have = Boolean(findCacheKey(cache, slug));
+                    const err = rivalErrors[r];
+                    const loading = rivalBusy === slug;
+                    return (
+                      <span
+                        key={r}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[12px] ${
+                          have ? "border-[#00b67a]" : err ? "border-[#ff3722]" : "border-[#e3e6ea]"
+                        }`}
+                        title={err}
+                      >
+                        {loading ? <Loader2 className="size-3 animate-spin" /> : have ? <Check className="size-3 text-[#00b67a]" /> : null}
+                        <BrandIcon slug={slug} name={r} size={14} />
+                        {r}
+                        <button
+                          type="button"
+                          className="cursor-pointer opacity-50 hover:opacity-100"
+                          onClick={() => {
+                            setRivals((p) => p.filter((x) => x !== r));
+                            setCompetitorSet("custom");
+                          }}
+                        >
+                          <X className="size-3" />
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                {rivalSearchOpen ? (
+                  <div className="gr-rival-field">
+                    <Search className="size-3.5 shrink-0 text-[#8a9198]" />
+                    <input
+                      ref={rivalSearchRef}
+                      value={newRival}
+                      onChange={(e) => setNewRival(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setNewRival("");
+                          setRivalSearchOpen(false);
+                        }
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const v = newRival.trim();
+                          if (!v) return;
+                          setRivals((p) => (p.includes(v) ? p : [...p, v]));
+                          setCompetitorSet("custom");
+                          setNewRival("");
+                        }
+                      }}
+                      placeholder="competitor.com"
+                    />
+                    <button
+                      type="button"
+                      className="text-[#8a9198] hover:text-[#191919]"
+                      aria-label="Close"
+                      onClick={() => {
+                        setNewRival("");
+                        setRivalSearchOpen(false);
+                      }}
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="gr-chip"
+                    onClick={() => {
+                      setRivalSearchOpen(true);
+                      window.setTimeout(() => rivalSearchRef.current?.focus(), 20);
+                    }}
+                  >
+                    <Plus className="size-3.5" />
+                    Add competitor
+                  </button>
+                )}
+                {rivalBusy ? (
+                  <button type="button" onClick={() => { abortRivals.current = true; }} className="gr-chip">
+                    Stop
+                  </button>
+                ) : rivals.length ? (
+                  <button type="button" onClick={() => void runRivals()} disabled={!!busy} className="gr-btn">
+                    {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                    Pull competitors
+                  </button>
+                ) : null}
+              </div>
+            </div>
             <div className="gr-copy mt-8 space-y-3">
               {vsCopy.length
                 ? vsCopy.map((l) => <p key={l}>{l}</p>)

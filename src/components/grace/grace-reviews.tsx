@@ -2,8 +2,42 @@
 
 import { useState } from "react";
 import { highlightSegments } from "@/lib/grace/analysis";
-import type { GraceReview } from "@/lib/grace/types";
+import { hasStars, redditSubreddit, reviewSource, type GraceReview } from "@/lib/grace/types";
 import { TpStars } from "./tp-stars";
+
+function sourceLabel(review: GraceReview): string {
+  const source = reviewSource(review);
+  if (source === "reddit") {
+    const sub = redditSubreddit(review);
+    return sub ? `r/${sub}` : "Reddit";
+  }
+  if (source === "twoplustwo") return "2+2";
+  if (source === "web") {
+    try {
+      return review.url ? new URL(review.url).hostname.replace(/^www\./, "") : "Web";
+    } catch {
+      return "Web";
+    }
+  }
+  return "Trustpilot";
+}
+
+export function SourceBadge({ review }: { review: GraceReview }) {
+  const source = reviewSource(review);
+  const label = sourceLabel(review);
+  if (review.url && source !== "trustpilot") {
+    return (
+      <a href={review.url} target="_blank" rel="noreferrer" className="gr-source" data-source={source}>
+        {label}
+      </a>
+    );
+  }
+  return (
+    <span className="gr-source" data-source={source}>
+      {label}
+    </span>
+  );
+}
 
 export function Highlight({ text, keywords }: { text: string; keywords: string[] }) {
   const segs = highlightSegments(text, keywords);
@@ -25,7 +59,12 @@ export function Highlight({ text, keywords }: { text: string; keywords: string[]
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 /** Trustpilot-style review row: name + stars on the left, title and body on the right. */
@@ -69,13 +108,17 @@ export function ReviewCard({
           {matched ? <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-[#00b67a]">Match</span> : null}
         </div>
         <div className="tp-review-meta">
-          {review.country ? `${review.country} · ` : ""}
-          {fmtDate(review.date)}
+          <SourceBadge review={review} />
+          {review.country ? ` · ${review.country}` : ""}
+          {` · ${fmtDate(review.date)}`}
           {review.verified ? " · Verified" : ""}
+          {reviewSource(review) === "reddit" && review.likes ? ` · ${review.likes} upvotes` : ""}
         </div>
-        <div className="mt-2.5">
-          <TpStars rating={review.rating} size={18} />
-        </div>
+        {hasStars(review) ? (
+          <div className="mt-2.5">
+            <TpStars rating={review.rating} size={18} />
+          </div>
+        ) : null}
       </div>
       <div>
         {review.title ? (
@@ -190,8 +233,9 @@ export function FeaturedReview({
         </div>
       ) : null}
       <div className="text-[13px] font-semibold text-[#191919]">{review.author}</div>
-      <div className="mt-1.5">
-        <TpStars rating={review.rating} size={16} />
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <SourceBadge review={review} />
+        {hasStars(review) ? <TpStars rating={review.rating} size={16} /> : null}
       </div>
       {review.title ? (
         <h4 className="mt-2 text-[14px] font-semibold text-[#191919]">

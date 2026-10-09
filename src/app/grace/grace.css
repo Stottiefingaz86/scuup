@@ -140,11 +140,12 @@
   background: #fff;
   border: 1px solid #e7e9ec;
   border-radius: 16px;
+  margin-bottom: 20px;
 }
 
 .grace-root .gr-toolbar[data-slim="true"] {
   border-radius: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .grace-root .gr-slide {
@@ -724,6 +725,135 @@
   margin-top: 4px;
   font-size: 12px;
   color: #6c737a;
+}
+
+.grace-root .gr-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 20px;
+  border-top: 1px solid #f1f3f5;
+}
+
+.grace-root .gr-source-menu {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.grace-root .gr-sources-label {
+  margin-right: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a9198;
+}
+
+.grace-root .gr-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #f4f5f7;
+  color: #3d4349;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.grace-root .gr-source-pill[data-extra] button {
+  display: inline-flex;
+  margin-left: 2px;
+  color: #8a9198;
+  cursor: pointer;
+}
+
+.grace-root .gr-source-pill[data-extra] button:hover {
+  color: #ff3722;
+}
+
+.grace-root .gr-source-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px dashed #d5d9de;
+  border-radius: 8px;
+  background: transparent;
+  color: #6c737a;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.grace-root .gr-source-add:hover {
+  border-color: #b8bec6;
+  color: #191919;
+}
+
+.grace-root .gr-source-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.grace-root .gr-kw {
+  border-top: 1px solid #f1f3f5;
+  padding-top: 12px;
+}
+
+.grace-root .gr-kw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.grace-root .gr-kw-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a9198;
+}
+
+.grace-root .gr-source {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #f4f5f7;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  color: #4b5560;
+}
+
+.grace-root .gr-source[data-source="reddit"] {
+  background: #fff3ee;
+  color: #c2410c;
+}
+
+.grace-root .gr-source[data-source="trustpilot"] {
+  background: #e4f7ef;
+  color: #0b7a4b;
+}
+
+.grace-root .gr-source[data-source="twoplustwo"] {
+  background: #eef2ff;
+  color: #3730a3;
+}
+
+.grace-root .gr-source[data-source="web"] {
+  background: #f4f5f7;
+  color: #4b5560;
 }
 
 .grace-root .tp-review-title {

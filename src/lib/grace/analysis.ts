@@ -1,4 +1,4 @@
-import type { GraceReview, GraceScrape, GraceWindow } from "./types";
+import { hasStars, type GraceReview, type GraceScrape, type GraceWindow } from "./types";
 
 /* ------------------------------------------------------------------ */
 /* Presets                                                             */
@@ -286,10 +286,10 @@ export interface ReviewStats {
 }
 
 export function isPositive(r: GraceReview): boolean {
-  return r.rating >= 4;
+  return hasStars(r) && r.rating >= 4;
 }
 export function isNegative(r: GraceReview): boolean {
-  return r.rating <= 2;
+  return hasStars(r) && r.rating <= 2;
 }
 
 /** Label the captured set from its oldest review, not from Trustpilot's official score. */
@@ -304,20 +304,24 @@ export function pullSpanLabel(reviews: GraceReview[]): string {
 
 /** Mean star rating to one decimal — a standalone TrustScore-style number. */
 export function standaloneScore(reviews: GraceReview[]): number | null {
-  if (!reviews.length) return null;
-  const sum = reviews.reduce((n, r) => n + r.rating, 0);
-  return Math.round((sum / reviews.length) * 10) / 10;
+  const starred = reviews.filter(hasStars);
+  if (!starred.length) return null;
+  const sum = starred.reduce((n, r) => n + r.rating, 0);
+  return Math.round((sum / starred.length) * 10) / 10;
 }
 
 export function reviewStats(reviews: GraceReview[]): ReviewStats {
   const stars: ReviewStats["stars"] = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   let sum = 0;
   let replied = 0;
+  let rated = 0;
   for (const r of reviews) {
+    if (r.reply) replied += 1;
+    if (!hasStars(r)) continue;
     const s = Math.min(5, Math.max(1, Math.round(r.rating))) as 1 | 2 | 3 | 4 | 5;
     stars[s] += 1;
     sum += r.rating;
-    if (r.reply) replied += 1;
+    rated += 1;
   }
   const count = reviews.length;
   const positive = stars[4] + stars[5];
@@ -326,13 +330,13 @@ export function reviewStats(reviews: GraceReview[]): ReviewStats {
   const pct = (n: number) => (count ? Math.round((n / count) * 1000) / 10 : 0);
   return {
     count,
-    avgRating: count ? Math.round((sum / count) * 100) / 100 : 0,
+    avgRating: rated ? Math.round((sum / rated) * 100) / 100 : 0,
     positive,
     neutral,
     negative,
     positivePct: pct(positive),
     negativePct: pct(negative),
-    sentiment: count ? Math.round(((positive - negative) / count) * 100) : 0,
+    sentiment: rated ? Math.round(((positive - negative) / rated) * 100) : 0,
     stars,
     replied,
     repliedPct: pct(replied),
@@ -393,6 +397,24 @@ export function mergeScrapes(base: GraceScrape, extra: GraceScrape): GraceScrape
   };
 }
 
+/** Append Reddit (or other) rows without touching Trustpilot scores. */
+export function mergeReviews(base: GraceScrape, extra: GraceReview[], searched: string[] = []): GraceScrape {
+  const seen = new Set(base.reviews.map((r) => r.id));
+  const reviews = [...base.reviews];
+  for (const r of extra) {
+    if (seen.has(r.id)) continue;
+    seen.add(r.id);
+    reviews.push(r);
+  }
+  reviews.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  return {
+    ...base,
+    reviews,
+    searched: [...new Set([...base.searched, ...searched])],
+    fetchedAt: new Date().toISOString(),
+  };
+}
+
 /* ------------------------------------------------------------------ */
 /* Topics                                                              */
 /* ------------------------------------------------------------------ */
@@ -418,11 +440,15 @@ export function topicBreakdown(
     let positive = 0;
     let negative = 0;
     let sum = 0;
+    let rated = 0;
     for (const r of reviews) {
       re.lastIndex = 0;
       if (!re.test(`${r.title}\n${r.text}`)) continue;
       total += 1;
-      sum += r.rating;
+      if (hasStars(r)) {
+        sum += r.rating;
+        rated += 1;
+      }
       if (isPositive(r)) positive += 1;
       else if (isNegative(r)) negative += 1;
     }
@@ -434,7 +460,7 @@ export function topicBreakdown(
       negative,
       neutral: total - positive - negative,
       sentiment: Math.round(((positive - negative) / total) * 100),
-      avgRating: Math.round((sum / total) * 100) / 100,
+      avgRating: rated ? Math.round((sum / rated) * 100) / 100 : 0,
     });
   }
   return rows.sort((a, b) => b.total - a.total);
@@ -449,10 +475,14 @@ export function topicGroupRows(reviews: GraceReview[]): TopicRow[] {
     let positive = 0;
     let negative = 0;
     let sum = 0;
+    let rated = 0;
     for (const r of reviews) {
       if (!reviewMatches(r, g.terms)) continue;
       total += 1;
-      sum += r.rating;
+      if (hasStars(r)) {
+        sum += r.rating;
+        rated += 1;
+      }
       if (isPositive(r)) positive += 1;
       else if (isNegative(r)) negative += 1;
     }
@@ -464,7 +494,7 @@ export function topicGroupRows(reviews: GraceReview[]): TopicRow[] {
       negative,
       neutral: total - positive - negative,
       sentiment: Math.round(((positive - negative) / total) * 100),
-      avgRating: Math.round((sum / total) * 100) / 100,
+      avgRating: rated ? Math.round((sum / rated) * 100) / 100 : 0,
     });
   }
   return rows.sort((a, b) => b.total - a.total);
@@ -547,7 +577,7 @@ export function timeline(
   sinceIso?: string,
   untilIso?: string,
 ): TimelinePoint[] {
-  const map = new Map<string, TimelinePoint & { sum: number }>();
+  const map = new Map<string, TimelinePoint & { sum: number; rated: number }>();
   // Seed empty buckets so quiet periods still render.
   const start = sinceIso ? new Date(sinceIso) : null;
   if (start) {
@@ -557,7 +587,7 @@ export function timeline(
     while (cursor <= end && guard++ < 400) {
       const b = bucketKey(cursor, granularity);
       if (!map.has(b.key)) {
-        map.set(b.key, { ...b, count: 0, positive: 0, negative: 0, neutral: 0, sentiment: 0, avgRating: 0, sum: 0 });
+        map.set(b.key, { ...b, count: 0, positive: 0, negative: 0, neutral: 0, sentiment: 0, avgRating: 0, sum: 0, rated: 0 });
       }
       if (granularity === "month") cursor.setUTCMonth(cursor.getUTCMonth() + 1);
       else cursor.setUTCDate(cursor.getUTCDate() + (granularity === "week" ? 7 : 1));
@@ -569,18 +599,21 @@ export function timeline(
     const b = bucketKey(d, granularity);
     let p = map.get(b.key);
     if (!p) {
-      p = { ...b, count: 0, positive: 0, negative: 0, neutral: 0, sentiment: 0, avgRating: 0, sum: 0 };
+      p = { ...b, count: 0, positive: 0, negative: 0, neutral: 0, sentiment: 0, avgRating: 0, sum: 0, rated: 0 };
       map.set(b.key, p);
     }
     p.count += 1;
-    p.sum += r.rating;
+    if (hasStars(r)) {
+      p.sum += r.rating;
+      p.rated += 1;
+    }
     if (isPositive(r)) p.positive += 1;
     else if (isNegative(r)) p.negative += 1;
     else p.neutral += 1;
   }
   const rows = [...map.values()]
     .sort((a, b) => a.key.localeCompare(b.key))
-    .map(({ sum, ...p }) => {
+    .map(({ sum, rated, ...p }) => {
       const label =
         granularity === "week" && start && new Date(p.key) < start
           ? start.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
@@ -589,7 +622,7 @@ export function timeline(
         ...p,
         label,
         sentiment: p.count ? Math.round(((p.positive - p.negative) / p.count) * 100) : 0,
-        avgRating: p.count ? Math.round((sum / p.count) * 100) / 100 : 0,
+        avgRating: rated ? Math.round((sum / rated) * 100) / 100 : 0,
       };
     });
   while (rows.length && rows[0].count === 0) rows.shift();

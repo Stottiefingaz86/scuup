@@ -59,6 +59,8 @@ export function monthBounds(ym: string): { start: string; end: string } {
 
 export const GRACE_WINDOWS = recentMonths(26);
 
+export type GraceSource = "trustpilot" | "reddit" | "twoplustwo" | "web";
+
 export interface GraceReview {
   id: string;
   rating: number;
@@ -73,6 +75,30 @@ export interface GraceReview {
   reply: string | null;
   replyDate: string | null;
   language: string | null;
+  /** Defaults to Trustpilot for older cached pulls. */
+  source?: GraceSource;
+  /** Permalink when the row is not a Trustpilot review. */
+  url?: string;
+  /** Reddit community, without the r/ prefix. */
+  subreddit?: string;
+}
+
+export function redditSubreddit(r: GraceReview): string | undefined {
+  const raw = r.subreddit?.replace(/^r\//i, "").trim();
+  if (raw) return raw;
+  const m = r.url?.match(/\/r\/([^/?#]+)/i);
+  const fromUrl = m?.[1]?.trim();
+  if (fromUrl && !/^(all|popular)$/i.test(fromUrl)) return fromUrl;
+  return undefined;
+}
+
+export function reviewSource(r: GraceReview): GraceSource {
+  return r.source ?? "trustpilot";
+}
+
+/** Trustpilot stars only. Reddit and other sources have no star rating. */
+export function hasStars(r: GraceReview): boolean {
+  return reviewSource(r) === "trustpilot" && r.rating > 0;
 }
 
 export type StarCounts = Record<1 | 2 | 3 | 4 | 5, number>;

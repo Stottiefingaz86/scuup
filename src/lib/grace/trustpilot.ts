@@ -124,6 +124,7 @@ function toReview(
     reply: r.reply?.message?.trim() || null,
     replyDate: r.reply?.publishedDate ?? null,
     language: r.language ?? null,
+    source: "trustpilot",
   };
 }
 

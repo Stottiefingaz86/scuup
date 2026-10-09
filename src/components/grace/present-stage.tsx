@@ -47,7 +47,8 @@ import {
   type SliderBrand,
 } from "./grace-charts";
 import type { ReportBrand } from "./grace-report";
-import { Highlight } from "./grace-reviews";
+import { Highlight, SourceBadge } from "./grace-reviews";
+import { hasStars } from "@/lib/grace/types";
 import { TagCloud } from "./tag-cloud";
 import { ScorePair, TpStars } from "./tp-stars";
 
@@ -191,8 +192,9 @@ function CommentCard({
         ) : null}
       </div>
       <div className="text-[12px] font-semibold text-[#191919]">{review.author}</div>
-      <div className="mt-0.5">
-        <TpStars rating={review.rating} size={13} />
+      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+        <SourceBadge review={review} />
+        {hasStars(review) ? <TpStars rating={review.rating} size={13} /> : null}
       </div>
       {review.title ? (
         <h4 className="mt-1 text-[12.5px] font-semibold text-[#191919]">
