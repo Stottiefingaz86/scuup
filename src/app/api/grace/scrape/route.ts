@@ -9,7 +9,7 @@ export const maxDuration = 300;
 
 /**
  * Standalone Trustpilot pull for /grace. Body: { url, window, searchTerms?,
- * budgetMs? }. Pulls the last 12 months; `window` is the calendar month
+ * budgetMs? }. Pulls up to 24 months; `window` is the calendar month
  * the report will slice to (YYYY-MM).
  */
 export async function POST(request: NextRequest) {

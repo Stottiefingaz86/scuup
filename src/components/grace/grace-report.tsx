@@ -4,6 +4,7 @@ import { reviewMatches, type ReviewStats, type TopicRow } from "@/lib/grace/anal
 import { hasFullCopy, type SavedReportSummary } from "@/lib/grace/reports";
 import type { GraceReview, GraceScrape } from "@/lib/grace/types";
 import {
+  BrandIcon,
   CompetitorLines,
   CompetitorSliders,
   MiniStarBar,
@@ -23,6 +24,11 @@ export interface ReportBrand {
   filtered: GraceReview[];
   stats: ReviewStats;
   all: ReviewStats;
+  pokerScore: number | null;
+  pokerCount: number;
+  pokerReviews: GraceReview[];
+  brandScore: number | null;
+  brandCount: number;
 }
 
 export function GraceReport({
@@ -234,7 +240,8 @@ export function GraceReport({
                     <tr key={b.scrape.slug} className="border-b border-[#f4f5f6] last:border-0">
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-2">
-                          <span className="size-2 rounded-full" style={{ background: b.color }} />
+                          <span className="size-2.5 shrink-0 rounded-full" style={{ background: b.color }} />
+                          <BrandIcon slug={b.scrape.slug} name={b.scrape.displayName} size={18} />
                           {b.scrape.displayName}
                         </span>
                       </td>
@@ -284,10 +291,10 @@ export function GraceReport({
               <CompetitorSliders brands={sliderBrands} />
               <div className="mt-4 flex flex-wrap gap-4 text-[11px] text-[#6c737a]">
                 {sliderBrands.map((b) => (
-                  <span key={b.id} className="inline-flex items-center gap-1.5">
-                    <span className="size-2.5 rounded-full" style={{ background: b.color }} />
-                    {b.name}
-                  </span>
+                    <span key={b.id} className="inline-flex items-center gap-1.5">
+                      <span className="size-2.5 rounded-full" style={{ background: b.color }} />
+                      {b.name}
+                    </span>
                 ))}
               </div>
             </div>

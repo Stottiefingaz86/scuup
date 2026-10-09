@@ -34,7 +34,7 @@ export function monthLabel(ym: string, style: "long" | "short" = "long"): string
   });
 }
 
-export function recentMonths(count = 14, now = new Date()): { id: GraceWindow; label: string; short: string }[] {
+export function recentMonths(count = 26, now = new Date()): { id: GraceWindow; label: string; short: string }[] {
   const out: { id: GraceWindow; label: string; short: string }[] = [];
   for (let i = 0; i < count; i++) {
     const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
@@ -57,7 +57,7 @@ export function monthBounds(ym: string): { start: string; end: string } {
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
-export const GRACE_WINDOWS = recentMonths(14);
+export const GRACE_WINDOWS = recentMonths(26);
 
 export interface GraceReview {
   id: string;
@@ -100,4 +100,8 @@ export interface GraceScrape {
   pagesRead: number;
   /** True when Trustpilot's 10-page cap or our time budget cut a slice short. */
   truncated: boolean;
+  /** LLM verdict for ambiguous keyword hits. Assured poker reviews are omitted. */
+  pokerById?: Record<string, boolean>;
+  /** How far the main Trustpilot date filter reached. Poker search may go further. */
+  horizonMonths?: 12 | 24;
 }

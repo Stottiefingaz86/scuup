@@ -104,12 +104,41 @@ export const TOPIC_GROUPS: { id: string; label: string; terms: string[] }[] = [
   {
     id: "trust",
     label: "Trust & fairness",
-    terms: ["scam", "rigged", "fake", "fraud", "legit", "trust", "honest", "cheat", "steal", "stole"],
+    terms: [
+      "scam",
+      "rigged",
+      "fake",
+      "fraud",
+      "legit",
+      "trust",
+      "honest",
+      "cheat",
+      "steal",
+      "stole",
+      "fair",
+      "unfair",
+      "liar",
+      "stolen",
+      "legitimate",
+    ],
   },
   {
     id: "support",
     label: "Customer support",
-    terms: ["support", "customer service", "live chat", "chat", "agent", "respond", "response", "email"],
+    terms: [
+      "support",
+      "customer service",
+      "live chat",
+      "chat",
+      "agent",
+      "respond",
+      "response",
+      "email",
+      "help",
+      "ticket",
+      "reply",
+      "replied",
+    ],
   },
   {
     id: "product",
@@ -191,6 +220,14 @@ export function reviewMatches(review: GraceReview, keywords: string[]): boolean 
   });
 }
 
+export function reviewsSinceDays(reviews: GraceReview[], days: number): GraceReview[] {
+  const cutoff = Date.now() - days * 86_400_000;
+  return reviews.filter((r) => {
+    const t = Date.parse(r.date);
+    return !Number.isNaN(t) && t >= cutoff;
+  });
+}
+
 export function reviewsInMonth(reviews: GraceReview[], ym: string): GraceReview[] {
   if (!ym) return reviews;
   return reviews.filter((r) => {
@@ -204,14 +241,23 @@ export function reviewsInMonth(reviews: GraceReview[], ym: string): GraceReview[
 
 export function filterReviews(
   reviews: GraceReview[],
-  opts: { keywords: string[]; query: string; windowDays?: number; month?: string },
+  opts: {
+    keywords: string[];
+    query: string;
+    windowDays?: number;
+    month?: string;
+    /** When set, only these review ids count as poker — used with the poker lens. */
+    pokerIds?: Set<string>;
+    allPoker?: boolean;
+  },
 ): GraceReview[] {
   const scoped = opts.month ? reviewsInMonth(reviews, opts.month) : reviews;
   const q = opts.query.trim().toLowerCase();
   const cutoff = opts.windowDays ? Date.now() - opts.windowDays * 86_400_000 : 0;
   return scoped.filter((r) => {
     if (cutoff && Date.parse(r.date) < cutoff) return false;
-    if (!reviewMatches(r, opts.keywords)) return false;
+    if (opts.pokerIds && !opts.pokerIds.has(r.id)) return false;
+    if (!opts.allPoker && !reviewMatches(r, opts.keywords)) return false;
     if (q) {
       const hay = `${r.title}\n${r.text}\n${r.author}`.toLowerCase();
       if (!hay.includes(q)) return false;
@@ -244,6 +290,23 @@ export function isPositive(r: GraceReview): boolean {
 }
 export function isNegative(r: GraceReview): boolean {
   return r.rating <= 2;
+}
+
+/** Label the captured set from its oldest review, not from Trustpilot's official score. */
+export function pullSpanLabel(reviews: GraceReview[]): string {
+  const times = reviews.map((r) => Date.parse(r.date)).filter((n) => !Number.isNaN(n));
+  if (!times.length) return "this pull";
+  const months = Math.max(1, Math.round((Date.now() - Math.min(...times)) / (30.44 * 86_400_000)));
+  if (months >= 20) return "last 24 months";
+  if (months >= 10) return "last 12 months";
+  return `last ${months} month${months === 1 ? "" : "s"}`;
+}
+
+/** Mean star rating to one decimal — a standalone TrustScore-style number. */
+export function standaloneScore(reviews: GraceReview[]): number | null {
+  if (!reviews.length) return null;
+  const sum = reviews.reduce((n, r) => n + r.rating, 0);
+  return Math.round((sum / reviews.length) * 10) / 10;
 }
 
 export function reviewStats(reviews: GraceReview[]): ReviewStats {
@@ -323,6 +386,8 @@ export function mergeScrapes(base: GraceScrape, extra: GraceScrape): GraceScrape
     ...base,
     reviews,
     searched: [...new Set([...base.searched, ...extra.searched])],
+    pokerById: { ...base.pokerById, ...extra.pokerById },
+    horizonMonths: Math.max(base.horizonMonths ?? 12, extra.horizonMonths ?? 12) as 12 | 24,
     pagesRead: base.pagesRead + extra.pagesRead,
     fetchedAt: extra.fetchedAt,
   };
@@ -646,10 +711,12 @@ export function reportNarrative(opts: {
   filterLabel: string;
   windowLabel: string;
   stats: ReviewStats;
+  monthTotal?: number;
   topics: TopicRow[];
   points: TimelinePoint[];
 }): { bullets: string[]; positive: string; negative: string } {
   const { filterLabel, windowLabel, stats, topics, points } = opts;
+  const monthTotal = opts.monthTotal ?? stats.count;
   const live = points.filter((p) => p.count > 0);
   const last = live.at(-1);
   const prev = live.at(-2);
@@ -659,12 +726,13 @@ export function reportNarrative(opts: {
       : null;
   const countDelta = last && prev ? last.count - prev.count : null;
   const bullets: string[] = [];
-  if (last) {
-    bullets.push(
-      `In ${last.label} we had ${last.count} review${last.count === 1 ? "" : "s"} for ${filterLabel}.`,
-    );
-  } else {
-    bullets.push(`${stats.count} review${stats.count === 1 ? "" : "s"} in ${windowLabel.toLowerCase()} mention ${filterLabel}.`);
+  bullets.push(
+    filterLabel !== "All reviews" && monthTotal !== stats.count
+      ? `${windowLabel} had ${stats.count} of ${monthTotal} reviews matching ${filterLabel}.`
+      : `${windowLabel} had ${stats.count} review${stats.count === 1 ? "" : "s"}.`,
+  );
+  if (last && last.count !== stats.count) {
+    bullets.push(`The latest week (${last.label}) had ${last.count} of those.`);
   }
   const sent = stats.sentiment;
   bullets.push(

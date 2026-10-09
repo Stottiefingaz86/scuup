@@ -18,6 +18,24 @@ export interface ReportSnapshot {
   topics: { topic: string; total: number; positive: number; negative: number }[];
 }
 
+export interface SlideCommentary {
+  topics: string;
+  comments: string;
+  competitors: string;
+  charts: string;
+  keywords: string;
+  actions: string;
+}
+
+export const EMPTY_COMMENTARY: SlideCommentary = {
+  topics: "",
+  comments: "",
+  competitors: "",
+  charts: "",
+  keywords: "",
+  actions: "",
+};
+
 export interface SavedReportSummary {
   headline: string;
   /** Left-column period lines (reviews, sentiment, vs last period). */
@@ -33,6 +51,7 @@ export interface SavedReportSummary {
   wins: string[];
   pains: string[];
   actions: string[];
+  commentary?: SlideCommentary;
   /** Older shape — still render if a saved report only has this. */
   summary?: string;
 }
@@ -49,7 +68,8 @@ export type PresentWidgetType =
   | "keywords"
   | "stars"
   | "timeline"
-  | "sentiment";
+  | "sentiment"
+  | "actions";
 
 export type PresentSize = "s" | "m" | "l";
 export type PresentSpan = "full" | "wide" | "tall" | "quarter";
@@ -66,6 +86,10 @@ export interface PresentPage {
   /** Two medium widgets: row = side by side, col = stacked. */
   stack?: "row" | "col";
   widgets: PresentWidget[];
+  /** Optional prior report to compare this slide against. */
+  compareId?: string | null;
+  /** Analyst note for the left rail. */
+  note?: string;
 }
 
 export const PRESENT_WIDGETS: { type: PresentWidgetType; label: string }[] = [
@@ -81,9 +105,10 @@ export const PRESENT_WIDGETS: { type: PresentWidgetType; label: string }[] = [
   { type: "stars", label: "Star mix" },
   { type: "timeline", label: "Timeline" },
   { type: "sentiment", label: "Sentiment score" },
+  { type: "actions", label: "Actions" },
 ];
 
-const LARGE_TYPES = new Set<PresentWidgetType>(["comments", "competitors"]);
+const LARGE_TYPES = new Set<PresentWidgetType>(["comments", "competitors", "actions", "briefing"]);
 const LEGACY_TYPES = new Set<PresentWidgetType>([
   "briefing",
   "topics",
@@ -132,13 +157,14 @@ export function defaultPresentation(opts?: {
   const who = [brand, filter].filter(Boolean).join(" ");
   const how = who ? `How ${who} is doing${win ? ` · ${win}` : ""}` : "How we're doing";
   return [
+    newPage([{ id: "w_briefing", type: "briefing", size: "l" }], how),
     newPage(
-      [
-        { id: "w_briefing", type: "briefing", size: "m" },
-        { id: "w_topics", type: "topics", size: "m" },
-      ],
-      how,
-      "row",
+      [{ id: "w_topics", type: "topics", size: "l" }],
+      who ? `What they talk about · ${who}` : "What they talk about",
+    ),
+    newPage(
+      [{ id: "w_timeline", type: "timeline", size: "l" }],
+      win ? `How the month moved · ${win}` : "How the month moved",
     ),
     newPage(
       [{ id: "w_comments", type: "comments", size: "l" }],
@@ -149,20 +175,8 @@ export function defaultPresentation(opts?: {
       brand ? `${brand} vs competitors · ${win || "this month"}` : "Vs competitors",
     ),
     newPage(
-      [
-        { id: "w_lines", type: "lines", size: "m" },
-        { id: "w_sliders", type: "sliders", size: "m" },
-      ],
-      win ? `Sentiment vs competitors · ${win}` : "Sentiment vs competitors",
-      "col",
-    ),
-    newPage(
-      [
-        { id: "w_keywords", type: "keywords", size: "m" },
-        { id: "w_stars", type: "stars", size: "m" },
-      ],
-      win ? `Mentions and stars · ${win}` : "Mentions and stars",
-      "row",
+      [{ id: "w_actions", type: "actions", size: "l" }],
+      who ? `What to do next · ${who}` : "What to do next",
     ),
   ];
 }
@@ -302,7 +316,8 @@ function isLegacyLayout(pages: PresentPage[]): boolean {
   if (pages.every((p) => !String(p.title ?? "").trim())) return true;
   if (pages.some((p) => /30 days|Last \d|6 months|1 year/i.test(p.title))) return true;
   const types = pages.flatMap((p) => p.widgets.map((w) => w.type));
-  return types.length > 0 && types.every((t) => LEGACY_TYPES.has(t));
+  if (types.length > 0 && types.every((t) => LEGACY_TYPES.has(t))) return true;
+  return !types.includes("actions");
 }
 
 /** Accepts the current page layout or the older flat widget list. */
@@ -318,6 +333,8 @@ export function normalizeLayout(
       id: p.id || newPageId(),
       title: typeof p.title === "string" ? p.title : "",
       stack: p.stack === "col" || p.stack === "row" ? p.stack : undefined,
+      compareId: typeof p.compareId === "string" || p.compareId === null ? p.compareId : undefined,
+      note: typeof p.note === "string" ? p.note : undefined,
       widgets: (p.widgets ?? [])
         .filter((w): w is PresentWidget => Boolean(w && (w as PresentWidget).type))
         .map((w) => asWidget(w)),
@@ -342,6 +359,8 @@ export interface SavedReport {
   competitorSet: string;
   compareWithId: string | null;
   featuredIds: string[];
+  /** Reviews dropped from this report (false keyword hits, off-topic). */
+  excludedIds: string[];
   layout: PresentPage[];
   snapshot: ReportSnapshot | null;
   summary: SavedReportSummary | null;
@@ -359,6 +378,7 @@ export function loadReports(): SavedReport[] {
       ...r,
       compareWithId: r.compareWithId ?? null,
       featuredIds: Array.isArray(r.featuredIds) ? r.featuredIds.slice(0, 5) : [],
+      excludedIds: Array.isArray(r.excludedIds) ? r.excludedIds : [],
       layout: normalizeLayout(r.layout, {
         brand: r.snapshot?.brand,
         filter: r.snapshot?.filterLabel,
@@ -437,6 +457,77 @@ export function hasFullCopy(
   return Boolean(s && Array.isArray(s.period) && s.period.length > 0);
 }
 
+const TEMPLATE_KEY = "grace:template:v1";
+
+export interface PresentationTemplate {
+  pages: {
+    title: string;
+    stack?: "row" | "col";
+    widgets: { type: PresentWidgetType; size: PresentSize }[];
+  }[];
+}
+
+const MONTH_IN_TITLE =
+  /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/g;
+
+function stampTitle(title: string, windowLabel?: string): string {
+  if (!windowLabel || !title) return title;
+  return title.replace(MONTH_IN_TITLE, windowLabel);
+}
+
+export function persistPresentationTemplate(pages: PresentPage[]) {
+  const tpl: PresentationTemplate = {
+    pages: pages
+      .filter((p) => p.widgets.length)
+      .map((p) => ({
+        title: p.title,
+        stack: p.stack,
+        widgets: p.widgets.map((w) => ({ type: w.type, size: w.size })),
+      })),
+  };
+  try {
+    localStorage.setItem(TEMPLATE_KEY, JSON.stringify(tpl));
+  } catch {
+    /* quota */
+  }
+}
+
+export function loadPresentationTemplate(): PresentationTemplate | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(TEMPLATE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PresentationTemplate;
+    if (!Array.isArray(parsed?.pages) || !parsed.pages.length) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function applyPresentationTemplate(
+  tpl: PresentationTemplate,
+  opts?: { brand?: string; filter?: string; window?: string },
+): PresentPage[] {
+  return tpl.pages.map((p) =>
+    newPage(
+      p.widgets.map((w) => newWidget(w.type, w.size)),
+      stampTitle(p.title, opts?.window),
+      p.stack,
+    ),
+  );
+}
+
+export function presentationForNewReport(opts?: {
+  brand?: string;
+  filter?: string;
+  window?: string;
+}): PresentPage[] {
+  const tpl = loadPresentationTemplate();
+  if (tpl) return applyPresentationTemplate(tpl, opts);
+  return defaultPresentation(opts);
+}
+
 export function briefingFromDraft(opts: {
   period: string[];
   mix: string;
@@ -456,5 +547,6 @@ export function briefingFromDraft(opts: {
     wins: [],
     pains: [],
     actions: [],
+    commentary: { ...EMPTY_COMMENTARY },
   };
 }

@@ -17,11 +17,14 @@ import {
   type PresentSpan,
   type PresentWidget,
   type PresentWidgetType,
+  type SavedReport,
   type SavedReportSummary,
+  EMPTY_COMMENTARY,
   hasFullCopy,
 } from "@/lib/grace/reports";
-import type { GraceReview, GraceScrape } from "@/lib/grace/types";
+import { monthLabel, type GraceReview, type GraceScrape } from "@/lib/grace/types";
 import {
+  BrandIcon,
   CompetitorLines,
   CompetitorSliders,
   KeywordMentionBars,
@@ -37,18 +40,28 @@ import {
 import type { ReportBrand } from "./grace-report";
 import { Highlight } from "./grace-reviews";
 import { TagCloud } from "./tag-cloud";
-import { TpScore, TpStars } from "./tp-stars";
+import { ScorePair, TpStars } from "./tp-stars";
+
+export type RewriteFacts = {
+  month?: string;
+  reviewCount?: number;
+  avgRating?: number;
+  sentiment?: number;
+  filter?: string;
+};
 
 function EditableCopy({
   text,
   field,
   brand,
+  facts,
   multiline = false,
   onSave,
 }: {
   text: string;
   field: string;
   brand: string;
+  facts?: RewriteFacts;
   multiline?: boolean;
   onSave: (next: string) => void;
 }) {
@@ -70,7 +83,7 @@ function EditableCopy({
       const res = await fetch("/api/grace/rewrite", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: draft || text, field, brand }),
+        body: JSON.stringify({ text: draft || text, field, brand, facts }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Rewrite failed");
@@ -132,12 +145,14 @@ function CommentCard({
   keywords,
   pool,
   onRemove,
+  onExclude,
   onReplace,
 }: {
   review: GraceReview;
   keywords: string[];
   pool: GraceReview[];
   onRemove: () => void;
+  onExclude?: () => void;
   onReplace: (id: string) => void;
 }) {
   const [swap, setSwap] = useState(false);
@@ -158,8 +173,13 @@ function CommentCard({
           Change
         </button>
         <button type="button" onClick={onRemove}>
-          Remove
+          Off slide
         </button>
+        {onExclude ? (
+          <button type="button" onClick={onExclude}>
+            Remove
+          </button>
+        ) : null}
       </div>
       <div className="text-[12px] font-semibold text-[#191919]">{review.author}</div>
       <div className="mt-0.5">
@@ -277,6 +297,187 @@ function SlotAdd({
   );
 }
 
+function widgetLabel(type: PresentWidgetType): string {
+  return PRESENT_WIDGETS.find((w) => w.type === type)?.label ?? type;
+}
+
+function SlideNote({
+  page,
+  headline,
+  period,
+  positive,
+  negative,
+  changed,
+  explainWidget,
+  compareWidget,
+  priors,
+  deckCompareId,
+  onCompareDeck,
+  onPageCompare,
+  onNote,
+  brand,
+  facts,
+}: {
+  page: PresentPage;
+  headline: string;
+  period: string[];
+  positive: string;
+  negative: string;
+  changed: string[];
+  explainWidget: (type: PresentWidgetType) => string;
+  compareWidget: (type: PresentWidgetType, prior: SavedReport) => string;
+  priors: SavedReport[];
+  deckCompareId: string | null;
+  onCompareDeck: (id: string | null) => void;
+  onPageCompare: (id: string | null) => void;
+  onNote: (note: string) => void;
+  brand: string;
+  facts: RewriteFacts;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const compareId = page.compareId !== undefined ? page.compareId : deckCompareId;
+  const prior = priors.find((r) => r.id === compareId) ?? (compareId ? null : priors[0] ?? null);
+  const types = page.widgets.map((w) => w.type);
+  const hasBriefing = types.includes("briefing");
+
+  const writeCompare = async () => {
+    if (!prior) return;
+    const draft = types
+      .map((type) => `${widgetLabel(type)}: ${compareWidget(type, prior)}`)
+      .filter((line) => !line.endsWith(": "))
+      .join("\n");
+    if (!draft.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/grace/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: draft,
+          field: `slide compare vs ${prior.name}`,
+          brand,
+          facts,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Compare failed");
+      onNote(String(data.text ?? draft));
+    } catch (e) {
+      onNote(draft);
+      setErr(e instanceof Error ? e.message : "Compare failed — kept the live text.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="gr-copy space-y-3">
+      <div>
+        <p className="gr-slide-kicker">What this shows</p>
+        {hasBriefing ? (
+          <div className="space-y-2">
+            <p className="gr-brief-head">{headline}</p>
+            {(period.length ? period : [explainWidget("briefing")]).map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+            {positive ? (
+              <p>
+                <strong>Positive. </strong>
+                {positive}
+              </p>
+            ) : null}
+            {negative ? (
+              <p>
+                <strong>Negative. </strong>
+                {negative}
+              </p>
+            ) : null}
+            {changed.length ? (
+              <p>
+                <strong>What moved. </strong>
+                {changed[0]}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+        {types
+          .filter((type) => !hasBriefing || type !== "briefing")
+          .map((type) => (
+            <div key={type} className="mt-3">
+              <p className="gr-slide-kicker">{widgetLabel(type)}</p>
+              <p>{explainWidget(type)}</p>
+            </div>
+          ))}
+      </div>
+
+      <div className="gr-no-print">
+        <p className="gr-slide-kicker">Compare to</p>
+        {priors.length ? (
+          <select
+            value={compareId ?? ""}
+            onChange={(e) => {
+              const id = e.target.value || null;
+              onPageCompare(id);
+              if (page.compareId === undefined) onCompareDeck(id);
+            }}
+            className="mt-1 h-8 w-full rounded-md border border-[#e3e6ea] bg-white px-2 text-[12px] text-[#191919] outline-none"
+          >
+            <option value="">{priors[0] ? `Latest prior · ${priors[0].name}` : "None"}</option>
+            {priors.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="text-[12px] text-[#8a9198]">Save last month’s report to compare this slide against it.</p>
+        )}
+      </div>
+
+      {prior?.snapshot ? (
+        <div>
+          <p className="gr-slide-kicker">Vs {prior.name}</p>
+          {types.map((type) => {
+            const line = compareWidget(type, prior);
+            return line ? (
+              <p key={type} className="mt-1">
+                {line}
+              </p>
+            ) : null;
+          })}
+          <button
+            type="button"
+            className="gr-no-print gr-chip mt-2"
+            disabled={busy}
+            onClick={() => void writeCompare()}
+          >
+            {busy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+            Write this compare
+          </button>
+          {err ? <p className="mt-1 text-[11px] text-[#ff3722]">{err}</p> : null}
+        </div>
+      ) : null}
+
+      {page.note ? (
+        <div>
+          <p className="gr-slide-kicker">Analyst note</p>
+          {page.note.split("\n").map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function deltaPhrase(now: number, then: number, noun: string): string {
+  const d = now - then;
+  if (d === 0) return `Same ${noun} as the compared report (${then}).`;
+  return `${Math.abs(d)} ${noun} ${d > 0 ? "more" : "fewer"} than the compared report (${then}).`;
+}
+
 export function PresentStage({
   scrape,
   shortName,
@@ -296,10 +497,17 @@ export function PresentStage({
   compareBrands,
   sliderBrands,
   seriesBrands,
+  pokerScore,
+  pokerCount,
+  pokerCaption,
   layout,
   onLayout,
   onSummary,
   onFeatured,
+  onExclude,
+  priors,
+  compareWithId,
+  onCompare,
 }: {
   scrape: GraceScrape;
   shortName: string;
@@ -319,14 +527,30 @@ export function PresentStage({
   compareBrands: ReportBrand[];
   sliderBrands: SliderBrand[];
   seriesBrands: SeriesBrand[];
+  pokerScore: number | null;
+  pokerCount: number;
+  pokerCaption?: string;
   layout: PresentPage[];
   onLayout: (next: PresentPage[]) => void;
   onSummary: (next: SavedReportSummary) => void;
   onFeatured: (ids: string[]) => void;
+  onExclude?: (review: GraceReview) => void;
+  priors: SavedReport[];
+  compareWithId: string | null;
+  onCompare: (id: string | null) => void;
 }) {
   const [drag, setDrag] = useState<{ pageId: string; widgetId: string } | null>(null);
   const brand = scrape.displayName;
-  const period = hasFullCopy(summary) ? summary.period : [];
+  const filterOn = filterLabel !== "All reviews";
+  const matchingLine = filterOn
+    ? `${stats.count} of ${windowTotal} ${windowLabel} reviews match ${filterLabel}.`
+    : `${windowTotal} ${windowLabel} reviews.`;
+  const period = (() => {
+    const src = hasFullCopy(summary) ? summary.period : [];
+    if (!filterOn) return src;
+    const rest = src.filter((line) => !/\d+\s+of\s+\d+/.test(line));
+    return [matchingLine, ...rest].slice(0, 5);
+  })();
   const mix = hasFullCopy(summary) ? summary.mix : "";
   const positive = hasFullCopy(summary) ? summary.positive : "";
   const negative = hasFullCopy(summary) ? summary.negative : "";
@@ -338,6 +562,13 @@ export function PresentStage({
     .join(" ");
   const featuredIds = featured.map((r) => r.id);
   const usedTypes = new Set(layout.flatMap((p) => p.widgets.map((w) => w.type)));
+  const facts: RewriteFacts = {
+    month: windowLabel,
+    reviewCount: stats.count,
+    avgRating: stats.avgRating,
+    sentiment: stats.sentiment,
+    filter: filterLabel,
+  };
 
   const patch = (partial: Partial<SavedReportSummary>) => {
     const base: SavedReportSummary = summary ?? {
@@ -352,8 +583,133 @@ export function PresentStage({
       wins: [],
       pains: [],
       actions: [],
+      commentary: { ...EMPTY_COMMENTARY },
     };
     onSummary({ ...base, ...partial });
+  };
+
+  const commentary = summary?.commentary ?? EMPTY_COMMENTARY;
+  const topPos = [...topicRows].sort((a, b) => b.positive - a.positive)[0];
+  const topNeg = [...topicRows].sort((a, b) => b.negative - a.negative)[0];
+  const spikes = [...topicRows]
+    .filter((t) => t.negative >= 2 && t.negative >= t.positive)
+    .sort((a, b) => b.negative - a.negative)
+    .slice(0, 3);
+  const setLabel = filterOn
+    ? `the ${stats.count} ${windowLabel} reviews matching ${filterLabel}`
+    : `the ${stats.count} ${windowLabel} reviews`;
+  const live = points.filter((p) => p.count > 0);
+  const lastPt = live.at(-1);
+  const prevPt = live.at(-2);
+  const explainWidget = (type: PresentWidgetType): string => {
+    if (type === "briefing") {
+      return (
+        commentary.charts ||
+        `${matchingLine} Average ${stats.avgRating}/5. Sentiment ${stats.sentiment > 0 ? "+" : ""}${stats.sentiment}.`
+      );
+    }
+    if (type === "topics") {
+      return (
+        commentary.topics ||
+        `These bars count praise and complaints by theme in ${setLabel}.${
+          topNeg ? ` ${topNeg.topic} leads complaints (${topNeg.negative}).` : ""
+        }${topPos?.positive ? ` ${topPos.topic} leads praise (${topPos.positive}).` : ""}`
+      );
+    }
+    if (type === "comments") {
+      return (
+        commentary.comments ||
+        (filterOn
+          ? `Quotes on this slide are only from ${setLabel}, not the full ${windowTotal} ${windowLabel} set.`
+          : `Quotes on this slide are from ${setLabel}.`)
+      );
+    }
+    if (type === "competitors") {
+      return (
+        commentary.competitors ||
+        vsCopy[0] ||
+        `Official TrustScore vs poker score for each pulled brand. Matching is this month’s ${filterLabel} slice.`
+      );
+    }
+    if (type === "keywords") {
+      return commentary.keywords || `Words that show up most often in ${setLabel}.`;
+    }
+    if (type === "stars") {
+      return `Star mix for ${setLabel}. ${stats.negative} are 1–2 star, ${stats.positive} are 4–5 star.`;
+    }
+    if (type === "tagcloud") {
+      return commentary.keywords || `The loudest words in ${setLabel}. Bigger means more mentions.`;
+    }
+    if (type === "actions") {
+      return (
+        commentary.actions ||
+        (spikes[0]
+          ? `Biggest topic concern in ${setLabel} is ${spikes[0].topic} (${spikes[0].negative} negative). Start there.`
+          : `No topic has a clear negative spike in ${setLabel}.`)
+      );
+    }
+    if (type === "timeline") {
+      const week =
+        lastPt && prevPt
+          ? ` Latest week (${lastPt.label}) is ${lastPt.count} reviews, sentiment ${lastPt.sentiment > 0 ? "+" : ""}${lastPt.sentiment}, vs ${prevPt.label} (${prevPt.count}, ${prevPt.sentiment > 0 ? "+" : ""}${prevPt.sentiment}).`
+          : lastPt
+            ? ` Latest week (${lastPt.label}) is ${lastPt.count} reviews, sentiment ${lastPt.sentiment > 0 ? "+" : ""}${lastPt.sentiment}.`
+            : "";
+      return (
+        commentary.charts ||
+        `Bars are review volume. The line is sentiment. Both are ${setLabel}.${week}`
+      );
+    }
+    if (type === "lines") {
+      const names = seriesBrands.map((b) => b.name).join(", ");
+      return `Competitor sentiment over the month for ${names || "the pulled brands"}. A week only plots if that brand had reviews.`;
+    }
+    if (type === "sliders") {
+      return `Each scale is one topic. A brand only appears if someone mentioned that topic in ${setLabel}. Left is negative, right is positive.`;
+    }
+    if (type === "trends") {
+      return `Sentiment over time plus topic scales for the same ${setLabel}. Brands with no mentions on a topic are omitted so an empty topic does not look like a bad score.`;
+    }
+    if (type === "sentiment") {
+      return `Overall sentiment for ${setLabel} is ${stats.sentiment > 0 ? "+" : ""}${stats.sentiment}. The meter is matching volume versus the ${windowTotal} ${windowLabel} reviews.`;
+    }
+    return "";
+  };
+
+  const compareWidget = (type: PresentWidgetType, prior: SavedReport): string => {
+    const snap = prior.snapshot;
+    if (!snap) return "";
+    const priorLabel = monthLabel(snap.window);
+    const then = snap.stats;
+    if (type === "topics" || type === "keywords" || type === "tagcloud") {
+      const nowNeg = topNeg;
+      const thenNeg = [...(snap.topics ?? [])].sort((a, b) => b.negative - a.negative)[0];
+      const parts = [deltaPhrase(stats.count, then.count, "reviews")];
+      if (nowNeg && thenNeg && nowNeg.topic === thenNeg.topic) {
+        parts.push(
+          `${nowNeg.topic} is still the loudest complaint (${nowNeg.negative} now, ${thenNeg.negative} in ${priorLabel}).`,
+        );
+      } else if (nowNeg) {
+        parts.push(
+          `${nowNeg.topic} is the loudest complaint now${thenNeg ? `; ${priorLabel} was ${thenNeg.topic}` : ""}.`,
+        );
+      }
+      return parts.join(" ");
+    }
+    if (type === "stars" || type === "sentiment" || type === "briefing" || type === "timeline") {
+      return `${deltaPhrase(stats.count, then.count, "reviews")} Sentiment ${stats.sentiment} now vs ${then.sentiment} in ${priorLabel}. Average ${stats.avgRating}/5 vs ${then.avgRating}/5.`;
+    }
+    if (type === "lines" || type === "sliders" || type === "trends" || type === "competitors") {
+      return `${deltaPhrase(stats.count, then.count, "matching reviews")} Sentiment ${stats.sentiment} now vs ${then.sentiment} in ${priorLabel}.`;
+    }
+    if (type === "actions" || type === "comments") {
+      return `${deltaPhrase(stats.count, then.count, "reviews")} ${
+        stats.sentiment === then.sentiment
+          ? "Sentiment is unchanged."
+          : `Sentiment moved from ${then.sentiment} to ${stats.sentiment}.`
+      }`;
+    }
+    return `${deltaPhrase(stats.count, then.count, "reviews")} vs ${priorLabel}.`;
   };
 
   const setTitle = (pageId: string, title: string) =>
@@ -398,7 +754,8 @@ export function PresentStage({
         <thead>
           <tr className="border-b border-[#eef0f2] text-[10px] uppercase tracking-wide text-[#8a9198]">
             <th className="px-3 py-2 font-medium">Company</th>
-            <th className="px-3 py-2 font-medium">TrustScore</th>
+            {wide ? <th className="px-3 py-2 font-medium">TrustScore</th> : null}
+            <th className="px-3 py-2 font-medium">Poker · 12m</th>
             {wide ? <th className="px-3 py-2 font-medium">Reviews</th> : null}
             <th className="px-3 py-2 font-medium">Matching</th>
             <th className="px-3 py-2 font-medium">Stars</th>
@@ -409,16 +766,27 @@ export function PresentStage({
             <tr key={b.scrape.slug} className="border-b border-[#f4f5f6] last:border-0">
               <td className="px-3 py-2">
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2 rounded-full" style={{ background: b.color }} />
+                  <span className="size-2 shrink-0 rounded-full" style={{ background: b.color }} />
+                  <BrandIcon slug={b.scrape.slug} name={b.scrape.displayName} size={16} />
                   {b.scrape.displayName}
                 </span>
               </td>
+              {wide ? (
               <td className="px-3 py-2">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="font-semibold tabular-nums">
                     {b.scrape.trustScore != null ? b.scrape.trustScore.toFixed(1) : "—"}
                   </span>
                   {b.scrape.trustScore != null ? <TpStars rating={b.scrape.trustScore} size={12} /> : null}
+                </span>
+              </td>
+              ) : null}
+              <td className="px-3 py-2">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="font-semibold tabular-nums">
+                    {b.pokerScore != null ? b.pokerScore.toFixed(1) : "—"}
+                  </span>
+                  {b.pokerScore != null ? <TpStars rating={b.pokerScore} size={12} /> : null}
                 </span>
               </td>
               {wide ? (
@@ -452,67 +820,21 @@ export function PresentStage({
     if (w.type === "briefing") {
       return (
         <div className="gr-stage-col">
-          <div className="flex items-center gap-2">
-            <TpScore score={scrape.trustScore} size={15} />
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <ScorePair
+              officialScore={scrape.trustScore}
+              officialCount={scrape.totalReviews}
+              pokerScore={pokerScore}
+              pokerCount={pokerCount}
+              pokerCaption={pokerCaption}
+              size={14}
+              compact
+            />
             <span className="text-[11px] text-[#6c737a]">
-              {windowLabel} · {stats.count.toLocaleString()} matching · {windowTotal.toLocaleString()} in window
+              {windowLabel} · {stats.count.toLocaleString()} matching this month
             </span>
           </div>
-          <div className="mt-1.5 space-y-1">
-            <EditableCopy
-              text={period.join("\n")}
-              field="period lines"
-              brand={brand}
-              multiline
-              onSave={(t) =>
-                patch({
-                  period: t
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-            <EditableCopy text={mix} field="mix line" brand={brand} onSave={(t) => patch({ mix: t })} />
-          </div>
-          <p className="mt-1.5 text-[11px] font-semibold text-[#191919]">Positive reviews</p>
-          <EditableCopy text={positive} field="positive" brand={brand} onSave={(t) => patch({ positive: t })} />
-          <p className="mt-1 text-[11px] font-semibold text-[#191919]">Negative reviews</p>
-          <EditableCopy text={negative} field="negative" brand={brand} onSave={(t) => patch({ negative: t })} />
-          {span !== "quarter" ? (
-            <>
-              <p className="mt-1 text-[11px] font-semibold text-[#191919]">What changed</p>
-              <EditableCopy
-                text={changed.join("\n")}
-                field="what changed"
-                brand={brand}
-                multiline
-                onSave={(t) =>
-                  patch({
-                    changed: t
-                      .split("\n")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-              <p className="mt-1 text-[11px] font-semibold text-[#191919]">Issues to watch</p>
-              <EditableCopy
-                text={watch.join("\n")}
-                field="issues to watch"
-                brand={brand}
-                multiline
-                onSave={(t) =>
-                  patch({
-                    watch: t
-                      .split("\n")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
-              />
-            </>
-          ) : null}
+          {mix ? <p className="mt-3 text-[12px] text-[#3d4349]">{mix}</p> : null}
           <div className="mt-auto grid grid-cols-2 gap-4 pt-3">
             <SentimentSlider value={stats.sentiment} />
             <ReviewsMeter count={stats.count} max={Math.max(stats.count, windowTotal, 1)} />
@@ -558,6 +880,7 @@ export function PresentStage({
                 keywords={highlightKeys}
                 pool={filtered}
                 onRemove={() => onFeatured(featuredIds.filter((id) => id !== r.id))}
+                onExclude={onExclude ? () => onExclude(r) : undefined}
                 onReplace={(id) => {
                   const next = featuredIds.map((x) => (x === r.id ? id : x));
                   onFeatured(Array.from(new Set(next)).slice(0, 5));
@@ -583,6 +906,7 @@ export function PresentStage({
               text={competitor.join("\n")}
               field="competitor briefing"
               brand={brand}
+              facts={facts}
               multiline
               onSave={(t) =>
                 patch({
@@ -596,6 +920,12 @@ export function PresentStage({
           ) : null}
           <div className="min-h-0 flex-1 overflow-auto">
             {competitorTable(span === "full" || span === "wide")}
+            {sliderBrands.length > 1 && span !== "quarter" ? (
+              <div className="mt-3">
+                <h3 className="mb-2 text-[12px] font-semibold">Topic sentiment</h3>
+                <CompetitorSliders brands={sliderBrands} compact />
+              </div>
+            ) : null}
           </div>
         </div>
       );
@@ -666,6 +996,60 @@ export function PresentStage({
         </div>
       );
     }
+    if (w.type === "actions") {
+      return (
+        <div className="gr-stage-col gap-4 overflow-auto">
+          <div>
+            <h3 className="mb-1.5 text-[12px] font-semibold">Topic spikes</h3>
+            {spikes.length ? (
+              <ul className="gr-copy list-disc space-y-1 pl-4">
+                {spikes.map((t) => (
+                  <li key={t.topic}>
+                    {t.topic} — {t.negative} negative / {t.positive} positive
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-[#8a9198]">No topic has a clear negative spike in this matching set.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-1.5 text-[12px] font-semibold">Threats and watch</h3>
+            {watch.length ? (
+              <ul className="gr-copy list-disc space-y-1 pl-4">
+                {watch.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-[#8a9198]">Refresh the briefing to fill threats.</p>
+            )}
+          </div>
+          <div>
+            <h3 className="mb-1.5 text-[12px] font-semibold">How to improve</h3>
+            {(summary?.actions ?? []).length ? (
+              <ul className="gr-copy list-disc space-y-1 pl-4">
+                {(summary?.actions ?? []).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-[#8a9198]">Refresh the briefing for concrete next steps.</p>
+            )}
+          </div>
+          {(summary?.pains ?? []).length ? (
+            <div>
+              <h3 className="mb-1.5 text-[12px] font-semibold">Biggest pains</h3>
+              <ul className="gr-copy list-disc space-y-1 pl-4">
+                {(summary?.pains ?? []).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
     return (
       <div className="gr-stage-col">
         <h3 className="mb-1 text-[12px] font-semibold">Tag cloud</h3>
@@ -714,6 +1098,30 @@ export function PresentStage({
               </div>
               <div className="gr-title-rule" />
             </div>
+            <div className="gr-stage-split">
+              <aside className="gr-slide-note">
+                <SlideNote
+                  page={page}
+                  headline={summary?.headline?.trim() || `${windowLabel} summary`}
+                  period={period}
+                  positive={positive}
+                  negative={negative}
+                  changed={changed}
+                  explainWidget={explainWidget}
+                  compareWidget={compareWidget}
+                  priors={priors}
+                  deckCompareId={compareWithId}
+                  onCompareDeck={onCompare}
+                  onPageCompare={(id) =>
+                    onLayout(layout.map((p) => (p.id === page.id ? { ...p, compareId: id } : p)))
+                  }
+                  onNote={(note) =>
+                    onLayout(layout.map((p) => (p.id === page.id ? { ...p, note } : p)))
+                  }
+                  brand={brand}
+                  facts={facts}
+                />
+              </aside>
             <div className="gr-stage-body">
               {page.widgets.map((w, wi) => (
                 <div
@@ -764,6 +1172,7 @@ export function PresentStage({
                   <SlotAdd used={usedTypes} onAdd={(type) => onLayout(addWidgetToPage(layout, page.id, type))} />
                 </div>
               ) : null}
+            </div>
             </div>
             <div className="gr-stage-foot">
               <div className="gr-no-print flex items-center gap-1">

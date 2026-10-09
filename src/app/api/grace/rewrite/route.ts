@@ -22,13 +22,30 @@ export async function POST(request: NextRequest) {
       field?: string;
       brand?: string;
       note?: string;
+      facts?: {
+        month?: string;
+        reviewCount?: number;
+        avgRating?: number;
+        sentiment?: number;
+        filter?: string;
+      };
     };
     const current = String(body.text ?? "").trim();
     if (!current) return NextResponse.json({ error: "Nothing to rewrite." }, { status: 400 });
+    const facts = body.facts;
+    const factBlock =
+      facts && typeof facts.reviewCount === "number"
+        ? `GROUND TRUTH — do not contradict:
+- Month: ${facts.month ?? "this month"}
+- Filter: ${facts.filter ?? "this filter"}
+- Matching reviews this month: exactly ${facts.reviewCount}. Never write "one review" or "a single review" unless that number is 1.
+- Average: ${facts.avgRating ?? "n/a"}/5. Sentiment: ${facts.sentiment ?? "n/a"}.
+`
+        : "";
 
     const prompt = `Rewrite this ${body.field ?? "briefing"} copy for a Trustpilot report on ${body.brand ?? "the brand"}.
 Keep the same facts and numbers. Sharper, shorter. No new claims.
-${body.note ? `Editor note: ${body.note}\n` : ""}
+${factBlock}${body.note ? `Editor note: ${body.note}\n` : ""}
 CURRENT
 ${current}
 

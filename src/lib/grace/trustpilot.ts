@@ -18,17 +18,22 @@ import type {
  * combination before demanding a login, so for busy brands we slice the
  * window by star rating — each star gets its own 10 pages — and record the
  * exact per-star counts Trustpilot reports so the window-wide average is
- * right even when we couldn't capture every review. Keyword deep-pulls use
- * Trustpilot's own `search=` filter the same way.
+ * right even when we couldn't capture every review. We keep reviews from the
+ * last 24 months. Trustpilot's public date filter often stops at 12 months;
+ * an extra undated `poker` search (sliced by star) reaches the year before.
  */
 
+export const PULL_DAYS = 730;
+
 export function windowDays(_w: GraceWindow): number {
-  return 365;
+  return PULL_DAYS;
 }
 
-/** Always pull the last year, then the client slices a calendar month. */
-function trustpilotDateParam(_w: GraceWindow): string {
-  return "last12months";
+function oldestReviewMs(pp: PageProps): number {
+  const times = (pp.reviews ?? [])
+    .map((r) => Date.parse(r.dates?.publishedDate ?? ""))
+    .filter((n) => !Number.isNaN(n));
+  return times.length ? Math.min(...times) : Date.now();
 }
 
 const PER_PAGE = 20;
@@ -140,7 +145,6 @@ export async function scrapeTrustpilotFull(
   const days = windowDays(opts.window);
   const cutoff = new Date(Date.now() - days * 86_400_000);
   const deadline = Date.now() + (opts.budgetMs ?? 250_000);
-  const dateParam = trustpilotDateParam(opts.window);
   const searchTerms = (opts.searchTerms ?? [])
     .map((s) => s.trim())
     .filter(Boolean)
@@ -158,8 +162,9 @@ export async function scrapeTrustpilotFull(
     let pagesRead = 0;
     let truncated = false;
 
-    const listUrl = (params: Record<string, string>, p: number) => {
-      const q = new URLSearchParams({ sort: "recency", date: dateParam, ...params });
+    const listUrl = (params: Record<string, string>, p: number, date: string | null) => {
+      const q = new URLSearchParams({ sort: "recency", ...params });
+      if (date) q.set("date", date);
       if (p > 1) q.set("page", String(p));
       return `${sourceUrl}?${q.toString()}`;
     };
@@ -190,6 +195,7 @@ export async function scrapeTrustpilotFull(
       label: string,
       totalPages: number,
       from = 1,
+      date: string | null = "last12months",
     ) => {
       const last = Math.min(totalPages, MAX_PAGES_PER_FILTER);
       for (let p = from; p <= last; p++) {
@@ -198,7 +204,7 @@ export async function scrapeTrustpilotFull(
           return;
         }
         opts.onProgress?.(`${label}: page ${p}/${last}`);
-        const pp = await readPage(page, listUrl(params, p));
+        const pp = await readPage(page, listUrl(params, p, date));
         if (!pp) {
           truncated = true;
           return;
@@ -210,9 +216,32 @@ export async function scrapeTrustpilotFull(
       if (totalPages > MAX_PAGES_PER_FILTER) truncated = true;
     };
 
-    // 1. First page: business unit, profile-wide stars, window total.
+    // 1. Probe 24 months. Trustpilot's UI only advertises 12; last24months
+    // sometimes works, sometimes is ignored (treated as all-time).
     opts.onProgress?.(`Opening ${slug}`);
-    const first = await readPage(page, listUrl({}, 1));
+    const raw24 = await readPage(page, listUrl({}, 1, "last24months"));
+    const raw12 = await readPage(page, listUrl({}, 1, "last12months"));
+    pagesRead += (raw24 ? 1 : 0) + (raw12 ? 1 : 0);
+
+    let dateParam: string | null = "last12months";
+    let horizonMonths: 12 | 24 = 12;
+    let first = raw12 ?? raw24;
+    if (raw24?.businessUnit && raw12?.businessUnit) {
+      const all = raw24.businessUnit.numberOfReviews ?? 0;
+      const c24 = raw24.filters?.pagination?.totalCount ?? 0;
+      const c12 = raw12.filters?.pagination?.totalCount ?? 0;
+      const treatedAsAllTime = all > 0 && c24 >= all * 0.9;
+      const olderThanYear = oldestReviewMs(raw24) < Date.now() - 400 * 86_400_000;
+      if (!treatedAsAllTime && (olderThanYear || (c24 > 0 && c12 > 0 && c24 > c12 * 1.08))) {
+        dateParam = "last24months";
+        horizonMonths = 24;
+        first = raw24;
+      }
+    } else if (raw24?.businessUnit && !raw12) {
+      first = raw24;
+      dateParam = "last24months";
+      horizonMonths = 24;
+    }
     if (!first) {
       throw new Error(
         `Couldn't reach Trustpilot for ${slug}. The review page did not load.`,
@@ -223,7 +252,6 @@ export async function scrapeTrustpilotFull(
         `${slug} has no Trustpilot profile. Try the exact domain Trustpilot lists (e.g. www.betus.com.pa).`,
       );
     }
-    pagesRead += 1;
     const displayName = first.businessUnit.displayName ?? slug;
     const trustScore = first.businessUnit.trustScore ?? null;
     const totalReviews = first.businessUnit.numberOfReviews ?? null;
@@ -247,7 +275,7 @@ export async function scrapeTrustpilotFull(
 
     if (windowTotal != null && windowTotal <= PER_PAGE * MAX_PAGES_PER_FILTER) {
       // 2a. Small enough: plain walk gets everything.
-      await walk({}, displayName, windowPages, 2);
+      await walk({}, displayName, windowPages, 2, dateParam);
     } else {
       // 2b. Slice by star. Probe each star's page 1 for its exact count,
       // then walk its pages. Negative first — that's the actionable half.
@@ -258,7 +286,7 @@ export async function scrapeTrustpilotFull(
           break;
         }
         opts.onProgress?.(`${displayName}: ${star}★ reviews`);
-        const pp = await readPage(page, listUrl({ stars: String(star) }, 1));
+        const pp = await readPage(page, listUrl({ stars: String(star) }, 1, dateParam));
         if (!pp) {
           truncated = true;
           continue;
@@ -270,7 +298,7 @@ export async function scrapeTrustpilotFull(
         const before = reviews.filter((r) => r.rating === star).length;
         const { n, pastWindow } = absorb(pp);
         if (!pastWindow && n >= PER_PAGE && pages > 1) {
-          await walk({ stars: String(star) }, `${displayName} ${star}★`, pages, 2);
+          await walk({ stars: String(star) }, `${displayName} ${star}★`, pages, 2, dateParam);
         }
         const captured = reviews.filter((r) => r.rating === star).length;
         coverage.push({ star, total: count, captured: Math.max(captured, before) });
@@ -285,15 +313,43 @@ export async function scrapeTrustpilotFull(
         break;
       }
       opts.onProgress?.(`${displayName}: search "${term}"`);
-      const pp = await readPage(page, listUrl({ search: term }, 1));
+      const pp = await readPage(page, listUrl({ search: term }, 1, dateParam));
       if (!pp) continue;
       pagesRead += 1;
       searched.push(term);
       const pages = pp.filters?.pagination?.totalPages ?? 1;
       const { n, pastWindow } = absorb(pp);
       if (!pastWindow && n >= PER_PAGE && pages > 1) {
-        await walk({ search: term }, `${displayName} "${term}"`, pages, 2);
+        await walk({ search: term }, `${displayName} "${term}"`, pages, 2, dateParam);
       }
+    }
+
+    // 4. Older poker comments: Trustpilot's date filter tops out at 12 months
+    // for most brands. Searching "poker" with no date, sliced by star, reaches
+    // reviews from the year before. We still drop anything older than 24 months.
+    if (Date.now() < deadline) {
+      opts.onProgress?.(`${displayName}: older poker comments`);
+      for (const star of [1, 2, 3, 4, 5] as const) {
+        if (Date.now() > deadline) {
+          truncated = true;
+          break;
+        }
+        const pp = await readPage(page, listUrl({ search: "poker", stars: String(star) }, 1, null));
+        if (!pp) continue;
+        pagesRead += 1;
+        const pages = pp.filters?.pagination?.totalPages ?? 1;
+        const { n, pastWindow } = absorb(pp);
+        if (!pastWindow && n >= PER_PAGE && pages > 1) {
+          await walk(
+            { search: "poker", stars: String(star) },
+            `${displayName} poker ${star}★`,
+            pages,
+            2,
+            null,
+          );
+        }
+      }
+      if (!searched.includes("poker")) searched.push("poker");
     }
 
     reviews.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
@@ -315,6 +371,7 @@ export async function scrapeTrustpilotFull(
       reviews,
       pagesRead,
       truncated,
+      horizonMonths,
     };
   } finally {
     await browser.close().catch(() => {});

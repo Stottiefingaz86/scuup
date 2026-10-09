@@ -32,26 +32,42 @@ function fmtDate(iso: string): string {
 export function ReviewCard({
   review,
   keywords,
+  matched,
   pinned,
   onPin,
+  onExclude,
 }: {
   review: GraceReview;
   keywords: string[];
+  matched?: boolean;
   pinned?: boolean;
   onPin?: (review: GraceReview) => void;
+  onExclude?: (review: GraceReview) => void;
 }) {
   const [open, setOpen] = useState(false);
   const long = review.text.length > 360;
   const body = open || !long ? review.text : `${review.text.slice(0, 360)}…`;
   return (
     <article className="tp-review">
-      {onPin ? (
-        <button type="button" className="tp-review-pin" onClick={() => onPin(review)}>
-          {pinned ? "In presentation" : "Add to presentation"}
-        </button>
+      {onPin || onExclude ? (
+        <div className="tp-review-actions">
+          {onPin ? (
+            <button type="button" className="tp-review-pin" onClick={() => onPin(review)}>
+              {pinned ? "In presentation" : "Add to presentation"}
+            </button>
+          ) : null}
+          {onExclude ? (
+            <button type="button" className="tp-review-drop" onClick={() => onExclude(review)}>
+              Remove
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <div>
-        <div className="tp-review-name">{review.author}</div>
+        <div className="tp-review-name">
+          {review.author}
+          {matched ? <span className="ml-2 text-[10px] font-semibold uppercase tracking-wide text-[#00b67a]">Match</span> : null}
+        </div>
         <div className="tp-review-meta">
           {review.country ? `${review.country} · ` : ""}
           {fmtDate(review.date)}
@@ -96,14 +112,18 @@ export function ReviewList({
   reviews,
   keywords,
   pageSize = 8,
+  matchIds,
   pinnedIds,
   onPin,
+  onExclude,
 }: {
   reviews: GraceReview[];
   keywords: string[];
   pageSize?: number;
+  matchIds?: Set<string>;
   pinnedIds?: string[];
   onPin?: (review: GraceReview) => void;
+  onExclude?: (review: GraceReview) => void;
 }) {
   const [shown, setShown] = useState(pageSize);
   if (reviews.length === 0) {
@@ -116,8 +136,10 @@ export function ReviewList({
           key={r.id}
           review={r}
           keywords={keywords}
+          matched={matchIds?.has(r.id)}
           pinned={pinnedIds?.includes(r.id)}
           onPin={onPin}
+          onExclude={onExclude}
         />
       ))}
       {shown < reviews.length ? (
@@ -140,21 +162,32 @@ export function FeaturedReview({
   compact = false,
   pinned,
   onPin,
+  onExclude,
 }: {
   review: GraceReview;
   keywords: string[];
   compact?: boolean;
   pinned?: boolean;
   onPin?: (review: GraceReview) => void;
+  onExclude?: (review: GraceReview) => void;
 }) {
   const max = compact ? 180 : 280;
   const snippet = review.text.length > max ? `${review.text.slice(0, max - 1)}…` : review.text;
   return (
     <article className={`relative ${compact ? "py-3" : "py-4"}`}>
-      {onPin ? (
-        <button type="button" className="tp-review-pin" onClick={() => onPin(review)}>
-          {pinned ? "In presentation" : "Add to presentation"}
-        </button>
+      {onPin || onExclude ? (
+        <div className="tp-review-actions">
+          {onPin ? (
+            <button type="button" className="tp-review-pin" onClick={() => onPin(review)}>
+              {pinned ? "In presentation" : "Add to presentation"}
+            </button>
+          ) : null}
+          {onExclude ? (
+            <button type="button" className="tp-review-drop" onClick={() => onExclude(review)}>
+              Remove
+            </button>
+          ) : null}
+        </div>
       ) : null}
       <div className="text-[13px] font-semibold text-[#191919]">{review.author}</div>
       <div className="mt-1.5">

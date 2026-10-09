@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -12,8 +13,53 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { faviconUrl } from "@/lib/constants";
 import type { TimelinePoint, TopicGroupScore, TopicRow } from "@/lib/grace/analysis";
 import { TP_STAR, TpStars } from "./tp-stars";
+
+export function BrandIcon({
+  slug,
+  name,
+  size = 16,
+  dimmed = false,
+}: {
+  slug: string;
+  name: string;
+  size?: number;
+  dimmed?: boolean;
+}) {
+  const [fail, setFail] = useState(false);
+  const src = faviconUrl(slug.includes("://") ? slug : `https://${slug}`, 64);
+  if (fail || !src) {
+    return (
+      <span
+        title={name}
+        className="inline-flex shrink-0 items-center justify-center rounded-full bg-[#e7e9ec] text-[9px] font-semibold text-[#6c737a]"
+        style={{ width: size, height: size, opacity: dimmed ? 0.4 : 1 }}
+      >
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- Google favicon host
+    <img
+      src={src}
+      alt={name}
+      width={size}
+      height={size}
+      title={name}
+      className="inline-block shrink-0 rounded-full bg-white object-contain"
+      style={{
+        width: size,
+        height: size,
+        opacity: dimmed ? 0.35 : 1,
+        boxShadow: "0 0 0 1px rgba(25,25,25,0.12)",
+      }}
+      onError={() => setFail(true)}
+    />
+  );
+}
 
 function Tip({ children }: { children: React.ReactNode }) {
   return (
@@ -276,13 +322,17 @@ export function CompetitorSliders({
   compact?: boolean;
 }) {
   if (brands.length === 0) return null;
-  const topics = brands[0].scores.map((s) => ({ id: s.id, label: s.label }));
+  const topics = brands[0].scores
+    .map((s) => ({ id: s.id, label: s.label }))
+    .filter((t) => brands.some((b) => (b.scores.find((s) => s.id === t.id)?.count ?? 0) > 0));
+  if (topics.length === 0) return null;
   return (
     <div className={`grid sm:grid-cols-2 ${compact ? "gap-x-8 gap-y-5" : "gap-x-10 gap-y-8"}`}>
       {topics.map((t) => {
         const points = brands
           .map((b) => ({ brand: b, score: b.scores.find((s) => s.id === t.id) }))
           .filter((p) => p.score && p.score.count > 0);
+        if (points.length === 0) return null;
         const max = Math.max(1, ...points.map((p) => p.score!.count));
         return (
           <div key={t.id}>
@@ -299,8 +349,8 @@ export function CompetitorSliders({
                   <div
                     key={brand.id}
                     className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2"
-                    style={{ left: `${x}%` }}
-                    title={`${brand.name}: ${sentLabel(score!.sentiment)}`}
+                    style={{ left: `${x}%`, zIndex: brand.self ? 3 : 2 }}
+                    title={`${brand.name}: ${sentLabel(score!.sentiment)} · ${score!.count} review${score!.count === 1 ? "" : "s"}`}
                   >
                     <span
                       className="block rounded-full border-2 border-white"

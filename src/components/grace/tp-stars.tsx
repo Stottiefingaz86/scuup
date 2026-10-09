@@ -73,3 +73,64 @@ export function TpScore({
     </span>
   );
 }
+
+/** Official Trustpilot score vs poker over the last 12 months. */
+export function ScorePair({
+  officialScore,
+  officialCount,
+  pokerScore,
+  pokerCount,
+  pokerCaption,
+  size = 18,
+  compact = false,
+  onOfficial,
+  onPoker,
+}: {
+  officialScore: number | null;
+  officialCount?: number | null;
+  pokerScore: number | null;
+  pokerCount: number;
+  pokerCaption?: string;
+  size?: number;
+  compact?: boolean;
+  onOfficial?: () => void;
+  onPoker?: () => void;
+}) {
+  const officialSub =
+    officialCount != null
+      ? `Trustpilot · all time · ${officialCount.toLocaleString()} reviews`
+      : "Trustpilot · all time";
+  const pokerSub = pokerCaption ?? `${pokerCount.toLocaleString()} poker reviews · last 12 months`;
+  return (
+    <div className={`gr-scoreboard${compact ? " gr-scoreboard-compact" : ""}`}>
+      <div className="gr-score-card">
+        <div className="gr-score-kicker">Brand</div>
+        <div className="gr-score-row">
+          <span className="gr-score-num">{officialScore != null ? officialScore.toFixed(1) : "—"}</span>
+          {officialScore != null ? <TpStars rating={officialScore} size={size} /> : null}
+        </div>
+        {onOfficial ? (
+          <button type="button" className="gr-count gr-score-sub" onClick={onOfficial}>
+            {officialSub}
+          </button>
+        ) : (
+          <div className="gr-score-sub">{officialSub}</div>
+        )}
+      </div>
+      <div className="gr-score-card">
+        <div className="gr-score-kicker">Poker</div>
+        <div className="gr-score-row">
+          <span className="gr-score-num">{pokerScore != null ? pokerScore.toFixed(1) : "—"}</span>
+          {pokerScore != null ? <TpStars rating={pokerScore} size={size} /> : null}
+        </div>
+        {onPoker ? (
+          <button type="button" className="gr-count gr-score-sub" onClick={onPoker}>
+            {pokerSub}
+          </button>
+        ) : (
+          <div className="gr-score-sub">{pokerSub}</div>
+        )}
+      </div>
+    </div>
+  );
+}

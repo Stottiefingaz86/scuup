@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
-  ArrowRight,
   Check,
   Download,
   ExternalLink,
@@ -30,6 +29,8 @@ import {
   reportNarrative,
   reviewMatches,
   reviewStats,
+  reviewsSinceDays,
+  standaloneScore,
   tagCloud,
   timeline,
   topicBreakdown,
@@ -39,10 +40,20 @@ import {
   type TopicRow,
 } from "@/lib/grace/analysis";
 import {
+  classifySnippet,
+  isAllPokerFilter,
+  isPokerLens,
+  needsPokerClassify,
+  pokerCohort,
+  pokerSignal,
+} from "@/lib/grace/poker";
+import {
   briefingFromDraft,
   comparableReports,
   addWidgetToPages,
   defaultPresentation,
+  persistPresentationTemplate,
+  presentationForNewReport,
   newPage,
   defaultReportName,
   hasFullCopy,
@@ -69,6 +80,7 @@ import {
   type GraceWindow,
 } from "@/lib/grace/types";
 import {
+  BrandIcon,
   CompetitorLines,
   CompetitorSliders,
   KeywordMentionBars,
@@ -82,10 +94,10 @@ import {
   type SliderBrand,
 } from "./grace-charts";
 import { AddWidgetMenu, PresentStage } from "./present-stage";
-import { FeaturedReview, ReviewList } from "./grace-reviews";
+import { ReviewList } from "./grace-reviews";
 import { ReviewModal } from "./review-modal";
 import { TagCloud } from "./tag-cloud";
-import { TpScore, TpStars } from "./tp-stars";
+import { ScorePair, TpStars } from "./tp-stars";
 import type { GraceReview } from "@/lib/grace/types";
 
 /* ------------------------------------------------------------------ */
@@ -98,9 +110,9 @@ const MAX_CACHED = 14;
 
 type ScrapeCache = Record<string, GraceScrape>;
 
-/** One 12-month pull per brand — the month slice is client-side. */
+/** One 24-month pull per brand — the month slice is client-side. */
 function cacheKey(slug: string): string {
-  return `${slug}|12m`;
+  return `${slug}|24m`;
 }
 
 function findCacheKey(cache: ScrapeCache, slug: string): string | null {
@@ -147,9 +159,69 @@ interface PersistedState {
 
 const PALETTE = ["#00b67a", "#191919", "#54b8ff", "#ff8622", "#73cf11", "#8b5cf6", "#ffce00"];
 
+function DashRewrite({
+  label,
+  text,
+  field,
+  brand,
+  facts,
+  onSave,
+}: {
+  label?: string;
+  text: string;
+  field: string;
+  brand: string;
+  facts: {
+    month: string;
+    reviewCount: number;
+    avgRating: number;
+    sentiment: number;
+    filter: string;
+  };
+  onSave: (next: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await fetch("/api/grace/rewrite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, field, brand, facts }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Rewrite failed");
+      onSave(String(data.text ?? ""));
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Rewrite failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+      {label ? <p className="text-[13px] font-semibold text-[#191919]">{label}</p> : <span />}
+      <button
+        type="button"
+        className="gr-chip h-7! px-2! text-[11px]!"
+        disabled={busy || !text.trim()}
+        onClick={() => void run()}
+      >
+        {busy ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+        Rewrite
+      </button>
+      {err ? <p className="w-full text-[11px] text-[#ff3722]">{err}</p> : null}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 
 type ReviewTab = "all" | "positive" | "negative";
+type MatchTone = "all" | "positive" | "neutral" | "negative";
+type MatchStar = 0 | 1 | 2 | 3 | 4 | 5;
 
 export function GraceApp() {
   const [cache, setCache] = useState<ScrapeCache>({});
@@ -165,11 +237,15 @@ export function GraceApp() {
   const [newKeyword, setNewKeyword] = useState("");
   const [query, setQuery] = useState("");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("all");
+  const [matchTone, setMatchTone] = useState<MatchTone>("all");
+  const [matchStar, setMatchStar] = useState<MatchStar>(0);
   const [filtersOpen, setFiltersOpen] = useState(true);
 
   const [competitorSet, setCompetitorSet] = useState<string>("bol");
   const [rivals, setRivals] = useState<string[]>(COMPETITOR_SETS[0].rivals);
   const [newRival, setNewRival] = useState("");
+  const [rivalSearchOpen, setRivalSearchOpen] = useState(false);
+  const rivalSearchRef = useRef<HTMLInputElement>(null);
   const [rivalBusy, setRivalBusy] = useState<string | null>(null);
   const [rivalErrors, setRivalErrors] = useState<Record<string, string>>({});
   const abortRivals = useRef(false);
@@ -186,7 +262,10 @@ export function GraceApp() {
   const [mode, setMode] = useState<"bench" | "report">("bench");
   const [sideOpen, setSideOpen] = useState(true);
   const [featuredIds, setFeaturedIds] = useState<string[]>([]);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
+  const [briefingStale, setBriefingStale] = useState(false);
   const [layout, setLayout] = useState<PresentPage[]>(defaultPresentation);
+  const [templateSaved, setTemplateSaved] = useState(false);
 
   /* ---- hydrate ---- */
   useEffect(() => {
@@ -225,6 +304,8 @@ export function GraceApp() {
       if (found.summary) setSummary(found.summary);
       setCompareWithId(found.compareWithId ?? null);
       setFeaturedIds(found.featuredIds ?? []);
+      setExcludedIds(found.excludedIds ?? []);
+      setBriefingStale(false);
       setLayout(
         normalizeLayout(found.layout, {
           brand: found.snapshot?.brand,
@@ -244,6 +325,8 @@ export function GraceApp() {
         setCurrent(resolved);
         setInput(c[resolved].slug);
       }
+    } else {
+      setLayout(presentationForNewReport());
     }
     try {
       const nav = localStorage.getItem("grace:nav");
@@ -289,6 +372,46 @@ export function GraceApp() {
       return next;
     });
   }, []);
+
+  const [classifyBusy, setClassifyBusy] = useState<string | null>(null);
+  const [classifyError, setClassifyError] = useState<string | null>(null);
+
+  const labelScrape = useCallback(
+    async (target: GraceScrape) => {
+      const pending = needsPokerClassify(target.reviews, target.pokerById);
+      if (!pending.length) return target;
+      setClassifyBusy(target.slug);
+      setClassifyError(null);
+      const labels = { ...(target.pokerById ?? {}) };
+      try {
+        for (let i = 0; i < pending.length; i += 30) {
+          const batch = pending.slice(i, i + 30);
+          const res = await fetch("/api/grace/classify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reviews: batch.map((r) => ({ id: r.id, snippet: classifySnippet(r) })),
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error ?? "Classify failed");
+          for (const row of data.labels ?? []) {
+            if (row && typeof row.id === "string") labels[row.id] = Boolean(row.poker);
+          }
+          for (const r of batch) if (labels[r.id] == null) labels[r.id] = false;
+          putScrape({ ...target, pokerById: { ...labels } });
+        }
+        const next = { ...target, pokerById: labels };
+        return next;
+      } catch (e) {
+        setClassifyError(e instanceof Error ? e.message : "Classify failed");
+        return target;
+      } finally {
+        setClassifyBusy(null);
+      }
+    },
+    [putScrape],
+  );
 
   const dropScrape = useCallback((key: string) => {
     setCache((prev) => {
@@ -336,7 +459,7 @@ export function GraceApp() {
         setMode("bench");
         return;
       }
-      setBusy(`Reading Trustpilot for ${slug} · last 12 months`);
+      setBusy(`Reading Trustpilot for ${slug} · last 24 months`);
       try {
         const scrape = await scrapeOne(slug, window_);
         putScrape(scrape);
@@ -406,18 +529,55 @@ export function GraceApp() {
     }
   }, [scrape, keywords, scrapeOne, putScrape]);
   const activeKeywords = keywords;
+  useEffect(() => {
+    setMatchTone("all");
+    setMatchStar(0);
+    setReviewTab("all");
+  }, [activeKeywords, query, window_]);
   const allPresetKeywords = useMemo(
     () => [...POKER_KEYWORDS, ...customKeywords.filter((k) => !POKER_KEYWORDS.includes(k))],
     [customKeywords],
   );
 
+  const excluded = useMemo(() => new Set(excludedIds), [excludedIds]);
+  const pokerReviews = useMemo(
+    () =>
+      scrape
+        ? pokerCohort(scrape.reviews, scrape.pokerById).filter((r) => !excluded.has(r.id))
+        : [],
+    [scrape, excluded],
+  );
+  const pokerLens = isPokerLens(activeKeywords);
+  const allPoker = isAllPokerFilter(activeKeywords);
+  const pokerIds = useMemo(() => new Set(pokerReviews.map((r) => r.id)), [pokerReviews]);
+  const poker12 = useMemo(() => reviewsSinceDays(pokerReviews, 365), [pokerReviews]);
+  const pokerScore = standaloneScore(poker12);
+  const brandReviews = useMemo(
+    () => (scrape ? scrape.reviews.filter((r) => !excluded.has(r.id)) : []),
+    [scrape, excluded],
+  );
+  const pokerDropped = useMemo(() => {
+    if (!scrape) return 0;
+    return scrape.reviews.filter(
+      (r) => pokerSignal(r) === "maybe" && scrape.pokerById?.[r.id] === false,
+    ).length;
+  }, [scrape]);
   const windowReviews = useMemo(
-    () => (scrape ? reviewsInMonth(scrape.reviews, window_) : []),
-    [scrape, window_],
+    () => (scrape ? reviewsInMonth(scrape.reviews, window_).filter((r) => !excluded.has(r.id)) : []),
+    [scrape, window_, excluded],
   );
   const filtered = useMemo(
-    () => (scrape ? filterReviews(scrape.reviews, { keywords: activeKeywords, query, month: window_ }) : []),
-    [scrape, activeKeywords, query, window_],
+    () =>
+      scrape
+        ? filterReviews(scrape.reviews, {
+            keywords: activeKeywords,
+            query,
+            month: window_,
+            pokerIds: pokerLens ? pokerIds : undefined,
+            allPoker: pokerLens && allPoker,
+          }).filter((r) => !excluded.has(r.id))
+        : [],
+    [scrape, activeKeywords, query, window_, excluded, pokerLens, allPoker, pokerIds],
   );
   const baseline: ReviewStats = useMemo(() => reviewStats(windowReviews), [windowReviews]);
   const captured = windowReviews.length;
@@ -458,11 +618,41 @@ export function GraceApp() {
   );
 
   const tabReviews = useMemo(() => {
-    const sorted = [...filtered].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+    const sorted = [...windowReviews].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
     if (reviewTab === "positive") return sorted.filter((r) => r.rating >= 4);
     if (reviewTab === "negative") return sorted.filter((r) => r.rating <= 2);
     return sorted;
-  }, [filtered, reviewTab]);
+  }, [windowReviews, reviewTab]);
+  const matchingIds = useMemo(() => new Set(filtered.map((r) => r.id)), [filtered]);
+  const matchToneCounts = useMemo(() => {
+    const positive = filtered.filter((r) => r.rating >= 4).length;
+    const negative = filtered.filter((r) => r.rating <= 2).length;
+    return {
+      all: filtered.length,
+      positive,
+      neutral: filtered.length - positive - negative,
+      negative,
+    };
+  }, [filtered]);
+  const matchStarCounts = useMemo(() => {
+    const stars: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const r of filtered) {
+      const n = Math.round(r.rating);
+      if (n >= 1 && n <= 5) stars[n as 1 | 2 | 3 | 4 | 5] += 1;
+    }
+    return stars;
+  }, [filtered]);
+  const matchingList = useMemo(() => {
+    return [...filtered]
+      .filter((r) => {
+        if (matchStar && Math.round(r.rating) !== matchStar) return false;
+        if (matchTone === "positive") return r.rating >= 4;
+        if (matchTone === "negative") return r.rating <= 2;
+        if (matchTone === "neutral") return r.rating > 2 && r.rating < 4;
+        return true;
+      })
+      .sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
+  }, [filtered, matchStar, matchTone]);
 
   const quotes = useMemo(() => {
     const pos = filtered.filter((r) => r.rating >= 4).sort((a, b) => b.likes - a.likes || b.text.length - a.text.length).slice(0, 5);
@@ -477,10 +667,10 @@ export function GraceApp() {
 
   const filterLabel = useMemo(() => {
     if (!activeKeywords.length) return "All reviews";
-    if (activeKeywords.length === allPresetKeywords.length && allPresetKeywords.length > 0) return "Poker";
+    if (allPoker) return "Poker";
     if (activeKeywords.length === 1) return activeKeywords[0];
     return `${activeKeywords[0]} +${activeKeywords.length - 1}`;
-  }, [activeKeywords, allPresetKeywords]);
+  }, [activeKeywords, allPoker]);
 
   const narrative = useMemo(() => {
     if (!scrape) return null;
@@ -489,10 +679,11 @@ export function GraceApp() {
       filterLabel,
       windowLabel: monthLabel(window_),
       stats,
+      monthTotal: windowTotal,
       topics: topicRows,
       points,
     });
-  }, [scrape, filterLabel, stats, topicRows, points]);
+  }, [scrape, filterLabel, stats, topicRows, points, windowTotal]);
 
   /* competitors */
   const rivalScrapes = useMemo(
@@ -510,22 +701,45 @@ export function GraceApp() {
     [rivals, cache, window_],
   );
 
+  useEffect(() => {
+    if (classifyBusy || classifyError) return;
+    const queue = [scrape, ...rivalScrapes].filter((s): s is GraceScrape => Boolean(s));
+    const next = queue.find((s) => needsPokerClassify(s.reviews, s.pokerById).length);
+    if (next) void labelScrape(next);
+  }, [scrape, rivalScrapes, classifyBusy, classifyError, labelScrape]);
+
   const compareBrands = useMemo(() => {
     const list: { scrape: GraceScrape; self: boolean; color: string }[] = [];
     if (scrape) list.push({ scrape, self: true, color: PALETTE[0] });
     rivalScrapes.forEach((s, i) => list.push({ scrape: s, self: false, color: PALETTE[(i + 1) % PALETTE.length] }));
     return list.map((b) => {
-      const f = filterReviews(b.scrape.reviews, { keywords: activeKeywords, query, month: window_ });
+      const cohort = pokerCohort(b.scrape.reviews, b.scrape.pokerById);
+      const cohortIds = new Set(cohort.map((r) => r.id));
+      const raw = filterReviews(b.scrape.reviews, {
+        keywords: activeKeywords,
+        query,
+        month: window_,
+        pokerIds: pokerLens ? cohortIds : undefined,
+        allPoker: pokerLens && allPoker,
+      });
+      const f = b.self ? raw.filter((r) => !excluded.has(r.id)) : raw;
+      const poker = reviewsSinceDays(b.self ? cohort.filter((r) => !excluded.has(r.id)) : cohort, 365);
+      const brandAll = b.self ? b.scrape.reviews.filter((r) => !excluded.has(r.id)) : b.scrape.reviews;
       return {
         ...b,
         filtered: f,
         stats: reviewStats(f),
         all: reviewStats(reviewsInMonth(b.scrape.reviews, window_)),
+        brandScore: b.scrape.trustScore,
+        brandCount: brandAll.length,
+        pokerScore: standaloneScore(poker),
+        pokerCount: poker.length,
+        pokerReviews: poker,
         groups: topicGroupScores(f),
         points: timeline(f, granularity, range.start, range.end),
       };
     });
-  }, [scrape, rivalScrapes, activeKeywords, query, granularity, window_, range.start, range.end]);
+  }, [scrape, rivalScrapes, activeKeywords, query, granularity, window_, range.start, range.end, excluded, pokerLens, allPoker]);
 
   const sliderBrands: SliderBrand[] = compareBrands.map((b) => ({
     id: b.scrape.slug,
@@ -545,7 +759,7 @@ export function GraceApp() {
   /* ---- actions ---- */
   const toggleKeyword = (k: string) =>
     setKeywords((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
-  const selectAllPoker = () => setKeywords([...allPresetKeywords]);
+  const selectAllPoker = () => setKeywords([...POKER_KEYWORDS]);
   const clearKeywords = () => {
     setKeywords([]);
     setQuery("");
@@ -617,6 +831,8 @@ export function GraceApp() {
       keywords: activeKeywords,
       query,
       month: prevMonth,
+      pokerIds: pokerLens ? pokerIds : undefined,
+      allPoker: pokerLens && allPoker,
     });
     const prevStats = reviewStats(prevFiltered);
     const fallback = briefingFromDraft({
@@ -638,6 +854,10 @@ export function GraceApp() {
           window: monthLabel(window_),
           filterLabel,
           keywords: activeKeywords,
+          trustScore: scrape.trustScore,
+          pokerScore,
+          pokerCount: poker12.length,
+          monthTotal: windowTotal,
           stats: {
             count: stats.count,
             avgRating: stats.avgRating,
@@ -649,11 +869,13 @@ export function GraceApp() {
           topics: topicRows.slice(0, 20),
           reviews: [...filtered]
             .sort((a, b) => Date.parse(b.date) - Date.parse(a.date))
-            .slice(0, 120)
+            .slice(0, 160)
             .map((r) => ({ rating: r.rating, title: r.title, text: r.text, date: r.date })),
           competitors: compareBrands.map((b) => ({
             name: b.scrape.displayName,
             trust: b.scrape.trustScore,
+            pokerScore: b.pokerScore,
+            pokerCount: b.pokerCount,
             count: b.stats.count,
             sentiment: b.stats.sentiment,
           })),
@@ -695,11 +917,14 @@ export function GraceApp() {
       );
     }
     setSummary(nextSummary);
-    const nextLayout = defaultPresentation({
-      brand: shortName,
-      filter: filterLabel,
-      window: windowLabel,
-    });
+    const nextLayout =
+      activeReportId && layout.some((p) => p.widgets.length)
+        ? layout
+        : presentationForNewReport({
+            brand: shortName,
+            filter: filterLabel,
+            window: windowLabel,
+          });
     setLayout(nextLayout);
     const seedFeatured =
       featuredIds.length > 0
@@ -728,6 +953,7 @@ export function GraceApp() {
       competitorSet,
       compareWithId: priorId,
       featuredIds: seedFeatured,
+      excludedIds,
       layout: nextLayout,
       snapshot: buildSnapshot(),
       summary: nextSummary,
@@ -735,6 +961,7 @@ export function GraceApp() {
     writeReports([nextReport, ...reports.filter((r) => r.id !== id)], id);
     setReportName(name);
     setMode("report");
+    setBriefingStale(false);
     setSummaryBusy(false);
   };
 
@@ -753,11 +980,12 @@ export function GraceApp() {
       competitorSet,
       compareWithId,
       featuredIds,
+      excludedIds,
       layout: layout.length ? layout : defaultPresentation(),
       snapshot: buildSnapshot(),
       summary,
     }),
-    [reports, window_, keywords, customKeywords, query, rivals, competitorSet, compareWithId, featuredIds, layout, buildSnapshot, summary],
+    [reports, window_, keywords, customKeywords, query, rivals, competitorSet, compareWithId, featuredIds, excludedIds, layout, buildSnapshot, summary],
   );
 
   const writeReports = useCallback((next: SavedReport[], active: string | null) => {
@@ -782,6 +1010,24 @@ export function GraceApp() {
   const persistFeatured = (ids: string[]) => {
     setFeaturedIds(ids);
     persistPresent({ featuredIds: ids });
+  };
+
+  const persistExcluded = (ids: string[]) => {
+    setExcludedIds(ids);
+    persistPresent({ excludedIds: ids });
+  };
+
+  const excludeReview = (review: GraceReview) => {
+    persistExcluded(excludedIds.includes(review.id) ? excludedIds : [...excludedIds, review.id]);
+    if (featuredIds.includes(review.id)) {
+      persistFeatured(featuredIds.filter((id) => id !== review.id));
+    }
+    setBriefingStale(true);
+  };
+
+  const restoreExcluded = (id?: string) => {
+    persistExcluded(id ? excludedIds.filter((x) => x !== id) : []);
+    setBriefingStale(true);
   };
 
   const pinReview = (review: GraceReview) => {
@@ -840,7 +1086,9 @@ export function GraceApp() {
     setFiltersOpen(true);
     setCompareWithId(null);
     setFeaturedIds([]);
-    setLayout(defaultPresentation());
+    setExcludedIds([]);
+    setBriefingStale(false);
+    setLayout(presentationForNewReport());
     setMode("bench");
   }, []);
 
@@ -858,6 +1106,8 @@ export function GraceApp() {
       setSummary(report.summary);
       setCompareWithId(report.compareWithId);
       setFeaturedIds(report.featuredIds ?? []);
+      setExcludedIds(report.excludedIds ?? []);
+      setBriefingStale(false);
       setLayout(
         normalizeLayout(report.layout, {
           brand: report.snapshot?.brand,
@@ -921,7 +1171,40 @@ export function GraceApp() {
   };
 
   const windowLabel = monthLabel(window_);
-  const vocMonths = recentMonths(14);
+  const pokerMonthCount = reviewsInMonth(poker12, window_).length;
+  const pullMonths = (() => {
+    const times = brandReviews.map((r) => Date.parse(r.date)).filter((n) => !Number.isNaN(n));
+    if (!times.length) return 0;
+    return Math.max(1, Math.round((Date.now() - Math.min(...times)) / (30.44 * 86_400_000)));
+  })();
+  const pokerCaption =
+    pullMonths >= 10
+      ? `${poker12.length.toLocaleString()} poker reviews · last 12 months`
+      : `${poker12.length.toLocaleString()} poker reviews in this pull · ${pokerMonthCount} in ${windowLabel}`;
+  const filterOn = filterLabel !== "All reviews";
+  const briefHead = filterOn
+    ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterLabel}`
+    : summary?.headline?.trim() || `${windowLabel} summary`;
+  const matchingLine = filterOn
+    ? `${stats.count} of ${windowTotal} ${windowLabel} reviews match ${filterLabel}.`
+    : `${windowTotal} ${windowLabel} reviews.`;
+  const periodLines = (() => {
+    const live = narrative?.bullets ?? [];
+    const src = hasFullCopy(summary) && !filterOn ? summary.period : hasFullCopy(summary) ? summary.period : live;
+    if (!filterOn) return src.length ? src : live;
+    const rest = src.filter((line) => !/\d+\s+of\s+\d+/.test(line) && !/had \d+ review/.test(line));
+    return [matchingLine, ...rest].slice(0, 5);
+  })();
+  const posCopy = hasFullCopy(summary) ? summary.positive : (narrative?.positive ?? "");
+  const negCopy = hasFullCopy(summary) ? summary.negative : (narrative?.negative ?? "");
+  const rewriteFacts = {
+    month: windowLabel,
+    reviewCount: stats.count,
+    avgRating: stats.avgRating,
+    sentiment: stats.sentiment,
+    filter: filterLabel,
+  };
+  const vocMonths = recentMonths(26);
   const recent = Object.entries(cache)
     .sort((a, b) => Date.parse(b[1].fetchedAt) - Date.parse(a[1].fetchedAt))
     .filter(([, s], i, all) => all.findIndex((x) => x[1].slug === s.slug) === i);
@@ -1005,11 +1288,43 @@ export function GraceApp() {
               />
             </div>
             <div className="flex items-center gap-2">
+              {priors.length > 0 ? (
+                <label className="inline-flex items-center gap-2 text-[12px] text-[#6c737a]">
+                  Compare
+                  <select
+                    value={compareWithId ?? ""}
+                    onChange={(e) => {
+                      const id = e.target.value || null;
+                      setCompareWithId(id);
+                      persistPresent({ compareWithId: id });
+                    }}
+                    className="h-8 rounded-md border border-[#e3e6ea] bg-white px-2 text-[12px] text-[#191919] outline-none"
+                  >
+                    <option value="">{priors[0] ? `Latest prior · ${priors[0].name}` : "None"}</option>
+                    {priors.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <AddWidgetMenu
                 layout={layout}
                 onAdd={(type) => persistLayout(addWidgetToPages(layout, type))}
                 onAddPage={() => persistLayout([...layout, newPage()])}
               />
+              <button
+                type="button"
+                className="gr-chip"
+                onClick={() => {
+                  persistPresentationTemplate(layout);
+                  setTemplateSaved(true);
+                  window.setTimeout(() => setTemplateSaved(false), 2000);
+                }}
+              >
+                {templateSaved ? "Template saved" : "Save layout as template"}
+              </button>
               <button type="button" onClick={exportReport} className="gr-cta-ghost gr-cta">
                 <FileDown className="size-3.5" /> Export PDF
               </button>
@@ -1053,10 +1368,11 @@ export function GraceApp() {
                       type="button"
                       onClick={() => void createReport()}
                       disabled={summaryBusy || stats.count === 0}
-                      className="gr-chip"
+                      className="gr-icon-sq"
+                      aria-label="Regenerate briefing"
+                      title="Regenerate briefing"
                     >
-                      {summaryBusy ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
-                      Regenerate briefing
+                      {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
                     </button>
                   ) : null}
                   <button
@@ -1066,10 +1382,12 @@ export function GraceApp() {
                       else void createReport();
                     }}
                     disabled={summaryBusy || stats.count === 0}
-                    className="gr-cta"
+                    className="gr-cta gr-cta-ghost gr-cta-shimmer"
                   >
-                    {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Sparkles className="size-3.5" />}
-                    Present Mode
+                    <span className="inline-flex items-center gap-1.5">
+                      {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
+                      Create PDF
+                    </span>
                   </button>
                 </>
               ) : null}
@@ -1108,7 +1426,7 @@ export function GraceApp() {
               ))}
             </select>
             <button type="submit" disabled={!!busy || !input.trim()} className="gr-btn">
-              {busy ? <Loader2 className="size-4 animate-spin" /> : <ArrowRight className="size-4" />}
+              {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
               Pull reviews
             </button>
           </form>
@@ -1161,7 +1479,7 @@ export function GraceApp() {
                 <button type="button" className="gr-chip" data-on={String(filtersOpen)} onClick={() => setFiltersOpen((v) => !v)}>
                   {filtersOpen ? "Hide keywords" : activeKeywords.length ? `${filterLabel} · ${activeKeywords.length} keywords` : "Keywords"}
                 </button>
-                <button type="button" onClick={selectAllPoker} className="gr-chip" data-on={String(activeKeywords.length === allPresetKeywords.length && allPresetKeywords.length > 0)}>
+                <button type="button" onClick={selectAllPoker} className="gr-chip" data-on={String(allPoker)}>
                   <Check className="size-3" /> All poker
                 </button>
                 <button type="button" onClick={clearKeywords} className="gr-chip">
@@ -1180,6 +1498,9 @@ export function GraceApp() {
               {filtersOpen ? (
                 <div className="flex flex-col gap-2 border-t border-[#f1f3f5] pt-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a9198]">Keywords</p>
+                  <p className="text-[12px] text-[#8a9198]">
+                    All poker keeps comments that are actually about poker. Words like turn, login, and promo are not enough on their own.
+                  </p>
                   <div className="flex flex-wrap gap-1">
                     {allPresetKeywords.map((k) => {
                       const row = keywordRows.find((r) => r.topic === k);
@@ -1232,77 +1553,117 @@ export function GraceApp() {
                   </div>
                 </div>
               ) : null}
-              <div className="flex flex-col gap-2 border-t border-[#f1f3f5] pt-2">
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a9198]">Competitors</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  {COMPETITOR_SETS.map((s) => (
-                    <button key={s.id} type="button" onClick={() => applyCompetitorSet(s.id)} className="gr-chip" data-on={String(competitorSet === s.id)}>
-                      {s.label}
+              <div className="flex flex-col gap-2.5 border-t border-[#f1f3f5] pt-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8a9198]">Competitors</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {COMPETITOR_SETS.map((s) => (
+                      <button key={s.id} type="button" onClick={() => applyCompetitorSet(s.id)} className="gr-chip" data-on={String(competitorSet === s.id)}>
+                        {s.label}
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setCompetitorSet("custom")} className="gr-chip" data-on={String(competitorSet === "custom")}>
+                      Custom
                     </button>
-                  ))}
-                  <button type="button" onClick={() => setCompetitorSet("custom")} className="gr-chip" data-on={String(competitorSet === "custom")}>
-                    Custom
-                  </button>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {rivals.map((r) => {
-                    let slug = r;
-                    try {
-                      slug = trustpilotSlugFromInput(r);
-                    } catch {
-                      /* keep */
-                    }
-                    const have = Boolean(findCacheKey(cache, slug));
-                    const err = rivalErrors[r];
-                    const loading = rivalBusy === slug;
-                    return (
-                      <span
-                        key={r}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[12px] ${
-                          have ? "border-[#00b67a]" : err ? "border-[#ff3722]" : "border-[#e3e6ea]"
-                        }`}
-                        title={err}
-                      >
-                        {loading ? <Loader2 className="size-3 animate-spin" /> : have ? <Check className="size-3 text-[#00b67a]" /> : null}
-                        {r}
-                        <button
-                          type="button"
-                          className="cursor-pointer opacity-50 hover:opacity-100"
-                          onClick={() => {
-                            setRivals((p) => p.filter((x) => x !== r));
-                            setCompetitorSet("custom");
-                          }}
-                        >
-                          <X className="size-3" />
-                        </button>
-                      </span>
-                    );
-                  })}
-                  <input
-                    value={newRival}
-                    onChange={(e) => setNewRival(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const v = newRival.trim();
-                        if (!v) return;
-                        setRivals((p) => (p.includes(v) ? p : [...p, v]));
-                        setCompetitorSet("custom");
-                        setNewRival("");
+                {rivals.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {rivals.map((r) => {
+                      let slug = r;
+                      try {
+                        slug = trustpilotSlugFromInput(r);
+                      } catch {
+                        /* keep */
                       }
-                    }}
-                    placeholder="Add domain"
-                    className="h-8 w-40 rounded-full border border-[#e3e6ea] px-3 text-[12px] outline-none focus:border-[#00b67a]"
-                  />
+                      const have = Boolean(findCacheKey(cache, slug));
+                      const err = rivalErrors[r];
+                      const loading = rivalBusy === slug;
+                      return (
+                        <span
+                          key={r}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[12px] ${
+                            have ? "border-[#00b67a]" : err ? "border-[#ff3722]" : "border-[#e3e6ea]"
+                          }`}
+                          title={err}
+                        >
+                          {loading ? <Loader2 className="size-3 animate-spin" /> : have ? <Check className="size-3 text-[#00b67a]" /> : null}
+                          <BrandIcon slug={slug} name={r} size={14} />
+                          {r}
+                          <button
+                            type="button"
+                            className="cursor-pointer opacity-50 hover:opacity-100"
+                            onClick={() => {
+                              setRivals((p) => p.filter((x) => x !== r));
+                              setCompetitorSet("custom");
+                            }}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-2">
+                  {rivalSearchOpen ? (
+                    <div className="gr-rival-field">
+                      <Search className="size-3.5 shrink-0 text-[#8a9198]" />
+                      <input
+                        ref={rivalSearchRef}
+                        value={newRival}
+                        onChange={(e) => setNewRival(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            setNewRival("");
+                            setRivalSearchOpen(false);
+                          }
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const v = newRival.trim();
+                            if (!v) return;
+                            setRivals((p) => (p.includes(v) ? p : [...p, v]));
+                            setCompetitorSet("custom");
+                            setNewRival("");
+                          }
+                        }}
+                        placeholder="competitor.com"
+                      />
+                      <button
+                        type="button"
+                        className="text-[#8a9198] hover:text-[#191919]"
+                        aria-label="Close"
+                        onClick={() => {
+                          setNewRival("");
+                          setRivalSearchOpen(false);
+                        }}
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="gr-chip h-10! px-3! text-[12px]!"
+                      onClick={() => {
+                        setRivalSearchOpen(true);
+                        window.setTimeout(() => rivalSearchRef.current?.focus(), 20);
+                      }}
+                    >
+                      <Plus className="size-3.5" />
+                      Add competitors
+                    </button>
+                  )}
                   {rivalBusy ? (
                     <button type="button" onClick={() => { abortRivals.current = true; }} className="gr-chip">
                       Stop
                     </button>
-                  ) : (
-                    <button type="button" onClick={() => void runRivals()} disabled={rivals.length === 0 || !!busy} className="gr-btn h-8! px-3! text-[12px]!">
+                  ) : rivals.length ? (
+                    <button type="button" onClick={() => void runRivals()} disabled={!!busy} className="gr-btn">
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
                       Pull competitors
                     </button>
-                  )}
+                  ) : null}
                 </div>
               </div>
               {partial ? (
@@ -1337,7 +1698,7 @@ export function GraceApp() {
           <h1 className="gr-title mt-3">Trustpilot review intelligence</h1>
           <div className="gr-title-rule mx-auto" />
           <p className="mx-auto mt-6 max-w-md text-[15px] leading-relaxed text-[#6c737a]">
-            Pick a calendar month, pull the last year of reviews, then slice
+            Pick a calendar month, pull up to two years of reviews, then slice
             August or July. Each VoC report is one month, compared to the month
             before. Present Mode builds the slides from this dashboard.
           </p>
@@ -1364,10 +1725,20 @@ export function GraceApp() {
             compareBrands={compareBrands}
             sliderBrands={sliderBrands}
             seriesBrands={seriesBrands}
+            pokerScore={pokerScore}
+            pokerCount={poker12.length}
+            pokerCaption={pokerCaption}
             layout={layout}
             onLayout={persistLayout}
             onSummary={persistSummary}
             onFeatured={persistFeatured}
+            onExclude={excludeReview}
+            priors={priors}
+            compareWithId={compareWithId}
+            onCompare={(id) => {
+              setCompareWithId(id);
+              persistPresent({ compareWithId: id });
+            }}
           />
         </>
       ) : (
@@ -1381,43 +1752,159 @@ export function GraceApp() {
             </h1>
             <div className="gr-title-rule" />
 
+            <div className="mt-8">
+              <ScorePair
+                officialScore={scrape.trustScore}
+                officialCount={scrape.totalReviews}
+                pokerScore={pokerScore}
+                pokerCount={poker12.length}
+                pokerCaption={pokerCaption}
+                size={20}
+                onOfficial={() => showReviews(`${shortName} · all captured`, brandReviews)}
+                onPoker={() => showReviews(`${shortName} · poker · last 12 months`, poker12)}
+              />
+            </div>
+            <p className="mt-3 text-[13px] text-[#6c737a]">
+              {windowLabel} ·{" "}
+              <button type="button" className="gr-count font-normal" onClick={() => showReviews(`${shortName} · ${windowLabel}`, windowReviews)}>
+                {windowTotal.toLocaleString()} reviews
+              </button>
+              {partial ? ` · ${captured.toLocaleString()} captured` : ""}
+              {stats.count !== windowTotal ? (
+                <>
+                  {" · "}
+                  <button type="button" className="gr-count font-normal" onClick={() => showReviews(`${shortName} · ${filterLabel}`, filtered)}>
+                    {stats.count.toLocaleString()} match this filter
+                  </button>
+                </>
+              ) : null}
+              {excludedIds.length ? ` · ${excludedIds.length} removed` : ""}
+              {classifyBusy ? " · Checking which comments are actually poker" : pokerDropped ? ` · Dropped ${pokerDropped} casino / main-site comments` : ""}
+            </p>
+            {classifyError ? <p className="mt-2 text-[12px] text-[#ff3722]">{classifyError}</p> : null}
+
             <div className="mt-10 grid gap-12 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)]">
               <div>
-                <div className="flex items-center gap-3">
-                  <TpScore score={scrape.trustScore} size={18} />
-                  <button
-                    type="button"
-                    className="gr-count text-[13px] font-normal"
-                    onClick={() => showReviews(`${shortName} · all captured`, windowReviews)}
-                  >
-                    {scrape.totalReviews?.toLocaleString() ?? windowReviews.length} reviews on Trustpilot
-                  </button>
-                </div>
-                <p className="mt-2 text-[13px] text-[#8a9198]">
-                  {windowLabel} ·{" "}
-                  <button type="button" className="gr-count font-normal" onClick={() => showReviews(`${shortName} · ${windowLabel}`, windowReviews)}>
-                    {windowTotal.toLocaleString()} reviews
-                  </button>
-                  {partial ? ` · ${captured.toLocaleString()} captured` : ""}
-                  {stats.count !== windowTotal ? (
-                    <>
-                      {" · "}
-                      <button type="button" className="gr-count font-normal" onClick={() => showReviews(`${shortName} · ${filterLabel}`, filtered)}>
-                        {stats.count.toLocaleString()} match this filter
+                {excludedIds.length || briefingStale ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#fff8e8] px-3 py-2 text-[12px] text-[#6b5b2a]">
+                    <span>
+                      {excludedIds.length
+                        ? `${excludedIds.length} comment${excludedIds.length === 1 ? "" : "s"} removed from this report.`
+                        : "Briefing is out of date."}{" "}
+                      Refresh so charts and AI use the cleaned set.
+                    </span>
+                    {excludedIds.length ? (
+                      <button type="button" className="gr-chip" onClick={() => restoreExcluded()}>
+                        Undo all
                       </button>
-                    </>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="gr-cta"
+                      disabled={summaryBusy || stats.count === 0}
+                      onClick={() => void createReport()}
+                    >
+                      {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                      Refresh briefing
+                    </button>
+                  </div>
+                ) : null}
+                <div className="mt-6">
+                  <DashRewrite
+                    label="Summary"
+                    text={summary?.headline?.trim() || `${windowLabel} summary`}
+                    field="headline"
+                    brand={scrape.displayName}
+                    facts={rewriteFacts}
+                    onSave={(t) =>
+                      persistSummary({
+                        ...(summary ??
+                          briefingFromDraft({
+                            period: narrative?.bullets ?? [],
+                            mix: "",
+                            positive: narrative?.positive ?? "",
+                            negative: narrative?.negative ?? "",
+                            competitor: [],
+                          })),
+                        headline: t,
+                      })
+                    }
+                  />
+                  <h2 className="gr-brief-head">{briefHead}</h2>
+                  {filterOn && summary?.headline?.trim() ? (
+                    <p className="mb-3 text-[15px] font-medium leading-snug text-[#191919]">{summary.headline}</p>
                   ) : null}
-                </p>
-                <div className="gr-copy mt-6 space-y-3">
-                  {narrative?.bullets.map((b) => (
-                    <p key={b}>{b}</p>
-                  ))}
+                  <DashRewrite
+                    text={periodLines.join("\n")}
+                    field="period lines"
+                    brand={scrape.displayName}
+                    facts={rewriteFacts}
+                    onSave={(t) =>
+                      persistSummary({
+                        ...(summary ??
+                          briefingFromDraft({
+                            period: narrative?.bullets ?? [],
+                            mix: "",
+                            positive: narrative?.positive ?? "",
+                            negative: narrative?.negative ?? "",
+                            competitor: [],
+                          })),
+                        period: t
+                          .split("\n")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      })
+                    }
+                  />
+                  <div className="gr-copy space-y-3">
+                    {periodLines.map((b) => (
+                      <p key={b}>{b}</p>
+                    ))}
+                  </div>
                 </div>
                 <div className="mt-6 space-y-3">
-                  <p className="text-[13px] font-semibold text-[#191919]">Positive reviews:</p>
-                  <p className="gr-copy">{narrative?.positive}</p>
-                  <p className="text-[13px] font-semibold text-[#191919]">Negative reviews:</p>
-                  <p className="gr-copy">{narrative?.negative}</p>
+                  <DashRewrite
+                    label="Positive reviews"
+                    text={posCopy}
+                    field="positive"
+                    brand={scrape.displayName}
+                    facts={rewriteFacts}
+                    onSave={(t) =>
+                      persistSummary({
+                        ...(summary ??
+                          briefingFromDraft({
+                            period: periodLines,
+                            mix: "",
+                            positive: t,
+                            negative: negCopy,
+                            competitor: [],
+                          })),
+                        positive: t,
+                      })
+                    }
+                  />
+                  <p className="gr-copy">{posCopy}</p>
+                  <DashRewrite
+                    label="Negative reviews"
+                    text={negCopy}
+                    field="negative"
+                    brand={scrape.displayName}
+                    facts={rewriteFacts}
+                    onSave={(t) =>
+                      persistSummary({
+                        ...(summary ??
+                          briefingFromDraft({
+                            period: periodLines,
+                            mix: "",
+                            positive: posCopy,
+                            negative: t,
+                            competitor: [],
+                          })),
+                        negative: t,
+                      })
+                    }
+                  />
+                  <p className="gr-copy">{negCopy}</p>
                 </div>
               </div>
 
@@ -1494,48 +1981,96 @@ export function GraceApp() {
           </section>
 
           <section className="gr-slide">
-            <h1 className="gr-title">Trustpilot — {shortName} Reviews</h1>
-            <div className="gr-title-rule" />
-            <div className="mt-10 grid gap-16 lg:grid-cols-2">
-              <div>
-                {quotes.pos.map((r) => (
-                  <FeaturedReview
-                    key={r.id}
-                    review={r}
-                    keywords={highlightKeys}
-                    pinned={featuredIds.includes(r.id)}
-                    onPin={pinReview}
-                  />
-                ))}
-                {quotes.pos.length === 0 ? (
-                  <p className="py-8 text-[13px] text-[#8a9198]">No positive reviews in this filter.</p>
-                ) : null}
-              </div>
-              <div>
-                {quotes.neg.map((r) => (
-                  <FeaturedReview
-                    key={r.id}
-                    review={r}
-                    keywords={highlightKeys}
-                    pinned={featuredIds.includes(r.id)}
-                    onPin={pinReview}
-                  />
-                ))}
-                {quotes.neg.length === 0 ? (
-                  <p className="py-8 text-[13px] text-[#8a9198]">No negative reviews in this filter.</p>
-                ) : null}
-              </div>
-            </div>
+            {filterOn ? (
+              <>
+                <h1 className="gr-title">Matching {filterLabel}</h1>
+                <p className="mt-3 text-[13px] text-[#6c737a]">
+                  {stats.count} of {windowTotal} {windowLabel} reviews match {filterLabel}.
+                  This list is only those {stats.count} — not every {shortName} review.
+                </p>
+                <div className="gr-title-rule" />
+                <div className="mt-8 mb-4 flex flex-wrap items-end justify-between gap-3">
+                  <h2 className="text-[22px] font-medium tracking-tight">
+                    Matching reviews
+                    <span className="ml-2 text-[14px] font-normal text-[#8a9198]">
+                      {matchingList.length}
+                      {matchTone !== "all" || matchStar ? ` of ${stats.count}` : ""}
+                    </span>
+                  </h2>
+                  <div className="flex flex-wrap gap-2">
+                    <div className="gr-window">
+                      {(
+                        [
+                          ["all", `All ${matchToneCounts.all}`],
+                          ["positive", `Positive ${matchToneCounts.positive}`],
+                          ["neutral", `Neutral ${matchToneCounts.neutral}`],
+                          ["negative", `Negative ${matchToneCounts.negative}`],
+                        ] as [MatchTone, string][]
+                      ).map(([id, label]) => (
+                        <button
+                          key={id}
+                          type="button"
+                          data-on={String(matchTone === id)}
+                          onClick={() => setMatchTone(id)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="gr-window">
+                      <button type="button" data-on={String(matchStar === 0)} onClick={() => setMatchStar(0)}>
+                        All
+                      </button>
+                      {([1, 2, 3, 4, 5] as const).map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          data-on={String(matchStar === n)}
+                          onClick={() => setMatchStar(n)}
+                        >
+                          {n}★ {matchStarCounts[n]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <ReviewList
+                  key={`${current}|match|${activeKeywords.join(",")}|${query}|${matchTone}|${matchStar}`}
+                  reviews={matchingList}
+                  keywords={highlightKeys}
+                  pinnedIds={featuredIds}
+                  onPin={pinReview}
+                  onExclude={excludeReview}
+                />
+              </>
+            ) : (
+              <>
+                <h1 className="gr-title">Trustpilot — {shortName} Reviews</h1>
+                <p className="mt-3 text-[13px] text-[#6c737a]">
+                  {windowTotal} {windowLabel} reviews.
+                </p>
+                <div className="gr-title-rule" />
+              </>
+            )}
 
-            <div className="mt-14">
+            <div className={filterOn ? "mt-16" : "mt-8"}>
               <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                <h2 className="text-[22px] font-medium tracking-tight">All matching reviews</h2>
+                <div>
+                  <h2 className="text-[22px] font-medium tracking-tight">
+                    {filterOn ? `All ${shortName} reviews` : `${windowLabel} reviews`}
+                  </h2>
+                  <p className="mt-1 text-[13px] text-[#6c737a]">
+                    {filterOn
+                      ? `Every ${shortName} review in ${windowLabel} — poker or not. ${windowTotal} in the month. Matching ${filterLabel} rows are marked.`
+                      : `${windowTotal} ${windowLabel} reviews.`}
+                  </p>
+                </div>
                 <div className="gr-window">
                   {(
                     [
-                      ["all", `All ${stats.count}`],
-                      ["positive", `Positive ${stats.positive}`],
-                      ["negative", `Negative ${stats.negative}`],
+                      ["all", `All ${baseline.count}`],
+                      ["positive", `Positive ${baseline.positive}`],
+                      ["negative", `Negative ${baseline.negative}`],
                     ] as [ReviewTab, string][]
                   ).map(([id, label]) => (
                     <button key={id} type="button" data-on={String(reviewTab === id)} onClick={() => setReviewTab(id)}>
@@ -1548,8 +2083,10 @@ export function GraceApp() {
                 key={`${current}|${reviewTab}|${activeKeywords.join(",")}|${query}`}
                 reviews={tabReviews}
                 keywords={highlightKeys}
+                matchIds={filterOn ? matchingIds : undefined}
                 pinnedIds={featuredIds}
                 onPin={pinReview}
+                onExclude={excludeReview}
               />
             </div>
           </section>
@@ -1573,6 +2110,7 @@ export function GraceApp() {
                         <tr className="border-b border-[#eef0f2] text-[11px] uppercase tracking-wide text-[#8a9198]">
                           <th className="px-4 py-3 font-medium">Company</th>
                           <th className="px-4 py-3 font-medium">TrustScore</th>
+                          <th className="px-4 py-3 font-medium">Poker · 12m</th>
                           <th className="px-4 py-3 font-medium">Reviews</th>
                           <th className="px-4 py-3 font-medium">Matching</th>
                           <th className="px-4 py-3 font-medium">Star mix</th>
@@ -1583,7 +2121,8 @@ export function GraceApp() {
                           <tr key={b.scrape.slug} className="border-b border-[#f4f5f6] last:border-0">
                             <td className="px-4 py-3">
                               <span className="inline-flex items-center gap-2">
-                                <span className="size-2 rounded-full" style={{ background: b.color }} />
+                                <span className="size-2.5 shrink-0 rounded-full" style={{ background: b.color }} />
+                                <BrandIcon slug={b.scrape.slug} name={b.scrape.displayName} size={18} />
                                 {b.scrape.displayName}
                               </span>
                             </td>
@@ -1594,6 +2133,19 @@ export function GraceApp() {
                                 </span>
                                 {b.scrape.trustScore != null ? <TpStars rating={b.scrape.trustScore} size={14} /> : null}
                               </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2"
+                                onClick={() => showReviews(`${b.scrape.displayName} · all poker`, b.pokerReviews)}
+                              >
+                                <span className="tabular-nums font-semibold">
+                                  {b.pokerScore != null ? b.pokerScore.toFixed(1) : "—"}
+                                </span>
+                                {b.pokerScore != null ? <TpStars rating={b.pokerScore} size={14} /> : null}
+                                <span className="text-[11px] text-[#8a9198]">{b.pokerCount.toLocaleString()}</span>
+                              </button>
                             </td>
                             <td className="px-4 py-3">
                               <button
@@ -1650,12 +2202,6 @@ export function GraceApp() {
                       {b.name}
                     </span>
                   ))}
-                  <span className="ml-auto inline-flex items-center gap-2">
-                    Fewer reviews
-                    <span className="size-2 rounded-full bg-[#c5c9ce]" />
-                    <span className="size-3.5 rounded-full bg-[#8a9198]" />
-                    More reviews
-                  </span>
                 </div>
               </div>
             ) : null}
@@ -1672,10 +2218,11 @@ export function GraceApp() {
       {modal ? (
         <ReviewModal
           title={modal.title}
-          reviews={modal.reviews}
+          reviews={modal.reviews.filter((r) => !excluded.has(r.id))}
           keywords={highlightKeys}
           pinnedIds={featuredIds}
           onPin={pinReview}
+          onExclude={excludeReview}
           onClose={() => setModal(null)}
         />
       ) : null}

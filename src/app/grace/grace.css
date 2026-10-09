@@ -179,6 +179,22 @@
   color: #3d4349;
 }
 
+.grace-root .gr-brief-head {
+  font-family: var(--font-space-grotesk), var(--font-geist-sans), sans-serif;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.25;
+  color: #191919;
+  margin: 0 0 14px;
+}
+
+.grace-root .gr-scoreboard-compact .gr-brief-head,
+.grace-root .gr-stage-col .gr-brief-head {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
 .grace-root .gr-copy strong {
   color: #191919;
   font-weight: 600;
@@ -285,13 +301,105 @@
 }
 
 .grace-root .gr-cta-ghost {
+  position: relative;
+  overflow: hidden;
   background: #fff;
-  color: #1877f2;
-  border: 1px solid #d0d7de;
+  color: #191919;
+  border: 1px solid #e3e6ea;
 }
 
 .grace-root .gr-cta-ghost:hover:not(:disabled) {
-  background: #f0f7ff;
+  background: #f7f8fa;
+  border-color: #c9ced4;
+}
+
+.grace-root .gr-cta-shimmer {
+  isolation: isolate;
+}
+
+.grace-root .gr-cta-shimmer > * {
+  position: relative;
+  z-index: 1;
+}
+
+.grace-root .gr-cta-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 35%,
+    rgba(255, 255, 255, 0.8) 50%,
+    transparent 65%
+  );
+  transform: translateX(-140%);
+  animation: gr-shimmer 3.4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes gr-shimmer {
+  0%,
+  50% {
+    transform: translateX(-140%);
+  }
+  80%,
+  100% {
+    transform: translateX(140%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grace-root .gr-cta-shimmer::after {
+    animation: none;
+    display: none;
+  }
+}
+
+.grace-root .gr-icon-sq {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #3d4349;
+  cursor: pointer;
+}
+
+.grace-root .gr-icon-sq:hover:not(:disabled) {
+  border-color: #c9ced4;
+  color: #191919;
+}
+
+.grace-root .gr-icon-sq:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.grace-root .gr-rival-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  width: min(280px, 100%);
+  padding: 0 10px;
+  border: 1px solid #00b67a;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.grace-root .gr-rival-field input {
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: #191919;
+  outline: none;
 }
 
 .grace-root .gr-cloud {
@@ -395,6 +503,61 @@
   box-shadow: 0 1px 2px rgba(25, 25, 25, 0.06);
 }
 
+.grace-root .gr-facet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.grace-root .gr-facet button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid #e3e6ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #3d4349;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.grace-root .gr-facet button:hover {
+  border-color: #c9ced4;
+}
+
+.grace-root .gr-facet button[data-on="true"] {
+  border-color: #191919;
+  background: #191919;
+  color: #fff;
+}
+
+.grace-root .gr-facet button[data-on="true"] span {
+  color: #c5c9ce;
+}
+
+.grace-root .gr-facet button[data-tone="positive"][data-on="true"] {
+  border-color: #00b67a;
+  background: #00b67a;
+}
+
+.grace-root .gr-facet button[data-tone="negative"][data-on="true"] {
+  border-color: #ff3722;
+  background: #ff3722;
+}
+
+.grace-root .gr-facet button[data-tone="neutral"][data-on="true"] {
+  border-color: #e6b800;
+  background: #ffce00;
+  color: #191919;
+}
+
+.grace-root .gr-facet button[data-tone="neutral"][data-on="true"] span {
+  color: #6c737a;
+}
+
 /* Trustpilot boxed stars */
 .grace-root .tp-stars {
   display: inline-flex;
@@ -413,6 +576,92 @@
   display: block;
 }
 
+.grace-root .gr-scoreboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 16px;
+}
+
+.grace-root .gr-score-card {
+  min-width: 0;
+  padding: 18px 20px 16px;
+  background: #f7f8fa;
+  border: 1px solid #eef0f2;
+  border-radius: 14px;
+}
+
+.grace-root .gr-score-kicker {
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a9198;
+}
+
+.grace-root .gr-score-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  margin-top: 8px;
+}
+
+.grace-root .gr-score-num {
+  font-family: var(--font-space-grotesk), var(--font-geist-sans), sans-serif;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #191919;
+  font-variant-numeric: tabular-nums;
+}
+
+.grace-root .gr-score-sub {
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6c737a;
+  font-weight: 500;
+  text-align: left;
+}
+
+.grace-root .gr-count.gr-score-sub {
+  font-weight: 500;
+}
+
+.grace-root .gr-score-official {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #8a9198;
+}
+
+.grace-root .gr-scoreboard-compact .gr-score-card {
+  padding: 12px 14px 10px;
+  border-radius: 10px;
+}
+
+.grace-root .gr-scoreboard-compact .gr-score-num {
+  font-size: 26px;
+}
+
+.grace-root .gr-scoreboard-compact .gr-score-row {
+  margin-top: 4px;
+}
+
+.grace-root .gr-scoreboard-compact .gr-score-sub {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+@media (max-width: 640px) {
+  .grace-root .gr-scoreboard {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Review row — Trustpilot comment box */
 .grace-root .tp-review {
   position: relative;
@@ -423,12 +672,23 @@
   border-bottom: 1px solid #f1f3f5;
 }
 
-.grace-root .tp-review-pin {
+.grace-root .tp-review-actions {
   position: absolute;
   top: 12px;
   right: 0;
   z-index: 2;
   display: none;
+  gap: 6px;
+}
+
+.grace-root .tp-review:hover .tp-review-actions,
+.grace-root article:hover > .tp-review-actions {
+  display: inline-flex;
+  align-items: center;
+}
+
+.grace-root .tp-review-pin,
+.grace-root .tp-review-drop {
   height: 24px;
   padding: 0 10px;
   border: 1px solid #d0d7de;
@@ -440,15 +700,14 @@
   cursor: pointer;
 }
 
-.grace-root .tp-review:hover .tp-review-pin,
-.grace-root article:hover > .tp-review-pin {
-  display: inline-flex;
-  align-items: center;
-}
-
 .grace-root .tp-review-pin:hover {
   border-color: #1877f2;
   color: #1877f2;
+}
+
+.grace-root .tp-review-drop:hover {
+  border-color: #ff3722;
+  color: #ff3722;
 }
 
 .grace-root .tp-review:last-child {
@@ -634,6 +893,43 @@
 
 .grace-root .gr-stage-head {
   flex-shrink: 0;
+}
+
+.grace-root .gr-stage-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
+  gap: 18px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 10px;
+}
+
+.grace-root .gr-slide-note {
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  border: 1px solid #eef0f2;
+  border-radius: 10px;
+  background: #f7f8fa;
+}
+
+.grace-root .gr-slide-note .gr-slide-kicker + p,
+.grace-root .gr-slide-note .gr-copy p {
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.grace-root .gr-slide-kicker {
+  margin: 0 0 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8a9198;
+}
+
+.grace-root .gr-stage-split .gr-stage-body {
+  margin-top: 0;
 }
 
 .grace-root .gr-page-title {

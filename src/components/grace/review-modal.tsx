@@ -10,6 +10,7 @@ export function ReviewModal({
   keywords,
   pinnedIds,
   onPin,
+  onExclude,
   onClose,
 }: {
   title: string;
@@ -17,6 +18,7 @@ export function ReviewModal({
   keywords: string[];
   pinnedIds?: string[];
   onPin?: (review: GraceReview) => void;
+  onExclude?: (review: GraceReview) => void;
   onClose: () => void;
 }) {
   return (
@@ -44,6 +46,7 @@ export function ReviewModal({
             pageSize={16}
             pinnedIds={pinnedIds}
             onPin={onPin}
+            onExclude={onExclude}
           />
         </div>
       </div>
