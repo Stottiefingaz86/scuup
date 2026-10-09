@@ -768,7 +768,7 @@ export function PresentStage({
           <tr className="border-b border-[#eef0f2] text-[10px] uppercase tracking-wide text-[#8a9198]">
             <th className="px-3 py-2 font-medium">Company</th>
             {wide ? <th className="px-3 py-2 font-medium">TrustScore</th> : null}
-            <th className="px-3 py-2 font-medium">Poker · 12m</th>
+            <th className="px-3 py-2 font-medium">Poker</th>
             {wide ? <th className="px-3 py-2 font-medium">Reviews</th> : null}
             <th className="px-3 py-2 font-medium">Matching</th>
             <th className="px-3 py-2 font-medium">Stars</th>

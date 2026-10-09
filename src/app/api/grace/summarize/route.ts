@@ -145,7 +145,7 @@ HARD FACTS — do not contradict these:
 - The briefing is about the ${filtered ? `${monthCount} matching` : monthTotal} review${(filtered ? monthCount : monthTotal) === 1 ? "" : "s"}. Do not write as if all ${monthTotal} month reviews are ${body.filterLabel}.
 - If a number is not 1, never write "one review", "a single review", or "only 1 review".
 - Official Trustpilot TrustScore for the whole brand: ${body.trustScore ?? "n/a"}. That mixes poker and every other product.
-- Standalone poker score (mean of poker reviews in the last-12-months pull): ${body.pokerScore ?? "n/a"} from ${body.pokerCount ?? 0} poker reviews. Do not treat the TrustScore as the poker score.
+- Standalone poker score (mean of starred poker reviews in ${body.window}): ${body.pokerScore ?? "n/a"} from ${body.pokerCount ?? 0} poker reviews. Do not treat the TrustScore as the poker score.
 - Average rating of the matching set: ${body.stats.avgRating}/5.
 - Star mix of the matching set: ${body.stats.positivePct}% positive (4-5 stars), ${body.stats.neutralPct}% neutral (3 stars), ${body.stats.negativePct}% negative (1-2 stars).
 - Do not cite the sentiment score (${body.stats.sentiment}). Say how many reviews are 1-2 star, 3 star, or 4-5 star instead.

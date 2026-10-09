@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   FileDown,
+  Hammer,
   Loader2,
   Minus,
   PanelLeft,
@@ -20,7 +21,6 @@ import {
 } from "lucide-react";
 import {
   COMPETITOR_SETS,
-  POKER_KEYWORDS,
   brandTokensFor,
   competitorNarrative,
   copyContradictsCounts,
@@ -36,7 +36,6 @@ import {
   reportNarrative,
   reviewMatches,
   reviewStats,
-  reviewsSinceDays,
   standaloneScore,
   tagCloud,
   timeline,
@@ -75,6 +74,18 @@ import {
   type SavedReport,
   type SavedReportSummary,
 } from "@/lib/grace/reports";
+import {
+  ALL_GROUPS_ID,
+  allGroupKeywords,
+  defaultKeywordGroups,
+  groupFilterLabel,
+  isAllGroupsFilter,
+  isAllInGroup,
+  normalizeKeywordGroups,
+  pokerGroupTerms,
+  slugGroupId,
+  type KeywordGroup,
+} from "@/lib/grace/keywords";
 import { trustpilotSlugFromInput } from "@/lib/grace/slug";
 import {
   coerceMonth,
@@ -105,6 +116,8 @@ import {
 import { AddWidgetMenu, PresentStage } from "./present-stage";
 import { ReviewList } from "./grace-reviews";
 import { GraceChat } from "./grace-chat";
+import { Toaster } from "sonner";
+import { GRACE_TOASTER_ID, graceToast, playPullDoneChime, unlockPullChime } from "@/lib/grace/notify";
 import { ReviewModal } from "./review-modal";
 import { TagCloud } from "./tag-cloud";
 import { ScorePair, TpStars } from "./tp-stars";
@@ -169,6 +182,8 @@ interface PersistedState {
   competitorSet: string;
   extraUrls?: string[];
   enabledSources?: EnabledSource[];
+  keywordGroups?: KeywordGroup[];
+  activeGroupId?: string;
 }
 
 const BUILTIN_SOURCES: { id: EnabledSource; label: string; host: string }[] = [
@@ -255,7 +270,11 @@ export function GraceApp() {
 
   const [keywords, setKeywords] = useState<string[]>([]);
   const [customKeywords, setCustomKeywords] = useState<string[]>([]);
+  const [keywordGroups, setKeywordGroups] = useState<KeywordGroup[]>(() => defaultKeywordGroups());
+  const [activeGroupId, setActiveGroupId] = useState<string>("poker");
   const [newKeyword, setNewKeyword] = useState("");
+  const [newGroup, setNewGroup] = useState("");
+  const [groupOpen, setGroupOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [reviewTab, setReviewTab] = useState<ReviewTab>("all");
   const [matchTone, setMatchTone] = useState<MatchTone>("all");
@@ -307,6 +326,8 @@ export function GraceApp() {
         }
         if (Array.isArray(s.keywords)) setKeywords(s.keywords);
         if (Array.isArray(s.customKeywords)) setCustomKeywords(s.customKeywords);
+        setKeywordGroups(normalizeKeywordGroups(s.keywordGroups, s.customKeywords ?? []));
+        if (typeof s.activeGroupId === "string" && s.activeGroupId) setActiveGroupId(s.activeGroupId);
         if (Array.isArray(s.rivals) && s.rivals.length) setRivals(s.rivals);
         if (s.competitorSet) setCompetitorSet(s.competitorSet);
         if (Array.isArray(s.extraUrls)) setExtraUrls(s.extraUrls.filter((u) => typeof u === "string"));
@@ -376,6 +397,8 @@ export function GraceApp() {
       window: window_,
       keywords,
       customKeywords,
+      keywordGroups,
+      activeGroupId,
       rivals,
       competitorSet,
       extraUrls,
@@ -391,7 +414,7 @@ export function GraceApp() {
     } catch {
       /* ignore */
     }
-  }, [hydrated, current, window_, keywords, customKeywords, rivals, competitorSet, extraUrls, enabledSources, sideOpen]);
+  }, [hydrated, current, window_, keywords, customKeywords, keywordGroups, activeGroupId, rivals, competitorSet, extraUrls, enabledSources, sideOpen]);
 
   useEffect(() => {
     const done = () => document.documentElement.classList.remove("grace-exporting");
@@ -503,6 +526,7 @@ export function GraceApp() {
         extraUrls.length ? "added URLs" : null,
       ].filter(Boolean);
       setBusy(`Reading ${reading.join(", ") || "sources"} for ${slug}`);
+      unlockPullChime();
       try {
         const extras = wantExtras
           ? fetch("/api/grace/sources", {
@@ -556,14 +580,19 @@ export function GraceApp() {
           const extrasToMerge = incoming.length ? incoming : priorExtras;
           next = mergeReviews(scrape, extrasToMerge, extra.searched ?? []);
           if (wantReddit && incoming.filter((r) => reviewSource(r) === "reddit").length === 0) {
-            setError(
-              priorExtras.some((r) => reviewSource(r) === "reddit")
-                ? "Reddit returned nothing this pull. Previous Reddit mentions were kept."
-                : "Reddit returned no posts this pull. Try again in a minute.",
-            );
+            const kept = priorExtras.some((r) => reviewSource(r) === "reddit");
+            const message = kept
+              ? "Reddit returned nothing this pull. Previous Reddit mentions were kept."
+              : "Reddit returned no posts this pull. Try again in a minute.";
+            setError(message);
+            graceToast.warning("Reddit returned nothing", {
+              description: kept ? "Previous mentions were kept." : "Try again in a minute.",
+            });
           }
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Reddit / Two Plus Two failed");
+          const message = e instanceof Error ? e.message : "Reddit / Two Plus Two failed";
+          setError(message);
+          graceToast.warning("Extra sources failed", { description: message });
           const priorExtras = (cached?.reviews ?? []).filter((r) => reviewSource(r) !== "trustpilot");
           if (priorExtras.length) next = mergeReviews(scrape, priorExtras);
         }
@@ -581,8 +610,25 @@ export function GraceApp() {
             }),
           );
         }
+        const tpN = next.reviews.filter((r) => reviewSource(r) === "trustpilot").length;
+        const redditN = next.reviews.filter((r) => reviewSource(r) === "reddit").length;
+        const twoN = next.reviews.filter((r) => reviewSource(r) === "twoplustwo").length;
+        const webN = next.reviews.filter((r) => reviewSource(r) === "web").length;
+        playPullDoneChime();
+        graceToast.success("Pull finished", {
+          description: [
+            wantTp ? `${tpN.toLocaleString()} Trustpilot` : null,
+            wantReddit ? `${redditN.toLocaleString()} Reddit` : null,
+            wantTwo ? `${twoN.toLocaleString()} Two Plus Two` : null,
+            extraUrls.length ? `${webN.toLocaleString()} other` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+        });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Scrape failed");
+        const message = e instanceof Error ? e.message : "Scrape failed";
+        setError(message);
+        graceToast.error("Pull failed", { description: message });
       } finally {
         setBusy(null);
       }
@@ -650,9 +696,14 @@ export function GraceApp() {
     setMatchStar(0);
     setReviewTab("all");
   }, [activeKeywords, query, window_]);
-  const allPresetKeywords = useMemo(
-    () => [...POKER_KEYWORDS, ...customKeywords.filter((k) => !POKER_KEYWORDS.includes(k))],
-    [customKeywords],
+  const allPresetKeywords = useMemo(() => allGroupKeywords(keywordGroups), [keywordGroups]);
+  const pokerTerms = useMemo(() => pokerGroupTerms(keywordGroups), [keywordGroups]);
+  const visibleGroups = useMemo(
+    () =>
+      activeGroupId === ALL_GROUPS_ID
+        ? keywordGroups
+        : keywordGroups.filter((g) => g.id === activeGroupId),
+    [keywordGroups, activeGroupId],
   );
 
   const excluded = useMemo(() => new Set(excludedIds), [excludedIds]);
@@ -663,11 +714,14 @@ export function GraceApp() {
         : [],
     [scrape, liveReviews, excluded],
   );
-  const pokerLens = isPokerLens(activeKeywords);
-  const allPoker = isAllPokerFilter(activeKeywords);
+  const pokerLens = isPokerLens(activeKeywords, pokerTerms);
+  const allPoker = isAllPokerFilter(activeKeywords, pokerTerms);
   const pokerIds = useMemo(() => new Set(pokerReviews.map((r) => r.id)), [pokerReviews]);
-  const poker12 = useMemo(() => reviewsSinceDays(pokerReviews, 365), [pokerReviews]);
-  const pokerScore = standaloneScore(poker12);
+  const pokerMonth = useMemo(
+    () => reviewsInMonth(pokerReviews, window_),
+    [pokerReviews, window_],
+  );
+  const pokerScore = standaloneScore(pokerMonth);
   const brandReviews = useMemo(
     () => liveReviews.filter((r) => !excluded.has(r.id)),
     [liveReviews, excluded],
@@ -783,12 +837,10 @@ export function GraceApp() {
     return featuredIds.map((id) => byId.get(id)).filter((r): r is GraceReview => Boolean(r)).slice(0, 5);
   }, [filtered, featuredIds]);
 
-  const filterLabel = useMemo(() => {
-    if (!activeKeywords.length) return "All reviews";
-    if (allPoker) return "Poker";
-    if (activeKeywords.length === 1) return activeKeywords[0];
-    return `${activeKeywords[0]} +${activeKeywords.length - 1}`;
-  }, [activeKeywords, allPoker]);
+  const filterLabel = useMemo(
+    () => groupFilterLabel(activeKeywords, keywordGroups),
+    [activeKeywords, keywordGroups],
+  );
 
   const narrative = useMemo(() => {
     if (!scrape) return null;
@@ -841,7 +893,7 @@ export function GraceApp() {
         allPoker: pokerLens && allPoker,
       });
       const f = b.self ? raw.filter((r) => !excluded.has(r.id)) : raw;
-      const poker = reviewsSinceDays(b.self ? cohort.filter((r) => !excluded.has(r.id)) : cohort, 365);
+      const poker = reviewsInMonth(b.self ? cohort.filter((r) => !excluded.has(r.id)) : cohort, window_);
       const brandAll = b.self ? b.scrape.reviews.filter((r) => !excluded.has(r.id)) : b.scrape.reviews;
       return {
         ...b,
@@ -851,7 +903,7 @@ export function GraceApp() {
         brandScore: b.scrape.trustScore,
         brandCount: brandAll.length,
         pokerScore: standaloneScore(poker),
-        pokerCount: poker.length,
+        pokerCount: poker.filter(hasStars).length,
         pokerReviews: poker,
         groups: topicGroupScores(f),
         points: timeline(f, granularity, range.start, range.end),
@@ -877,7 +929,8 @@ export function GraceApp() {
   /* ---- actions ---- */
   const toggleKeyword = (k: string) =>
     setKeywords((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]));
-  const selectAllPoker = () => setKeywords([...POKER_KEYWORDS]);
+  const selectGroupKeywords = (group: KeywordGroup) => setKeywords([...group.keywords]);
+  const selectAllGroups = () => setKeywords(allGroupKeywords(keywordGroups));
   const clearKeywords = () => {
     setKeywords([]);
     setQuery("");
@@ -885,13 +938,42 @@ export function GraceApp() {
   const addCustomKeyword = () => {
     const k = newKeyword.trim();
     if (!k) return;
+    const targetId = activeGroupId === ALL_GROUPS_ID ? "poker" : activeGroupId;
+    setKeywordGroups((prev) =>
+      prev.map((g) =>
+        g.id === targetId && !g.keywords.some((x) => x.toLowerCase() === k.toLowerCase())
+          ? { ...g, keywords: [...g.keywords, k] }
+          : g,
+      ),
+    );
     setCustomKeywords((p) => (p.includes(k) ? p : [...p, k]));
     setKeywords((p) => (p.includes(k) ? p : [...p, k]));
     setNewKeyword("");
   };
-  const removeCustomKeyword = (k: string) => {
+  const removeKeywordFromGroup = (groupId: string, k: string) => {
+    setKeywordGroups((prev) =>
+      prev.map((g) => (g.id === groupId ? { ...g, keywords: g.keywords.filter((x) => x !== k) } : g)),
+    );
     setCustomKeywords((p) => p.filter((x) => x !== k));
     setKeywords((p) => p.filter((x) => x !== k));
+  };
+  const addKeywordGroup = () => {
+    const name = newGroup.trim();
+    if (!name) return;
+    const taken = new Set(keywordGroups.map((g) => g.id));
+    const id = slugGroupId(name, taken);
+    setKeywordGroups((prev) => [...prev, { id, name, keywords: [] }]);
+    setActiveGroupId(id);
+    setNewGroup("");
+    setGroupOpen(false);
+  };
+  const removeKeywordGroup = (id: string) => {
+    const group = keywordGroups.find((g) => g.id === id);
+    if (!group) return;
+    const next = keywordGroups.filter((g) => g.id !== id);
+    setKeywordGroups(next.length ? next : defaultKeywordGroups());
+    setKeywords((prev) => prev.filter((k) => !group.keywords.includes(k)));
+    if (activeGroupId === id) setActiveGroupId(next[0]?.id ?? ALL_GROUPS_ID);
   };
 
   const applyCompetitorSet = (id: string) => {
@@ -963,6 +1045,7 @@ export function GraceApp() {
       competitor: [],
     });
     let nextSummary = fallback;
+    let briefingFailed = false;
     try {
       const res = await fetch("/api/grace/summarize", {
         method: "POST",
@@ -974,7 +1057,7 @@ export function GraceApp() {
           keywords: activeKeywords,
           trustScore: scrape.trustScore,
           pokerScore,
-          pokerCount: poker12.length,
+          pokerCount: pokerMonth.filter(hasStars).length,
           monthTotal: windowTotal,
           stats: {
             count: stats.count,
@@ -1033,6 +1116,10 @@ export function GraceApp() {
       setSummaryError(
         `${e instanceof Error ? e.message : "Briefing failed"} The report still saved with the numbers from this filter.`,
       );
+      graceToast.warning("Briefing incomplete", {
+        description: "Report saved with the numbers from this filter.",
+      });
+      briefingFailed = true;
     }
     setSummary(nextSummary);
     const nextLayout =
@@ -1066,6 +1153,8 @@ export function GraceApp() {
       window: window_,
       keywords,
       customKeywords,
+      keywordGroups,
+      activeGroupId,
       query,
       rivals,
       competitorSet,
@@ -1081,6 +1170,11 @@ export function GraceApp() {
     setMode("report");
     setBriefingStale(false);
     setSummaryBusy(false);
+    if (!briefingFailed) {
+      graceToast.success(hasFullCopy(summary) ? "Report updated" : "Report built", {
+        description: name,
+      });
+    }
   };
 
   const snapshotReport = useCallback(
@@ -1093,6 +1187,8 @@ export function GraceApp() {
       window: window_,
       keywords,
       customKeywords,
+      keywordGroups,
+      activeGroupId,
       query,
       rivals,
       competitorSet,
@@ -1103,7 +1199,7 @@ export function GraceApp() {
       snapshot: buildSnapshot(),
       summary,
     }),
-    [reports, window_, keywords, customKeywords, query, rivals, competitorSet, compareWithId, featuredIds, excludedIds, layout, buildSnapshot, summary],
+    [reports, window_, keywords, customKeywords, keywordGroups, activeGroupId, query, rivals, competitorSet, compareWithId, featuredIds, excludedIds, layout, buildSnapshot, summary],
   );
 
   const writeReports = useCallback((next: SavedReport[], active: string | null) => {
@@ -1168,6 +1264,7 @@ export function GraceApp() {
   const persistSummary = (next: SavedReportSummary) => {
     setSummary(next);
     persistPresent({ summary: next });
+    graceToast.success("Report updated");
   };
 
   const saveReport = useCallback(
@@ -1218,6 +1315,10 @@ export function GraceApp() {
       setWindow(coerceMonth(report.window));
       setKeywords(report.keywords);
       setCustomKeywords(report.customKeywords);
+      if (report.keywordGroups?.length) {
+        setKeywordGroups(normalizeKeywordGroups(report.keywordGroups, report.customKeywords));
+      }
+      if (report.activeGroupId) setActiveGroupId(report.activeGroupId);
       setQuery(report.query);
       if (report.rivals.length) setRivals(report.rivals);
       setCompetitorSet(report.competitorSet);
@@ -1272,18 +1373,10 @@ export function GraceApp() {
   };
 
   const windowLabel = monthLabel(window_);
-  const pokerMonthCount = reviewsInMonth(poker12, window_).length;
-  const pullMonths = (() => {
-    const times = brandReviews.map((r) => Date.parse(r.date)).filter((n) => !Number.isNaN(n));
-    if (!times.length) return 0;
-    return Math.max(1, Math.round((Date.now() - Math.min(...times)) / (30.44 * 86_400_000)));
-  })();
-  const redditPoker12 = poker12.filter((r) => reviewSource(r) === "reddit").length;
-  const pokerCaption = `${
-    pullMonths >= 10
-      ? `${poker12.filter(hasStars).length.toLocaleString()} poker reviews · last 12 months`
-      : `${poker12.filter(hasStars).length.toLocaleString()} poker reviews in this pull · ${pokerMonthCount} in ${windowLabel}`
-  }${redditPoker12 ? ` · ${redditPoker12.toLocaleString()} Reddit` : ""}`;
+  const redditPokerMonth = pokerMonth.filter((r) => reviewSource(r) === "reddit").length;
+  const pokerCaption = `${pokerMonth.filter(hasStars).length.toLocaleString()} poker reviews · ${windowLabel}${
+    redditPokerMonth ? ` · ${redditPokerMonth.toLocaleString()} Reddit` : ""
+  }`;
   const filterOn = filterLabel !== "All reviews";
   const briefHead = filterOn
     ? `${windowLabel} · ${stats.count} of ${windowTotal} match ${filterLabel}`
@@ -1533,8 +1626,8 @@ export function GraceApp() {
                     className="gr-cta gr-cta-ghost gr-cta-shimmer"
                   >
                     <span className="inline-flex items-center gap-1.5">
-                      {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
-                      Create PDF
+                      {summaryBusy ? <Loader2 className="size-3.5 animate-spin" /> : <Hammer className="size-3.5" />}
+                      Build Report
                     </span>
                   </button>
                 </>
@@ -1545,6 +1638,7 @@ export function GraceApp() {
             className="flex flex-col gap-2 sm:flex-row sm:items-center"
             onSubmit={(e) => {
               e.preventDefault();
+              unlockPullChime();
               void runMain();
             }}
           >
@@ -1686,7 +1780,10 @@ export function GraceApp() {
                   <div className="flex shrink-0 items-center gap-1.5">
                     <button
                       type="button"
-                      onClick={() => void runMain(true)}
+                      onClick={() => {
+                        unlockPullChime();
+                        void runMain(true);
+                      }}
                       disabled={!!busy}
                       className="gr-chip"
                     >
@@ -1704,46 +1801,124 @@ export function GraceApp() {
                 </div>
                 {filtersOpen ? (
                   <div className="mt-3 flex flex-col gap-2.5">
-                    <p className="text-[12px] text-[#8a9198]">
-                      All poker keeps comments that are actually about poker. Words like turn, login, and promo are not enough on their own.
-                    </p>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="gr-groups">
                       <button
                         type="button"
-                        onClick={selectAllPoker}
-                        className="gr-chip"
-                        data-on={String(allPoker)}
+                        className="gr-tag"
+                        data-plain=""
+                        data-on={String(activeGroupId === ALL_GROUPS_ID)}
+                        onClick={() => setActiveGroupId(ALL_GROUPS_ID)}
                       >
-                        All poker
+                        All groups
                       </button>
-                      {activeKeywords.length ? (
-                        <button type="button" onClick={clearKeywords} className="gr-chip">
-                          Clear
+                      {keywordGroups.map((g) => (
+                        <span key={g.id} className="gr-tag" data-on={String(activeGroupId === g.id)}>
+                          <button type="button" className="gr-tag-hit" onClick={() => setActiveGroupId(g.id)}>
+                            {g.name}
+                          </button>
+                          <button
+                            type="button"
+                            className="gr-tag-x"
+                            aria-label={`Remove ${g.name} group`}
+                            onClick={() => removeKeywordGroup(g.id)}
+                          >
+                            <X className="size-3" />
+                          </button>
+                        </span>
+                      ))}
+                      {groupOpen ? (
+                        <form
+                          className="flex items-center gap-1"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            addKeywordGroup();
+                          }}
+                        >
+                          <input
+                            value={newGroup}
+                            onChange={(e) => setNewGroup(e.target.value)}
+                            placeholder="Group name"
+                            className="gr-input h-8! w-36 text-[12px]!"
+                            autoFocus
+                          />
+                          <button type="submit" className="gr-chip">Add</button>
+                          <button type="button" className="gr-chip" onClick={() => setGroupOpen(false)}>
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <button type="button" className="gr-source-add" onClick={() => setGroupOpen(true)}>
+                          <Plus className="size-3" /> Group
                         </button>
-                      ) : null}
-                      {allPresetKeywords.map((k) => {
-                        const row = keywordRows.find((r) => r.topic === k);
-                        const custom = customKeywords.includes(k);
-                        return (
-                          <span key={k} className="inline-flex items-center">
-                            <button
-                              type="button"
-                              onClick={() => toggleKeyword(k)}
-                              className="gr-chip"
-                              data-on={String(activeKeywords.includes(k))}
-                              data-count={row ? ` ${row.total}` : undefined}
-                            >
-                              {k}
-                            </button>
-                            {custom ? (
-                              <button type="button" onClick={() => removeCustomKeyword(k)} className="-ml-1 cursor-pointer p-0.5 text-[#8a9198] hover:text-[#ff3722]">
-                                <X className="size-3" />
-                              </button>
-                            ) : null}
-                          </span>
-                        );
-                      })}
+                      )}
                     </div>
+                    <p className="text-[12px] text-[#8a9198]">
+                      {activeGroupId === "poker"
+                        ? "All poker keeps comments that are actually about poker. Words like turn, login, and promo are not enough on their own."
+                        : activeGroupId === ALL_GROUPS_ID
+                          ? "All groups matches a review that hits any selected tag across Poker, Casino, Sports, or groups you add."
+                          : `Add tags to ${keywordGroups.find((g) => g.id === activeGroupId)?.name ?? "this group"} and use All to filter the report to that product.`}
+                    </p>
+                    {activeGroupId === ALL_GROUPS_ID ? (
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={selectAllGroups}
+                          className="gr-chip"
+                          data-on={String(isAllGroupsFilter(activeKeywords, keywordGroups))}
+                        >
+                          All groups
+                        </button>
+                        {activeKeywords.length ? (
+                          <button type="button" onClick={clearKeywords} className="gr-chip">
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {visibleGroups.map((g) => (
+                      <div key={g.id} className="flex flex-col gap-1.5">
+                        {activeGroupId === ALL_GROUPS_ID ? <p className="gr-kw-title">{g.name}</p> : null}
+                        <div className="flex flex-wrap gap-1">
+                          <button
+                            type="button"
+                            onClick={() => selectGroupKeywords(g)}
+                            className="gr-chip"
+                            data-on={String(isAllInGroup(activeKeywords, g))}
+                          >
+                            All {g.name.toLowerCase()}
+                          </button>
+                          {activeGroupId !== ALL_GROUPS_ID && activeKeywords.length ? (
+                            <button type="button" onClick={clearKeywords} className="gr-chip">
+                              Clear
+                            </button>
+                          ) : null}
+                          {g.keywords.map((k) => {
+                            const row = keywordRows.find((r) => r.topic === k);
+                            return (
+                              <span key={`${g.id}:${k}`} className="gr-tag" data-on={String(activeKeywords.includes(k))}>
+                                <button
+                                  type="button"
+                                  className="gr-tag-hit"
+                                  onClick={() => toggleKeyword(k)}
+                                >
+                                  {k}
+                                  {row ? <span className="gr-tag-n">{row.total}</span> : null}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="gr-tag-x"
+                                  onClick={() => removeKeywordFromGroup(g.id, k)}
+                                  aria-label={`Remove ${k}`}
+                                >
+                                  <X className="size-3" />
+                                </button>
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <div className="relative">
                         <Plus className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-[#8a9198]" />
@@ -1756,7 +1931,12 @@ export function GraceApp() {
                               addCustomKeyword();
                             }
                           }}
-                          placeholder="Add a keyword"
+                          placeholder={
+                            activeGroupId === ALL_GROUPS_ID
+                              ? "Select a group to add a keyword"
+                              : "Add a keyword"
+                          }
+                          disabled={activeGroupId === ALL_GROUPS_ID}
                           className="gr-input h-9! w-52 text-[12px]!"
                         />
                       </div>
@@ -1836,7 +2016,7 @@ export function GraceApp() {
             sliderBrands={sliderBrands}
             seriesBrands={seriesBrands}
             pokerScore={pokerScore}
-            pokerCount={poker12.length}
+            pokerCount={pokerMonth.filter(hasStars).length}
             pokerCaption={pokerCaption}
             layout={layout}
             onLayout={persistLayout}
@@ -1867,11 +2047,11 @@ export function GraceApp() {
                 officialScore={scrape.trustScore}
                 officialCount={scrape.totalReviews}
                 pokerScore={pokerScore}
-                pokerCount={poker12.filter(hasStars).length}
+                pokerCount={pokerMonth.filter(hasStars).length}
                 pokerCaption={pokerCaption}
                 size={20}
                 onOfficial={() => showReviews(`${shortName} · all captured`, brandReviews)}
-                onPoker={() => showReviews(`${shortName} · poker · last 12 months`, poker12)}
+                onPoker={() => showReviews(`${shortName} · poker · ${windowLabel}`, pokerMonth)}
               />
             </div>
             <p className="mt-3 text-[13px] text-[#6c737a]">
@@ -2418,7 +2598,7 @@ export function GraceApp() {
                         <tr className="border-b border-[#eef0f2] text-[11px] uppercase tracking-wide text-[#8a9198]">
                           <th className="px-4 py-3 font-medium">Company</th>
                           <th className="px-4 py-3 font-medium">TrustScore</th>
-                          <th className="px-4 py-3 font-medium">Poker · 12m</th>
+                          <th className="px-4 py-3 font-medium">Poker</th>
                           <th className="px-4 py-3 font-medium">Reviews</th>
                           <th className="px-4 py-3 font-medium">Matching</th>
                           <th className="px-4 py-3 font-medium">Star mix</th>
@@ -2446,7 +2626,7 @@ export function GraceApp() {
                               <button
                                 type="button"
                                 className="inline-flex items-center gap-2"
-                                onClick={() => showReviews(`${b.scrape.displayName} · all poker`, b.pokerReviews)}
+                                onClick={() => showReviews(`${b.scrape.displayName} · poker · ${windowLabel}`, b.pokerReviews)}
                               >
                                 <span className="tabular-nums font-semibold">
                                   {b.pokerScore != null ? b.pokerScore.toFixed(1) : "—"}
@@ -2546,7 +2726,7 @@ export function GraceApp() {
             sentiment: stats.sentiment,
             officialScore: scrape.trustScore,
             pokerScore,
-            pokerCount: poker12.length,
+            pokerCount: pokerMonth.filter(hasStars).length,
             topics: topicRows.slice(0, 8).map(
               (t) => `${t.topic}: ${t.total} (${t.positive}+ / ${t.negative}-)`,
             ),
@@ -2574,6 +2754,14 @@ export function GraceApp() {
         />
       ) : null}
       </div>
+      <Toaster
+        id={GRACE_TOASTER_ID}
+        theme="light"
+        richColors
+        closeButton
+        position="bottom-right"
+        offset={20}
+      />
     </div>
   );
 }

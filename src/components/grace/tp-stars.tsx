@@ -74,7 +74,7 @@ export function TpScore({
   );
 }
 
-/** Official Trustpilot score vs poker over the last 12 months. */
+/** Official Trustpilot score vs poker in the selected month. */
 export function ScorePair({
   officialScore,
   officialCount,
@@ -100,7 +100,7 @@ export function ScorePair({
     officialCount != null
       ? `Trustpilot · all time · ${officialCount.toLocaleString()} reviews`
       : "Trustpilot · all time";
-  const pokerSub = pokerCaption ?? `${pokerCount.toLocaleString()} poker reviews · last 12 months`;
+  const pokerSub = pokerCaption ?? `${pokerCount.toLocaleString()} poker reviews this month`;
   return (
     <div className={`gr-scoreboard${compact ? " gr-scoreboard-compact" : ""}`}>
       <div className="gr-score-card">

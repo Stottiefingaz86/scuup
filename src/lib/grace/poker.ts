@@ -94,18 +94,17 @@ export function pokerSignal(review: GraceReview): PokerSignal {
   return "none";
 }
 
-/** True when at least one selected keyword is from the poker set. */
-export function isPokerLens(keywords: string[]): boolean {
+/** True when every selected keyword belongs to the poker group. */
+export function isPokerLens(keywords: string[], pokerTerms: string[] = POKER_KEYWORDS): boolean {
   if (!keywords.length) return false;
-  const set = new Set(POKER_KEYWORDS.map((k) => k.toLowerCase()));
-  return keywords.some((k) => set.has(k.toLowerCase()));
+  const set = new Set(pokerTerms.map((k) => k.toLowerCase()));
+  return keywords.every((k) => set.has(k.toLowerCase()));
 }
 
-export function isAllPokerFilter(keywords: string[]): boolean {
-  if (!keywords.length) return false;
+export function isAllPokerFilter(keywords: string[], pokerTerms: string[] = POKER_KEYWORDS): boolean {
+  if (!keywords.length || !pokerTerms.length) return false;
   const set = new Set(keywords.map((k) => k.toLowerCase()));
-  const hit = POKER_KEYWORDS.filter((k) => set.has(k.toLowerCase())).length;
-  return hit >= POKER_KEYWORDS.length - 1;
+  return pokerTerms.every((k) => set.has(k.toLowerCase()));
 }
 
 export function isPokerReview(

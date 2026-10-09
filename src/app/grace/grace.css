@@ -255,6 +255,78 @@
   font-variant-numeric: tabular-nums;
 }
 
+.grace-root .gr-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 5px 0 10px;
+  border-radius: 999px;
+  border: 1px solid #e3e6ea;
+  background: #fff;
+  color: #4b5560;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.grace-root button.gr-tag,
+.grace-root .gr-tag[data-plain] {
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.grace-root .gr-tag[data-on="true"] {
+  background: #00b67a;
+  border-color: #00b67a;
+  color: #fff;
+}
+
+.grace-root .gr-tag-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.grace-root .gr-tag-n {
+  font-size: 10px;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+
+.grace-root .gr-tag-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #8a9198;
+  cursor: pointer;
+}
+
+.grace-root .gr-tag-x:hover {
+  background: rgba(25, 25, 25, 0.08);
+  color: #191919;
+}
+
+.grace-root .gr-tag[data-on="true"] .gr-tag-x {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.grace-root .gr-tag[data-on="true"] .gr-tag-x:hover {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
 .grace-root .gr-btn {
   display: inline-flex;
   align-items: center;
@@ -820,6 +892,13 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #8a9198;
+}
+
+.grace-root .gr-groups {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
 }
 
 .grace-root .gr-source {
@@ -1498,5 +1577,8 @@ html.grace-exporting .grace-root {
   .grace-root .gr-panel {
     background: #f7f8fa;
     box-shadow: none;
+  }
+  [data-sonner-toaster] {
+    display: none !important;
   }
 }

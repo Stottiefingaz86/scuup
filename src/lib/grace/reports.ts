@@ -1,3 +1,4 @@
+import type { KeywordGroup } from "./keywords";
 import { coerceMonth, monthLabel, type GraceWindow } from "./types";
 
 export interface ReportSnapshot {
@@ -369,6 +370,8 @@ export interface SavedReport {
   window: GraceWindow;
   keywords: string[];
   customKeywords: string[];
+  keywordGroups?: KeywordGroup[];
+  activeGroupId?: string;
   query: string;
   rivals: string[];
   competitorSet: string;
