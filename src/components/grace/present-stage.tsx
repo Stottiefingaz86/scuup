@@ -641,7 +641,7 @@ export function PresentStage({
       return (
         commentary.competitors ||
         vsCopy[0] ||
-        `Official TrustScore vs poker score for each pulled brand. Matching is this month’s ${filterLabel} slice.`
+        `Official TrustScore vs poker score for each pulled brand. Matching is the ${windowLabel} ${filterLabel} slice.`
       );
     }
     if (type === "keywords") {
@@ -844,7 +844,7 @@ export function PresentStage({
               compact
             />
             <span className="text-[11px] text-[#6c737a]">
-              {windowLabel} · {stats.count.toLocaleString()} matching this month
+              {windowLabel} · {stats.count.toLocaleString()} matching
             </span>
           </div>
           {mix ? <p className="mt-3 text-[12px] text-[#3d4349]">{mix}</p> : null}

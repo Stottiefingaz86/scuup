@@ -1,10 +1,17 @@
 /** Shared types for the standalone Trustpilot report at /grace. */
 
-/** Calendar month key, e.g. "2026-08". */
+/** Calendar month (`2026-08`) or trailing range (`6m` / `12m`). */
 export type GraceWindow = string;
+
+export const RANGE_WINDOWS = ["6m", "12m"] as const;
+export type GraceRangeWindow = (typeof RANGE_WINDOWS)[number];
 
 export function isMonthWindow(w: string | null | undefined): w is GraceWindow {
   return Boolean(w && /^\d{4}-\d{2}$/.test(w));
+}
+
+export function isRangeWindow(w: string | null | undefined): w is GraceRangeWindow {
+  return w === "6m" || w === "12m";
 }
 
 export function monthKey(d: Date = new Date()): GraceWindow {
@@ -18,12 +25,19 @@ export function defaultMonth(now = new Date()): GraceWindow {
 }
 
 export function previousMonthKey(ym: string): GraceWindow {
+  if (ym === "6m") return "6m-prev";
+  if (ym === "12m") return "12m-prev";
+  if (!isMonthWindow(ym)) return defaultMonth();
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 2, 1));
   return monthKey(d);
 }
 
 export function monthLabel(ym: string, style: "long" | "short" = "long"): string {
+  if (ym === "6m") return style === "short" ? "6 months" : "Last 6 months";
+  if (ym === "12m") return style === "short" ? "12 months" : "Last 12 months";
+  if (ym === "6m-prev") return style === "short" ? "Prev 6m" : "Previous 6 months";
+  if (ym === "12m-prev") return style === "short" ? "Prev 12m" : "Previous 12 months";
   if (!isMonthWindow(ym)) return ym;
   const [y, m] = ym.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1, 1));
@@ -45,15 +59,33 @@ export function recentMonths(count = 26, now = new Date()): { id: GraceWindow; l
 }
 
 export function coerceMonth(w: string | null | undefined): GraceWindow {
-  return isMonthWindow(w) ? w : defaultMonth();
+  if (isRangeWindow(w) || isMonthWindow(w)) return w;
+  return defaultMonth();
 }
 
-/** Inclusive UTC bounds for a calendar month. */
-export function monthBounds(ym: string): { start: string; end: string } {
-  const key = coerceMonth(ym);
+/** Inclusive UTC bounds for a calendar month or trailing 6m/12m range. */
+export function monthBounds(ym: string, now = new Date()): { start: string; end: string } {
+  const range = rangeWindowBounds(ym, now);
+  if (range) return range;
+  const key = isMonthWindow(ym) ? ym : defaultMonth();
   const [y, m] = key.split("-").map(Number);
   const start = new Date(Date.UTC(y, m - 1, 1));
   const end = new Date(Date.UTC(y, m, 0, 23, 59, 59, 999));
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+/** Last N calendar months including the current month, or the N before that. */
+export function rangeWindowBounds(
+  ym: string,
+  now = new Date(),
+): { start: string; end: string } | null {
+  const span = ym === "6m" || ym === "6m-prev" ? 6 : ym === "12m" || ym === "12m-prev" ? 12 : 0;
+  if (!span) return null;
+  const prev = ym.endsWith("-prev");
+  const endOffset = prev ? span : 0;
+  const startOffset = prev ? span * 2 - 1 : span - 1;
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - startOffset, 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - endOffset + 1, 0, 23, 59, 59, 999));
   return { start: start.toISOString(), end: end.toISOString() };
 }
 

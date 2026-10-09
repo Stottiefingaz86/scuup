@@ -1654,18 +1654,24 @@ export function GraceApp() {
             </div>
             <select
               value={window_}
-              aria-label="VoC month"
+              aria-label="VoC period"
               className="gr-select"
               onChange={(e) => {
                 setWindow(e.target.value);
                 setSummary(null);
               }}
             >
-              {vocMonths.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.label}
-                </option>
-              ))}
+              <optgroup label="Range">
+                <option value="6m">Last 6 months</option>
+                <option value="12m">Last 12 months</option>
+              </optgroup>
+              <optgroup label="Month">
+                {vocMonths.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.label}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             <button type="submit" disabled={!!busy || !input.trim()} className="gr-btn">
               {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
@@ -2439,7 +2445,7 @@ export function GraceApp() {
                   </h2>
                   <p className="mt-1 text-[13px] text-[#6c737a]">
                     {filterOn
-                      ? `Every ${shortName} review in ${windowLabel} — poker or not. ${windowTotal} in the month. Matching ${filterLabel} rows are marked.`
+                      ? `Every ${shortName} review in ${windowLabel} — poker or not. ${windowTotal} in this window. Matching ${filterLabel} rows are marked.`
                       : `${windowTotal} ${windowLabel} reviews.`}
                   </p>
                 </div>

@@ -1,4 +1,4 @@
-import { hasStars, type GraceReview, type GraceScrape, type GraceWindow } from "./types";
+import { hasStars, monthBounds, rangeWindowBounds, type GraceReview, type GraceScrape, type GraceWindow } from "./types";
 
 /* ------------------------------------------------------------------ */
 /* Presets                                                             */
@@ -230,6 +230,15 @@ export function reviewsSinceDays(reviews: GraceReview[], days: number): GraceRev
 
 export function reviewsInMonth(reviews: GraceReview[], ym: string): GraceReview[] {
   if (!ym) return reviews;
+  if (rangeWindowBounds(ym)) {
+    const { start, end } = monthBounds(ym);
+    const a = Date.parse(start);
+    const b = Date.parse(end);
+    return reviews.filter((r) => {
+      const t = Date.parse(r.date);
+      return !Number.isNaN(t) && t >= a && t <= b;
+    });
+  }
   return reviews.filter((r) => {
     const t = Date.parse(r.date);
     if (Number.isNaN(t)) return false;
