@@ -5,7 +5,7 @@ import type { ResearchDevice, ResearchPersona } from "@/lib/research/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 /** Start deposit walks for multiple brands. Each pauses at awaiting_payment. */
 export async function POST(request: NextRequest) {

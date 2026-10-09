@@ -30,7 +30,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 // Pro plan: 800s platform ceiling. Soft-stop is RUN_BUDGET_MS (~650s) so
 // scoring always finishes before Vercel kills the function.
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   const locked = rejectIfNewReportsLocked();
