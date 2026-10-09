@@ -1,0 +1,974 @@
+/* /grace is a Trustpilot report — light canvas, their stars, their greens. */
+.grace-root {
+  color-scheme: light;
+  --rs-bg: #ffffff;
+  --rs-fg: #191919;
+  --rs-muted: #6c737a;
+  --rs-border: #e7e9ec;
+  --rs-card: #ffffff;
+  --rs-accent: #00b67a;
+  --rs-accent-dim: #e4f7ef;
+  --rs-critical: #ff3722;
+  --gr-pos: #00b67a;
+  --gr-pos-dim: #e4f7ef;
+  --gr-neg: #ff3722;
+  --gr-neg-dim: #ffece9;
+  --gr-neu: #ffce00;
+  --tp-5: #00b67a;
+  --tp-4: #73cf11;
+  --tp-3: #ffce00;
+  --tp-2: #ff8622;
+  --tp-1: #ff3722;
+  --tp-empty: #dcdce6;
+  background: #f4f5f7;
+  color: #191919;
+  font-family: var(--font-geist-sans), "Helvetica Neue", Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+}
+
+.grace-root h1,
+.grace-root h2,
+.grace-root h3,
+.grace-root .gr-display {
+  font-family: var(--font-space-grotesk), var(--font-geist-sans), sans-serif;
+  letter-spacing: -0.03em;
+}
+
+.grace-root .gr-shell {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 100vh;
+  align-items: start;
+}
+
+.grace-root .gr-shell[data-side="closed"],
+.grace-root .gr-shell[data-mode="report"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.grace-root .gr-side {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  background: #fff;
+  border-right: 1px solid #e7e9ec;
+  padding: 20px 14px 28px;
+}
+
+.grace-root .gr-side-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.grace-root .gr-side-label {
+  margin: 22px 8px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a9198;
+}
+
+.grace-root .gr-side-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #3d4349;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.grace-root .gr-side-item:hover {
+  background: #f4f5f7;
+}
+
+.grace-root .gr-side-item[data-on="true"] {
+  background: #e4f7ef;
+  color: #191919;
+  font-weight: 600;
+}
+
+.grace-root .gr-main {
+  min-width: 0;
+  padding: 20px 24px 48px;
+}
+
+.grace-root .gr-shell[data-side="closed"] .gr-side,
+.grace-root .gr-shell[data-mode="report"] .gr-side {
+  display: none;
+}
+
+.grace-root .gr-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #3d4349;
+  cursor: pointer;
+}
+
+.grace-root .gr-icon-btn:hover {
+  border-color: #c9ced4;
+  color: #191919;
+}
+
+@media (max-width: 900px) {
+  .grace-root .gr-shell {
+    grid-template-columns: 1fr;
+  }
+  .grace-root .gr-side {
+    position: relative;
+    height: auto;
+    border-right: 0;
+    border-bottom: 1px solid #e7e9ec;
+  }
+}
+
+.grace-root .gr-toolbar {
+  background: #fff;
+  border: 1px solid #e7e9ec;
+  border-radius: 16px;
+}
+
+.grace-root .gr-toolbar[data-slim="true"] {
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+
+.grace-root .gr-slide {
+  padding: 40px 48px 56px;
+  background: #fff;
+  border: 1px solid #e7e9ec;
+  border-radius: 16px;
+  margin-bottom: 20px;
+}
+
+.grace-root .gr-slide + .gr-slide {
+  border-top: 1px solid #e7e9ec;
+}
+
+.grace-root .gr-title {
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 500;
+  line-height: 1.05;
+  color: #191919;
+}
+
+.grace-root .gr-title-rule {
+  width: 72px;
+  height: 2px;
+  margin-top: 14px;
+  background: #ff3722;
+}
+
+.grace-root .gr-copy {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #3d4349;
+}
+
+.grace-root .gr-copy strong {
+  color: #191919;
+  font-weight: 600;
+}
+
+.grace-root .gr-panel {
+  background: #f7f8fa;
+  border: 1px solid #eef0f2;
+  border-radius: 12px;
+  padding: 20px 22px 18px;
+}
+
+.grace-root .gr-panel h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #191919;
+  margin: 0 0 14px;
+}
+
+.grace-root mark.gr-hit {
+  background: #fff3a3;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.grace-root .gr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid #e3e6ea;
+  background: #fff;
+  font-size: 11px;
+  line-height: 1;
+  color: #4b5560;
+  cursor: pointer;
+}
+
+.grace-root .gr-chip:hover {
+  border-color: #c9ced4;
+  color: #191919;
+}
+
+.grace-root .gr-chip[data-on="true"] {
+  background: #00b67a;
+  border-color: #00b67a;
+  color: #fff;
+}
+
+.grace-root .gr-chip[data-count]::after {
+  content: attr(data-count);
+  font-size: 10px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.grace-root .gr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  background: #00b67a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 0;
+}
+
+.grace-root .gr-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.grace-root .gr-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #1877f2;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grace-root .gr-cta:hover:not(:disabled) {
+  background: #166fe5;
+}
+
+.grace-root .gr-cta:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.grace-root .gr-cta-ghost {
+  background: #fff;
+  color: #1877f2;
+  border: 1px solid #d0d7de;
+}
+
+.grace-root .gr-cta-ghost:hover:not(:disabled) {
+  background: #f0f7ff;
+}
+
+.grace-root .gr-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 18px;
+  padding: 12px 8px 4px;
+}
+
+.grace-root .gr-cloud-word {
+  font-family: var(--font-space-grotesk), var(--font-geist-sans), sans-serif;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.grace-root .gr-cloud-word:hover {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.grace-root .gr-cloud-word[data-on="true"] {
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.grace-root .gr-btn-ghost {
+  background: #fff;
+  color: #191919;
+  border: 1px solid #e3e6ea;
+}
+
+.grace-root .gr-input {
+  height: 40px;
+  width: 100%;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  padding: 0 12px 0 36px;
+  background: #fff;
+  color: #191919;
+  font-size: 14px;
+  outline: none;
+}
+
+.grace-root .gr-input:focus {
+  border-color: #00b67a;
+  box-shadow: 0 0 0 3px rgba(0, 182, 122, 0.12);
+}
+
+.grace-root .gr-select {
+  height: 40px;
+  min-width: 196px;
+  flex: 0 0 auto;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  padding: 0 32px 0 12px;
+  background: #fff
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='%236c737a' d='M2.2 4.2 6 8l3.8-3.8'/></svg>")
+    no-repeat right 12px center;
+  color: #191919;
+  font-size: 14px;
+  outline: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.grace-root .gr-select:focus {
+  border-color: #00b67a;
+  box-shadow: 0 0 0 3px rgba(0, 182, 122, 0.12);
+}
+
+.grace-root .gr-window {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #e3e6ea;
+  border-radius: 8px;
+  background: #f7f8f9;
+}
+
+.grace-root .gr-window button {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: #6c737a;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.grace-root .gr-window button[data-on="true"] {
+  background: #fff;
+  color: #191919;
+  box-shadow: 0 1px 2px rgba(25, 25, 25, 0.06);
+}
+
+/* Trustpilot boxed stars */
+.grace-root .tp-stars {
+  display: inline-flex;
+  gap: 2px;
+  line-height: 0;
+}
+
+.grace-root .tp-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.grace-root .tp-star svg {
+  display: block;
+}
+
+/* Review row — Trustpilot comment box */
+.grace-root .tp-review {
+  position: relative;
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 20px;
+  padding: 18px 0;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.grace-root .tp-review-pin {
+  position: absolute;
+  top: 12px;
+  right: 0;
+  z-index: 2;
+  display: none;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #fff;
+  color: #191919;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grace-root .tp-review:hover .tp-review-pin,
+.grace-root article:hover > .tp-review-pin {
+  display: inline-flex;
+  align-items: center;
+}
+
+.grace-root .tp-review-pin:hover {
+  border-color: #1877f2;
+  color: #1877f2;
+}
+
+.grace-root .tp-review:last-child {
+  border-bottom: 0;
+}
+
+.grace-root .tp-review-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #191919;
+}
+
+.grace-root .tp-review-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6c737a;
+}
+
+.grace-root .tp-review-title {
+  margin: 8px 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #191919;
+}
+
+.grace-root .tp-review-body {
+  font-size: 14px;
+  line-height: 1.55;
+  color: #3d4349;
+}
+
+.grace-root .tp-reply {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f7f8f9;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #4b5560;
+}
+
+/* Thin topic bars like the Trustpilot B2B report */
+.grace-root .tp-bar-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 32%) minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 10px;
+  min-height: 26px;
+}
+
+.grace-root .tp-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #f1f3f5;
+  overflow: hidden;
+}
+
+.grace-root .tp-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+}
+
+/* Sentiment / reviews meters */
+.grace-root .tp-meter {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ff3722 0%, #f3f4f6 50%, #00b67a 100%);
+}
+
+.grace-root .tp-meter-knob {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  border: 3px solid #191919;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.grace-root .gr-chart {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  height: 240px;
+  overflow: hidden;
+}
+
+.grace-root .gr-chart .recharts-responsive-container {
+  flex: 1 1 auto;
+  min-height: 0 !important;
+}
+
+.grace-root .gr-stage-chart .gr-chart {
+  height: 100%;
+}
+
+.grace-root .recharts-cartesian-axis-tick text {
+  fill: #8a9198;
+  font-size: 11px;
+}
+
+.grace-root .recharts-cartesian-grid line {
+  stroke: #eef0f2;
+}
+
+.grace-root .recharts-tooltip-cursor {
+  fill: rgba(25, 25, 25, 0.03);
+}
+
+.grace-root .recharts-surface {
+  overflow: visible;
+}
+
+@media (max-width: 900px) {
+  .grace-root .gr-slide {
+    padding: 28px 20px 40px;
+  }
+  .grace-root .tp-review {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.grace-root .gr-count {
+  color: #00b67a;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.grace-root .gr-count:hover {
+  color: #009e6a;
+}
+
+.grace-root .gr-shell[data-mode="report"] .gr-main {
+  padding: 12px 16px 40px;
+  background: #eceef1;
+}
+
+.grace-root .gr-shell[data-mode="report"] .gr-title,
+.grace-root .gr-page-title {
+  font-size: 28px;
+  font-weight: 500;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.grace-root .gr-shell[data-mode="report"] .gr-copy {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.grace-root .gr-deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.grace-root .gr-stage {
+  width: min(1122px, calc(100vw - 40px));
+  aspect-ratio: 297 / 210;
+  height: auto;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 20px 26px 14px;
+  background: #fff;
+  border: 1px solid #e7e9ec;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(25, 25, 25, 0.08);
+}
+
+.grace-root .gr-stage-head {
+  flex-shrink: 0;
+}
+
+.grace-root .gr-page-title {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #191919;
+  outline: none;
+}
+
+.grace-root .gr-page-title:hover,
+.grace-root .gr-page-title:focus {
+  border-color: #c9ced4;
+  background: #f7f8fa;
+}
+
+.grace-root .gr-page-title::placeholder {
+  color: #191919;
+}
+
+.grace-root .gr-stage-body {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  margin-top: 10px;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 12px;
+}
+
+.grace-root .gr-widget,
+.grace-root .gr-slot-empty {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.grace-root .gr-widget[data-span="full"],
+.grace-root .gr-slot-empty[data-span="full"] {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+}
+
+.grace-root .gr-widget[data-span="wide"],
+.grace-root .gr-slot-empty[data-span="wide"] {
+  grid-column: 1 / -1;
+  grid-row: span 1;
+}
+
+.grace-root .gr-widget[data-span="tall"],
+.grace-root .gr-slot-empty[data-span="tall"] {
+  grid-column: span 1;
+  grid-row: 1 / -1;
+}
+
+.grace-root .gr-widget[data-span="quarter"],
+.grace-root .gr-slot-empty[data-span="quarter"] {
+  grid-column: span 1;
+  grid-row: span 1;
+}
+
+.grace-root .gr-widget-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  color: #8a9198;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.grace-root .gr-widget-bar > button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: #8a9198;
+  cursor: pointer;
+}
+
+.grace-root .gr-widget-bar > button:hover {
+  color: #ff3722;
+}
+
+.grace-root .gr-size {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px;
+  border: 1px solid #e3e6ea;
+  border-radius: 6px;
+  background: #f7f8fa;
+}
+
+.grace-root .gr-size button {
+  height: 18px;
+  min-width: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #6c737a;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.grace-root .gr-size button[data-on="true"] {
+  background: #fff;
+  color: #191919;
+  box-shadow: 0 1px 2px rgba(25, 25, 25, 0.08);
+}
+
+.grace-root .gr-slot-empty {
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #c9ced4;
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.grace-root .gr-slot-add {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #e3e6ea;
+  border-radius: 999px;
+  background: #fff;
+  color: #3d4349;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.grace-root .gr-slot-add select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.grace-root .gr-stage-col {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.grace-root .gr-stage-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  margin-top: 6px;
+  color: #8a9198;
+  font-size: 11px;
+}
+
+.grace-root .gr-stage-foot .gr-icon-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.grace-root .gr-stage-foot .gr-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.grace-root .gr-stage-chart {
+  flex: 0 0 auto;
+  width: 100%;
+  overflow: hidden;
+}
+
+.grace-root .gr-stage-chart > div {
+  height: 100% !important;
+  width: 100% !important;
+}
+
+.grace-root .gr-stage .gr-panel {
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+}
+
+.grace-root .gr-stage .gr-sheet {
+  padding: 0;
+  background: #f7f8fa;
+  border: 1px solid #eef0f2;
+  border-radius: 10px;
+}
+
+.grace-root .gr-stage .gr-panel h3 {
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.grace-root .gr-stage .tp-bar-row {
+  min-height: 18px;
+  gap: 8px;
+}
+
+.grace-root .gr-stage .tp-bar-track {
+  height: 6px;
+}
+
+.grace-root .gr-edit-copy {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 4px;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  background: none;
+  color: #3d4349;
+  font-size: 12.5px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+
+.grace-root .gr-edit-copy:hover {
+  border-color: #c9ced4;
+  background: #f7f8fa;
+}
+
+.grace-root .gr-comment {
+  position: relative;
+  padding: 8px 72px 10px 0;
+  border-bottom: 1px solid #f1f3f5;
+}
+
+.grace-root .gr-comment-actions {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  display: none;
+  gap: 4px;
+}
+
+.grace-root .gr-comment:hover .gr-comment-actions {
+  display: flex;
+}
+
+.grace-root .gr-comment-actions button {
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid #d0d7de;
+  border-radius: 999px;
+  background: #fff;
+  color: #3d4349;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.grace-root .gr-comment-actions button:hover {
+  border-color: #1877f2;
+  color: #1877f2;
+}
+
+@page {
+  size: A4 landscape;
+  margin: 8mm;
+}
+
+html.grace-exporting .grace-root {
+  background: #fff;
+}
+
+@media print {
+  .grace-root,
+  .grace-root .gr-shell[data-mode="report"] .gr-main {
+    background: #fff !important;
+    padding: 0 !important;
+  }
+  .grace-root .gr-shell {
+    display: block;
+  }
+  .grace-root .gr-no-print,
+  .grace-root .gr-screen-only,
+  html.grace-exporting .gr-no-print,
+  html.grace-exporting .gr-screen-only {
+    display: none !important;
+  }
+  .grace-root .gr-slide,
+  .grace-root .gr-shell[data-mode="report"] .gr-slide,
+  .grace-root .gr-stage {
+    width: 281mm;
+    height: 194mm;
+    min-height: 194mm;
+    aspect-ratio: auto;
+    margin: 0;
+    padding: 10mm 12mm 8mm;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+  }
+  .grace-root .gr-slide:last-child,
+  .grace-root .gr-shell[data-mode="report"] .gr-slide:last-child,
+  .grace-root .gr-stage:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .grace-root .gr-widget-bar,
+  .grace-root .gr-comment-actions,
+  .grace-root .gr-stage-foot,
+  .grace-root .gr-slot-empty {
+    display: none !important;
+  }
+  .grace-root .gr-edit-copy,
+  .grace-root .gr-page-title {
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+  .grace-root .gr-slide + .gr-slide {
+    border-top: 0;
+  }
+  .grace-root .gr-panel {
+    background: #f7f8fa;
+    box-shadow: none;
+  }
+}

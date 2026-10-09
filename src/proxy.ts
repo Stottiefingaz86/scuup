@@ -50,10 +50,15 @@ export async function proxy(request: NextRequest) {
   const host = request.headers.get("host");
 
   // Research is its own app: PIN only. Never the Scuup site password or login.
+  // /grace (standalone Trustpilot report) shares the research PIN so the
+  // Browserbase spend stays behind the same lock.
+  const graceScoped =
+    pathname.startsWith("/grace") || pathname.startsWith("/api/grace");
   const researchScoped =
     isResearchHost(host) ||
     pathname.startsWith(RESEARCH_BASE) ||
-    pathname.startsWith("/api/research");
+    pathname.startsWith("/api/research") ||
+    graceScoped;
   if (researchScoped) {
     const onPinScreen =
       pathname.startsWith(RESEARCH_PIN_PATH) ||
@@ -73,7 +78,10 @@ export async function proxy(request: NextRequest) {
       const url = request.nextUrl.clone();
       url.pathname = isResearchHost(host) ? "/pin" : RESEARCH_PIN_PATH;
       url.search = "";
-      if (pathname.startsWith(RESEARCH_BASE) && pathname !== RESEARCH_BASE) {
+      if (
+        (pathname.startsWith(RESEARCH_BASE) && pathname !== RESEARCH_BASE) ||
+        graceScoped
+      ) {
         url.searchParams.set("next", pathname);
       }
       return NextResponse.redirect(url);
@@ -83,6 +91,7 @@ export async function proxy(request: NextRequest) {
     if (
       isResearchHost(host) &&
       !pathname.startsWith(RESEARCH_BASE) &&
+      !graceScoped &&
       !pathname.startsWith("/api/") &&
       !pathname.startsWith("/_next") &&
       !pathname.startsWith("/monitoring")

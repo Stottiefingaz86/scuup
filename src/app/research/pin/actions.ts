@@ -28,7 +28,8 @@ export async function unlockResearch(
 
   const next = String(formData.get("next") ?? "/research");
   const dest =
-    next.startsWith("/research") && !next.startsWith("//")
+    (next.startsWith("/research") || next.startsWith("/grace")) &&
+    !next.startsWith("//")
       ? next
       : "/research";
   redirect(dest);
